@@ -1,5 +1,15 @@
 {
   "dependencies": {
+    "com.chrono.unigameui": {
+      "version": "file:com.chrono.unigameui",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.ugui": "2.0.0",
+        "com.unity.modules.jsonserialize": "1.0.0",
+        "com.unity.modules.uielements": "1.0.0"
+      }
+    },
     "com.unity.2d.animation": {
       "version": "13.0.5",
       "depth": 0,

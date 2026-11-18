@@ -1,0 +1,5 @@
+{
+  "name": "UniGameUI.Runtime",
+  "rootNamespace": "UniGameUI",
+  "references": ["UnityEngine.UI"]
+}
