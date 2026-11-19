@@ -16,7 +16,7 @@ namespace UniGameUI
                 null, Type.EmptyTypes, null);
 
         private static readonly MethodInfo InvokeListener = FindListenerInvoke();
-        private static bool warnedFallback;
+        internal static bool warnedFallback;
 
         private static MethodInfo FindListenerInvoke()
         {

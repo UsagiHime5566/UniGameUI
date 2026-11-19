@@ -183,7 +183,7 @@ public sealed class WorkshopPage : UIViewBehaviour
 每一階段依序呼叫 View 根節點上的介面接收者（依元件順序）、View Inspector 的 UnityEvent，再發出 `UIRoot.ViewShowing`、`ViewShown`、`ViewHiding` 或 `ViewHidden`。畫面啟用後、進場動畫開始前會觸發 `OnShowing(data)`。切頁時，依序收到舊頁 Hiding、新頁 Showing、舊頁 Hidden、新頁 Shown。隱藏後與顯示後的通知會等轉場成功。
 
 - 第一次顯示時，會先執行 `Awake` 與 `OnShowing`。有跨影格的進場動畫時，已啟用接收者的 `Start` 在 `OnShowing` 與 `OnShown` 之間執行。瞬間切換時，`OnShown` 也可能早於 `Start`。把首次顯示所需的初始化放在 `Awake`，或在 `OnShowing` 裡用 `View.Get<T>()` 取得元件。 [Unity Start 文件](https://docs.unity.com/en-us/engine/6000.3/script-reference/unityengine/monobehaviour/start)
-- 導航失敗或取消後，原畫面會還原並繼續顯示。原畫面如果已收到 `OnHiding`，這次只會收到這個階段的通知。需要在離開後才改變狀態的收尾工作放在 `OnHidden`。
+- 導航失敗或取消後，原畫面會還原並繼續顯示。它如果已經收到 `OnHiding`，之後不會收到 `OnHidden`，也不會再收到一次 `OnShowing`。需要在離開後才改變狀態的收尾工作放在 `OnHidden`。
 - 把接收者元件的 `enabled` 設為 false 時，框架仍會呼叫它的生命週期方法。
 
 `Emit` 路由依序呼叫來源畫面的 `OnAction(action)` 和 `UIRoot.ActionEmitted`。後者可以從 Inspector 接線，會提供來源 ID 和動作。`UIRoot.ActionTriggered` 表示路由已被接受，可用來播放按鈕音效。以沒有歷史的 Back 路由為例，會先發出 `ActionTriggered`，接著由 `ActionCompleted` 回報 `Unavailable`。

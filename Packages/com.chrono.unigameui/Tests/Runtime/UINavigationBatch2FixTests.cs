@@ -156,6 +156,8 @@ namespace UniGameUI.Tests
         [Test]
         public void UnityEventFallbackWarnsOnceAndPreservesNavigationExceptionPolicy()
         {
+            // 「只警告一次」的旗標是靜態欄位，關閉 Domain Reload 時會留到下一次執行。
+            UIEventDispatch.warnedFallback = false;
             var signal = new UnityEvent();
             var failure = new FormatException("公開 Invoke 測試");
             Exception reported = null;
