@@ -4,6 +4,7 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Serialization;
+using UnityEngine.UI;
 
 namespace UniGameUI
 {
@@ -16,6 +17,7 @@ namespace UniGameUI
         [SerializeField, HideInInspector] internal RectTransform motion;
         [SerializeField, HideInInspector] internal RectTransform content;
         [SerializeField, HideInInspector] internal CanvasGroup canvasGroup;
+        [SerializeField] internal Selectable defaultSelected;
         [SerializeField] internal UITransition enter = new UITransition();
         [SerializeField] internal UITransition exit = new UITransition();
         [SerializeField] private UnityEvent showing = new UnityEvent();
@@ -24,6 +26,9 @@ namespace UniGameUI
         [SerializeField] private UnityEvent hidden = new UnityEvent();
 
         private Dictionary<string, UIElementId> elements;
+
+        // 導覽模式下這個畫面最後被選取的物件，回到這個畫面時恢復。
+        internal GameObject lastSelected;
 
         public string Id => id;
         public RectTransform Motion => motion;
@@ -35,6 +40,11 @@ namespace UniGameUI
         public UnityEvent Shown => shown;
         public UnityEvent Hiding => hiding;
         public UnityEvent Hidden => hidden;
+
+        /// <summary>
+        /// 進入導覽模式時優先選取的元件。沒有指定時，取階層順序第一個可操作的 Selectable。
+        /// </summary>
+        public Selectable DefaultSelected => defaultSelected;
         public object Data { get; internal set; }
         public UIRoot Root { get; internal set; }
 

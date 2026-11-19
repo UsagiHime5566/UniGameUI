@@ -134,6 +134,7 @@ namespace UniGameUI
             lifetime = null;
             cancellation?.Cancel();
             cancellation?.Dispose();
+            UnhookInput();
         }
 
         public Awaitable<UINavResult> ShowPageAsync(
@@ -461,6 +462,8 @@ namespace UniGameUI
             var previousId = CurrentPageId;
             await ChangePageAsync(next, data, cancellation, request, () =>
             {
+                // 往前切頁視為重新進入，從預設選取元件開始。返回時才恢復上次的選取。
+                next.lastSelected = null;
                 if (historyMode == UIHistoryMode.Clear)
                     history.Clear();
                 else if (historyMode == UIHistoryMode.Push && previousId != null)

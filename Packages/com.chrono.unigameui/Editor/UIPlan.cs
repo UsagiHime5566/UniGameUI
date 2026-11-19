@@ -39,6 +39,7 @@ namespace UniGameUI.Editor
             public string prefabPath;
             public bool updateExisting;
             public string background;
+            public string defaultSelected;
             public AnimationSpec enter;
             public AnimationSpec exit;
             public ElementSpec[] elements;
@@ -310,7 +311,9 @@ namespace UniGameUI.Editor
                     throw new ArgumentException($"Single Scene page '{view.id}' cannot have a Prefab path.");
                 }
 
-                PreflightElements(view, entries.TryGetValue(view.id, out var entry) ? entry.Review : null, catalog);
+                var existingReview = entries.TryGetValue(view.id, out var entry) ? entry.Review : null;
+                PreflightElements(view, existingReview, catalog);
+                PreflightViewOptions(view, kind, existingReview, catalog);
             }
 
             if (!string.IsNullOrEmpty(plan.startPage) &&
@@ -391,6 +394,9 @@ namespace UniGameUI.Editor
 
             foreach (var element in spec.elements ?? Array.Empty<ElementSpec>())
                 ApplyElement(view, element, widgetSet);
+            // 預設選取元件可能是這份計畫才建立的，所以 View 的選項放在元件之後。
+            if (newView || spec.updateExisting)
+                ApplyViewOptions(view, spec);
             if (newPrefab)
                 UIAuthoring.ApplyReviewOverrides(root, spec.id);
         }

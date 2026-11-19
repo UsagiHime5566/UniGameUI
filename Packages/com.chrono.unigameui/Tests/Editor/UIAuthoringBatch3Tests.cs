@@ -712,6 +712,64 @@ namespace UniGameUI.Editor.Tests
             Assert.That(UIPlan.FindElement(view, "extra"), Is.Null);
         }
 
+        [Test]
+        public void PlanSetsTheDefaultSelectedElementAndRejectsOnesThatCannotBeSelected()
+        {
+            RequireDOTween();
+            SceneManager.SetActiveScene(NewScene("Batch3 Default Selected"));
+            var root = UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"", ""defaultSelected"": ""start"", ""elements"": [
+                    {{ ""id"": ""title"", ""text"": ""Menu"" }},
+                    {{ ""id"": ""start"", ""kind"": ""Button"", ""text"": ""Start"" }},
+                    {{ ""id"": ""volume"", ""kind"": ""Slider"" }}] }},
+                {{ ""id"": ""popup"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Selected.prefab"",
+                   ""defaultSelected"": ""no"", ""elements"": [
+                    {{ ""id"": ""yes"", ""kind"": ""Button"" }},
+                    {{ ""id"": ""no"", ""kind"": ""Button"" }}] }}
+            ] }}");
+            var home = UIAuthoring.FindEntry(root, "home").Review;
+            Assert.That(home.DefaultSelected, Is.SameAs(UIPlan.FindElement(home, "start").GetComponent<Button>()));
+            var popup = UIAuthoring.FindEntry(root, "popup");
+            Assert.That(popup.Prefab.DefaultSelected, Is.Not.Null);
+            Assert.That(popup.Prefab.DefaultSelected.GetComponent<UIElementId>().Id, Is.EqualTo("no"));
+            Assert.That(popup.Prefab.DefaultSelected.transform.IsChildOf(popup.Prefab.transform), Is.True);
+            Assert.That(UIAuthoring.HasReviewOverrides(popup), Is.False);
+
+            // 和背景、動畫一樣，既有的 View 要有 updateExisting 才會改。
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""defaultSelected"": ""volume"" }] }");
+            Assert.That(home.DefaultSelected.GetComponent<UIElementId>().Id, Is.EqualTo("start"));
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""updateExisting"": true,
+                ""defaultSelected"": ""volume"" }] }");
+            Assert.That(home.DefaultSelected, Is.SameAs(UIPlan.FindElement(home, "volume").GetComponent<Slider>()));
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""updateExisting"": true, ""background"": ""#000000"" }] }");
+            Assert.That(home.DefaultSelected, Is.Not.Null, "沒寫的選項維持原狀");
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""updateExisting"": true, ""defaultSelected"": """" }] }");
+            Assert.That(home.DefaultSelected, Is.Null);
+
+            var missing = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""home"", ""updateExisting"": true, ""defaultSelected"": ""ghost"" }, { ""id"": ""other"" }] }"));
+            Assert.That(missing.Message, Does.Contain("home").And.Contain("ghost").And.Contain("defaultSelected"));
+            var notSelectable = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""home"", ""updateExisting"": true, ""defaultSelected"": ""title"" }, { ""id"": ""other"" }] }"));
+            Assert.That(notSelectable.Message, Does.Contain("title").And.Contain("Selectable"));
+            foreach (var kind in new[] { "Text", "Image", "Panel", "ProgressBar", "ScrollList" })
+            {
+                var planned = Assert.Throws<ArgumentException>(() => UIPlan.Apply($@"{{ ""views"": [
+                    {{ ""id"": ""other"", ""defaultSelected"": ""target"", ""elements"": [
+                        {{ ""id"": ""target"", ""kind"": ""{kind}"" }}] }}] }}"), kind);
+                Assert.That(planned.Message, Does.Contain("other").And.Contain("target"), kind);
+            }
+            Assert.That(UIAuthoring.FindEntry(root, "other"), Is.Null);
+            Assert.That(home.DefaultSelected, Is.Null);
+
+            foreach (var kind in new[] { "Button", "Toggle", "Slider", "Dropdown", "InputField" })
+            {
+                UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""view{kind}"", ""defaultSelected"": ""target"",
+                    ""elements"": [{{ ""id"": ""target"", ""kind"": ""{kind}"" }}] }}] }}");
+                Assert.That(UIAuthoring.FindEntry(root, "view" + kind).Review.DefaultSelected, Is.Not.Null, kind);
+            }
+        }
+
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)
         {
             return set.Find(widget).Prefab.GetComponentInChildren<TMP_Text>(true).font;

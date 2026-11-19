@@ -7,6 +7,7 @@ using System.Threading;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
@@ -17,6 +18,7 @@ namespace UniGameUI.Tests
     {
         private GameObject rootObject;
         private GameObject prefabContainer;
+        private GameObject eventSystemObject;
         private UIRoot root;
         private UIView first;
         private UIView next;
@@ -30,6 +32,9 @@ namespace UniGameUI.Tests
                 Object.DestroyImmediate(rootObject);
             if (prefabContainer)
                 Object.DestroyImmediate(prefabContainer);
+            if (eventSystemObject)
+                Object.DestroyImmediate(eventSystemObject);
+            ReleaseInput();
         }
 
         [UnityTest]
@@ -319,26 +324,18 @@ namespace UniGameUI.Tests
             CreateRoot();
             var sceneButton = AddButton(first, "open");
             AddButton(popupTemplate, "close");
-            var events = new GameObject("UniGameUI raycast", typeof(EventSystem));
-            try
-            {
-                rootObject.SetActive(true);
-                yield return StartPage();
-                var current = events.GetComponent<EventSystem>();
-                Assert.That(Raycast(current).Any(hit => hit.gameObject == sceneButton.gameObject), Is.True,
-                    "頁面的子 Canvas 應能接收 raycast。");
+            rootObject.SetActive(true);
+            yield return StartPage();
+            var current = eventSystemObject.GetComponent<EventSystem>();
+            Assert.That(Raycast(current).Any(hit => hit.gameObject == sceneButton.gameObject), Is.True,
+                "頁面的子 Canvas 應能接收 raycast。");
 
-                yield return Expect(root.OpenPopupAsync("popup"), UINavResult.Completed);
-                var popup = root.GetComponentsInChildren<UIView>().Single(view => view.Id == "popup");
-                var popupButton = popup.GetComponentInChildren<Button>();
-                var hits = Raycast(current);
-                Assert.That(hits.Any(hit => hit.gameObject == popupButton.gameObject), Is.True);
-                Assert.That(hits.Any(hit => hit.gameObject == sceneButton.gameObject), Is.False);
-            }
-            finally
-            {
-                Object.DestroyImmediate(events);
-            }
+            yield return Expect(root.OpenPopupAsync("popup"), UINavResult.Completed);
+            var popup = root.GetComponentsInChildren<UIView>().Single(view => view.Id == "popup");
+            var popupButton = popup.GetComponentInChildren<Button>();
+            var hits = Raycast(current);
+            Assert.That(hits.Any(hit => hit.gameObject == popupButton.gameObject), Is.True);
+            Assert.That(hits.Any(hit => hit.gameObject == sceneButton.gameObject), Is.False);
         }
 
         private static Button AddButton(UIView view, string id)
@@ -386,6 +383,9 @@ namespace UniGameUI.Tests
 
         private void CreateRoot()
         {
+            // 工作區在執行期需要一個帶 InputSystemUIInputModule 的 EventSystem，缺少時會記錄錯誤。
+            eventSystemObject = new GameObject("UniGameUI test EventSystem", typeof(EventSystem),
+                typeof(InputSystemUIInputModule));
             rootObject = new GameObject("UniGameUI tests", typeof(RectTransform));
             rootObject.SetActive(false);
             root = rootObject.AddComponent<UIRoot>();
