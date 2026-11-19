@@ -7,7 +7,7 @@ using DG.Tweening;
 
 namespace UniGameUI
 {
-    public enum UITransitionPreset { None, Fade, Slide, RotateFade, Custom }
+    public enum UITransitionPreset { None, Fade, Slide, RotateFade, Custom, Zoom }
     public enum UITransitionDirection { Left, Right, Up, Down }
     public enum UITransitionEase { Linear, InQuad, OutQuad, InOutQuad, OutBack }
 
@@ -20,6 +20,7 @@ namespace UniGameUI
         [SerializeField] internal UITransitionDirection direction = UITransitionDirection.Right;
         [SerializeField, Min(0)] internal float distance = 120f;
         [SerializeField] internal float angle = 12f;
+        [SerializeField, Min(0.01f)] internal float zoomScale = 0.85f;
 
         public UITransitionPreset Preset => preset;
         public float Duration => duration;
@@ -27,6 +28,7 @@ namespace UniGameUI
         public UITransitionDirection Direction => direction;
         public float Distance => distance;
         public float Angle => angle;
+        public float ZoomScale => zoomScale;
 
         public static bool IsDOTweenReady
         {
@@ -154,6 +156,14 @@ namespace UniGameUI
                     view.Motion.localRotation = entering ? offset : pose.Rotation;
                     sequence.Join(view.Motion.DOLocalRotateQuaternion(
                         entering ? pose.Rotation : offset, transition.duration).SetEase(tweenEase));
+                }
+
+                if (transition.preset == UITransitionPreset.Zoom)
+                {
+                    var scaled = pose.Scale * transition.zoomScale;
+                    view.Motion.localScale = entering ? scaled : pose.Scale;
+                    sequence.Join(view.Motion.DOScale(entering ? pose.Scale : scaled, transition.duration)
+                        .SetEase(tweenEase));
                 }
 
                 return sequence;

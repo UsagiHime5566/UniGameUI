@@ -13,7 +13,7 @@
 
 - 開啟目標 Scene 後，**Tools → UniGameUI → Apply JSON Plan…** 可套用計畫。計畫可以省略 `scenePath` 以指定目前作用中的 Scene，然後依一般 Unity 流程存檔。
 - CLI 用 `-executeMethod UniGameUI.Editor.UIPlan.RunFromCommandLine -unigameui-plan <JSON 絕對路徑>`。指定 `-batchmode -quit -projectPath <專案絕對路徑> -logFile <記錄檔絕對路徑>`。CLI 模式需要明確的 `scenePath`，成功後存入指定 Scene。
-- 已有 Unity Editor C# 執行能力時，呼叫 `UniGameUI.Editor.UIPlan.Apply(json)` 或下方公開 C# API。先檢查目前目標和已存在物件。GUI 與 JSON 建立的頁面與路由都使用同一份 Scene 資料。
+- 已有 Unity Editor C# 執行能力時，互動模式使用 `await UniGameUI.Editor.UIPlan.ApplyAsync(json)`。選單與此 API 會透過 Unity 原生套件匯入處理首次使用的 TMP 資源。需要在同一呼叫完成的批次或同步工具可以使用 `UIPlan.Apply(json)`。先檢查目前目標和已存在物件。
 
 ## JSON 計畫
 
@@ -72,8 +72,9 @@
 - `views[].id`、`elements[].id` 和 `action` 使用 ASCII 字母、數字、底線或連字號。ID 是定位與接線用的鍵。Hierarchy 物件名稱可以調整。
 - `mode` 可用 `SingleScene` 或 `Prefab`。只有確定需要新 Scene 時才給 `createScene: true`。新工作區預設參考解析度 1920×1080、每排 3 格。
 - `startPage` 是可選的頁面 ID，指定空字串可清除起始頁。路由種類有 `ShowPage`、`OpenPopup`、`Back`、`ClosePopup`、`Emit`。前兩種需要 `target`。同一來源頁的一個 `action` 對應一條路由。
+- `pageTransitionMode` 可用 `Sequential` 或 `Concurrent`。新工作區預設依序播放。要讓切頁的進場和退場重疊，設定 `Concurrent` 或在 `UIRoot` Inspector 修改「切頁動畫」。
 - 元件支援 `Text`、`Button`、`Image`。矩形座標是 Unity RectTransform 的 anchor 與參考解析度下的座標，Y 向上。可指定 `fontSize`、`fontPath`（TMP Font Asset）、`textColor`、`color`、`spritePath`。首次建立文字時，工具會安裝 uGUI 附帶的 TMP Essential Resources。若專案曾匯入部分資源，先透過 **Window → TextMeshPro → Import TMP Essential Resources** 完成安裝。使用中文或其他語系時，交付前確認字型涵蓋所需字符。
-- `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Custom`，例如 `"enter": { "preset": "Slide", "duration": 0.2, "direction": "Left", "distance": 180, "ease": "OutQuad" }`。方向有 `Left`、`Right`、`Up`、`Down`。另可設定 `angle`，以及 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
+- `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Zoom` 或 `Custom`。例如 `"enter": { "preset": "Zoom", "duration": 0.2, "zoomScale": 0.8, "ease": "OutBack" }`。Zoom 倍率相對於原本的 Motion 尺寸，預設為 0.85。Slide 可設定方向 `Left`、`Right`、`Up`、`Down` 和 `distance`，RotateFade 可設定 `angle`。Ease 有 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
 - 既有頁面可直接新增其他 ID 的元件。要修改既有元件時，指定該元件 ID、原 `kind`、`updateExisting: true` 與要寫入的欄位。若要更新既有 View 的背景或動畫，在 View 設 `updateExisting: true`。要改既有路由在線上加 `replace: true`。平常省略這些選項，重跑可保留人工編修。
 - 更新時只寫入有提供的欄位。`rect` 的 `anchor`、`position`、`size` 與 `enter`／`exit` 的各欄位若省略，維持目前的值；例如只給 `"rect": { "size": { "x": 320, "y": 80 } }` 不會移動元件，只給 `"enter": { "duration": 0.4 }` 不會改動畫種類。
 - 新建立的 Prefab 會存入本次生成的內容。既有 Prefab 的調整會出現在 Scene 預覽並標示待套用，由使用者用 **套用到 Prefab** 審核後提交。先從藍圖查看待套用狀態。
@@ -83,7 +84,8 @@
 - `UIAuthoring.FindWorkspace(scene)`、`CreateWorkspace(scene, mode)`、`ConfigureReview(root, resolution, columns)`。
 - `UIAuthoring.CreatePage(root, id, title, prefabPath)`、`CreatePopup(root, id, title, prefabPath)` 回傳 Scene 中的 `UIView`。將自訂 uGUI 階層加到 `view.Content`。保留外框的排列用途；`view.Motion` 是預設動畫作用的位置。
 - `UIAuthoring.FindEntry(root, id)`、`UIPlan.FindElement(view, id)`、`BindButton(button, action)`、`Connect(root, source, action, kind, target)`、`Disconnect(root, source, action)`、`SetStartPage(root, id)`。
-- `UIAuthoring.SetTransition(view, entering, preset, duration, direction, ease, distance, angle)`。
+- `UIAuthoring.UpdateRoute(root, source, originalAction, action, kind, target)` 用於更新既有路由。改名時一併更新來源 View 的按鈕綁定，並合併為一次 Undo。若來源是 Prefab 審核實例，將覆寫套用後 Prefab 才會使用新動作名稱。
+- `UIAuthoring.SetTransition(view, entering, preset, duration, direction, ease, distance, angle, zoomScale)` 和 `SetPageTransitionMode(root, mode)`。
 - `UIAuthoring.ArrangeReview(root)`、`FocusReview(root, id)`、`PreviewPopupOnPage(root, popupId, pageId)`、`HasReviewOverrides(entry)`、`ApplyReviewOverrides(root, id)`。最後一項適合提交本次新建立的 Prefab。既有實例的覆寫先交給使用者審核。
 - `UIValidation.Check(root)` 回傳結構化錯誤與警告。對於自訂子階層，用 Unity Editor 的 Undo 和序列化 API 儲存變更。
 
@@ -93,7 +95,7 @@
 
 遊戲程式可呼叫 `await root.ShowPageAsync(id, data)`、`await root.OpenPopupAsync(id, data)`、`await root.ClosePopupAsync()` 或 `await root.BackAsync()`。每個回傳的 Unity `Awaitable` 只等待一次。資料可在 `UIView.Showing` 觸發後透過 `view.Data` 取得。
 
-在 View Inspector 可接 `Showing`、`Showed`、`Hiding`、`Hidden`。頁面切換成功時，舊頁 `Hiding`、新頁 `Showing`、舊頁 `Hidden`、新頁 `Showed` 依序觸發。動畫取消會還原準備中的切頁。藍圖的 `Emit` 會從 `UIRoot.ActionEmitted` 發出來源 ID 和動作名稱。程式端用 `root.ActionEmitted.AddListener(OnAction)` 訂閱，其中 `OnAction` 接收兩個 `string`；在停用時用 `RemoveListener` 移除。
+在 View Inspector 可接 `Showing`、`Showed`、`Hiding`、`Hidden`。頁面切換成功時，舊頁 `Hiding`、新頁 `Showing`、舊頁 `Hidden`、新頁 `Showed` 依序觸發。`Hidden` 與 `Showed` 在兩段動畫都完成後確認切頁結果，動畫取消時可還原舊頁。藍圖的 `Emit` 會從 `UIRoot.ActionEmitted` 發出來源 ID 和動作名稱。程式端用 `root.ActionEmitted.AddListener(OnAction)` 訂閱，其中 `OnAction` 接收兩個 `string`，在停用時用 `RemoveListener` 移除。
 
 自訂 DOTween 轉場請繼承 `UIDOTweenAnimation`，在 `Build(Sequence sequence, UIView view, bool entering)` 加入 tween，掛到該 View 並選 `Custom`。播放、取消和還原 `Motion`／`CanvasGroup` 由框架管理。自訂動畫可用 `AppendCallback` 插入回呼。
 
@@ -102,3 +104,6 @@
 1. **Tools → UniGameUI → Blueprint** 會開啟藍圖。選節點可定位對應 Scene 頁面。用右欄編輯動作、切換種類、目標和起始頁，也能從輸出端拖線。
 2. **檢視全部 UI** 會把 Scene 切到 2D 並框選所有審核畫面。Popup 可以在工作區右欄疊在指定頁面上預覽，用 **重新排列** 回到網格。
 3. 在 View Inspector 可預覽進場或退場。C# 可用 `UIAnimationPreview.Start(view, entering)` 與 `UIAnimationPreview.Stop()`。確認 `Validate` 的錯誤已修正，檢查待套用 Prefab 覆寫，再以 Play Mode 試走實際流程。
+4. 在互動 Editor 進 Play 前，若有待套用的覆寫，可以選 **套用並進入**、**直接進入** 或 **取消**。直接進入會使用目前已儲存的 Prefab。若多個 Scene 的審核實例同時修改同一 Prefab，先選擇要手動套用的實例。
+
+建置處理器會從複製的 Scene 中移除審核框與 Prefab 審核實例，並保留單 Scene 模式的頁面物件。執行期依藍圖使用已儲存的 Prefab。

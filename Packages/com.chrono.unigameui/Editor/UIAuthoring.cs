@@ -102,19 +102,17 @@ namespace UniGameUI.Editor
             MarkChanged(root);
         }
 
-        public static void Connect(UIRoot root, string source, string action, UIRouteKind kind, string target = null)
+        public static void SetPageTransitionMode(UIRoot root, UIPageTransitionMode mode)
         {
             CheckRoot(root);
-            if (FindEntry(root, source) == null)
-                throw new ArgumentException($"Unknown source '{source}'.");
-            CheckId(action);
-            if (UIRoute.TargetsEntry(kind))
-            {
-                var expected = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
-                if (FindEntry(root, target)?.Kind != expected)
-                    throw new ArgumentException($"'{target}' must be a registered {expected}.");
-            }
+            Undo.RecordObject(root, "Set page transition mode");
+            root.pageTransitionMode = mode;
+            MarkChanged(root);
+        }
 
+        public static void Connect(UIRoot root, string source, string action, UIRouteKind kind, string target = null)
+        {
+            ValidateRoute(root, source, action, kind, target);
             Undo.RecordObject(root, "Connect UI route");
             var route = root.routes.Find(item => item.Source == source && item.Action == action);
             if (route == null)
@@ -125,6 +123,53 @@ namespace UniGameUI.Editor
             route.kind = kind;
             route.target = UIRoute.TargetsEntry(kind) ? target : "";
             MarkChanged(root);
+        }
+
+        public static void UpdateRoute(UIRoot root, string source, string originalAction, string action,
+            UIRouteKind kind, string target = null)
+        {
+            var entry = ValidateRoute(root, source, action, kind, target);
+            var route = root.routes.Find(item => item.Source == source && item.Action == originalAction) ??
+                throw new ArgumentException($"Unknown route '{source}/{originalAction}'.");
+            if (root.routes.Exists(item => item != route && item.Source == source && item.Action == action))
+                throw new ArgumentException($"Route '{source}/{action}' already exists.");
+
+            var changed = new List<Object> { root };
+            if (action != originalAction && entry.Review)
+            {
+                changed.AddRange(entry.Review.GetComponentsInChildren<UIButtonAction>(true)
+                    .Where(binding => binding.Action == originalAction &&
+                        binding.GetComponentInParent<UIView>(true) == entry.Review));
+            }
+
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Update UI route");
+            Undo.RecordObjects(changed.ToArray(), "Update UI route");
+            route.action = action;
+            route.kind = kind;
+            route.target = UIRoute.TargetsEntry(kind) ? target : "";
+            foreach (var binding in changed.OfType<UIButtonAction>())
+            {
+                binding.action = action;
+                RecordOverride(binding);
+            }
+            MarkChanged(root);
+            Undo.CollapseUndoOperations(group);
+        }
+
+        private static UIEntry ValidateRoute(UIRoot root, string source, string action, UIRouteKind kind, string target)
+        {
+            CheckRoot(root);
+            var entry = FindEntry(root, source) ?? throw new ArgumentException($"Unknown source '{source}'.");
+            CheckId(action);
+            if (UIRoute.TargetsEntry(kind))
+            {
+                var expected = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
+                if (FindEntry(root, target)?.Kind != expected)
+                    throw new ArgumentException($"'{target}' must be a registered {expected}.");
+            }
+            return entry;
         }
 
         public static void Disconnect(UIRoot root, string source, string action)
@@ -141,8 +186,8 @@ namespace UniGameUI.Editor
             if (EditorApplication.isPlayingOrWillChangePlaymode ||
                 !button || !button.GetComponentInParent<UIView>(true))
                 throw new InvalidOperationException("Bind a Button inside a UniGameUI view in Edit Mode.");
-            var binding = button.GetComponent<UIButtonAction>() ??
-                Undo.AddComponent<UIButtonAction>(button.gameObject);
+            if (!button.TryGetComponent<UIButtonAction>(out var binding))
+                binding = Undo.AddComponent<UIButtonAction>(button.gameObject);
             Undo.RecordObject(binding, "Bind UI button");
             binding.action = action;
             RecordOverride(binding);
@@ -153,11 +198,20 @@ namespace UniGameUI.Editor
             float duration = 0.25f, UITransitionDirection direction = UITransitionDirection.Right,
             UITransitionEase ease = UITransitionEase.OutQuad, float distance = 120f, float angle = 12f)
         {
+            SetTransition(view, entering, preset, duration, direction, ease, distance, angle, null);
+        }
+
+        public static void SetTransition(UIView view, bool entering, UITransitionPreset preset,
+            float duration, UITransitionDirection direction, UITransitionEase ease,
+            float distance, float angle, float? zoomScale)
+        {
             if (!view || EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new InvalidOperationException("Select a view in Edit Mode.");
             if (!float.IsFinite(duration) || !float.IsFinite(distance) || !float.IsFinite(angle) ||
                 duration < 0 || distance < 0)
                 throw new ArgumentException("Animation duration and distance must be non-negative and finite.");
+            if (zoomScale.HasValue && (!float.IsFinite(zoomScale.Value) || zoomScale.Value <= 0))
+                throw new ArgumentException("Animation zoom scale must be positive and finite.");
             Undo.RecordObject(view, "Set UI transition");
             var transition = entering ? view.enter : view.exit;
             transition.preset = preset;
@@ -166,6 +220,8 @@ namespace UniGameUI.Editor
             transition.ease = ease;
             transition.distance = distance;
             transition.angle = angle;
+            if (zoomScale.HasValue)
+                transition.zoomScale = zoomScale.Value;
             RecordOverride(view);
         }
 
@@ -258,7 +314,11 @@ namespace UniGameUI.Editor
         public static void ApplyReviewOverrides(UIRoot root, string id)
         {
             CheckRoot(root);
-            var entry = FindEntry(root, id);
+            ApplyReviewOverrides(FindEntry(root, id));
+        }
+
+        internal static void ApplyReviewOverrides(UIEntry entry)
+        {
             if (HasReviewOverrides(entry))
                 PrefabUtility.ApplyPrefabInstance(entry.Review.gameObject, InteractionMode.UserAction);
         }

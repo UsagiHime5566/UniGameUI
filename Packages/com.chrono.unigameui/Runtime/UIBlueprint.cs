@@ -3,10 +3,12 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 
 [assembly: InternalsVisibleTo("UniGameUI.Editor")]
+[assembly: InternalsVisibleTo("UniGameUI.Runtime.Tests")]
 
 namespace UniGameUI
 {
     public enum UIAuthoringMode { SingleScene, Prefab }
+    public enum UIPageTransitionMode { Sequential, Concurrent }
     public enum UIEntryKind { Page, Popup }
     public enum UIRouteKind { ShowPage, OpenPopup, Back, ClosePopup, Emit }
     public enum UINavResult { Completed, Busy, Unavailable, Canceled }

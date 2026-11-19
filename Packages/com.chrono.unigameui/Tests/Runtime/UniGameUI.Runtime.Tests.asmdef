@@ -1,0 +1,14 @@
+{
+  "name": "UniGameUI.Runtime.Tests",
+  "references": ["UniGameUI.Runtime"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false,
+  "defineConstraints": ["UNIGAMEUI_TEST_FRAMEWORK"],
+  "versionDefines": [
+    {
+      "name": "com.unity.test-framework",
+      "expression": "1.0.0",
+      "define": "UNIGAMEUI_TEST_FRAMEWORK"
+    }
+  ]
+}

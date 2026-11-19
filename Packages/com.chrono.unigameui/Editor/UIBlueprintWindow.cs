@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -32,6 +33,7 @@ namespace UniGameUI.Editor
         private Vector2? wireTip;
         private string wireSource;
         private string wireAction;
+        private string wireOriginalAction;
 
         [MenuItem("Tools/UniGameUI/Blueprint", priority = 1)]
         public static void Open()
@@ -70,12 +72,53 @@ namespace UniGameUI.Editor
         {
             Undo.undoRedoPerformed += Rebuild;
             EditorApplication.playModeStateChanged += RefreshOnPlayModeChange;
+            EditorSceneManager.activeSceneChangedInEditMode += ActiveSceneChanged;
+            EditorSceneManager.sceneOpened += SceneOpened;
+            EditorSceneManager.sceneClosed += SceneClosed;
         }
 
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= Rebuild;
             EditorApplication.playModeStateChanged -= RefreshOnPlayModeChange;
+            EditorSceneManager.activeSceneChangedInEditMode -= ActiveSceneChanged;
+            EditorSceneManager.sceneOpened -= SceneOpened;
+            EditorSceneManager.sceneClosed -= SceneClosed;
+        }
+
+        private void ActiveSceneChanged(Scene previous, Scene current)
+        {
+            SetWorkspace(UIAuthoring.FindWorkspace(current));
+        }
+
+        private void SceneOpened(Scene scene, OpenSceneMode mode)
+        {
+            if (mode == OpenSceneMode.Single)
+                SetWorkspace(UIAuthoring.FindWorkspace(scene));
+            else if (!workspace)
+                SetWorkspace(UIAuthoring.FindWorkspace(SceneManager.GetActiveScene()));
+        }
+
+        private void SceneClosed(Scene scene)
+        {
+            if (!workspace || workspace.gameObject.scene == scene)
+            {
+                var active = SceneManager.GetActiveScene();
+                SetWorkspace(active == scene ? null : UIAuthoring.FindWorkspace(active));
+            }
+        }
+
+        private void SetWorkspace(UIRoot next)
+        {
+            if (workspace != next || !next)
+            {
+                selectedId = null;
+                selectedAction = null;
+                scrollOffset = Vector2.zero;
+                scroll = null;
+            }
+            workspace = next;
+            Rebuild();
         }
 
         private void RefreshOnPlayModeChange(PlayModeStateChange change)
@@ -101,13 +144,7 @@ namespace UniGameUI.Editor
             rootVisualElement.Add(toolbar);
             var field = new ObjectField("工作區") { objectType = typeof(UIRoot), allowSceneObjects = true, value = workspace };
             field.AddToClassList("workspace-picker");
-            field.RegisterValueChangedCallback(change =>
-            {
-                workspace = change.newValue as UIRoot;
-                selectedId = null;
-                selectedAction = null;
-                Rebuild();
-            });
+            field.RegisterValueChangedCallback(change => SetWorkspace(change.newValue as UIRoot));
             toolbar.Add(field);
             AddToolbarButton(toolbar, "重新整理", () =>
             {
@@ -260,6 +297,7 @@ namespace UniGameUI.Editor
                 SelectNode(source);
                 wireSource = source;
                 wireAction = actionField?.value;
+                wireOriginalAction = selectedAction;
                 wireTip = stage.WorldToLocal((Vector2)evt.position);
                 port.CapturePointer(evt.pointerId);
                 edges.MarkDirtyRepaint();
@@ -281,6 +319,7 @@ namespace UniGameUI.Editor
                 var target = workspace.Entries.FirstOrDefault(entry =>
                     entry.Id != source && new Rect(positions[entry.Id], new Vector2(NodeWidth, NodeHeight)).Contains(point));
                 var action = wireAction;
+                var originalAction = wireOriginalAction;
                 wireSource = null;
                 wireTip = null;
                 edges.MarkDirtyRepaint();
@@ -293,8 +332,7 @@ namespace UniGameUI.Editor
                     for (var suffix = 2; workspace.Routes.Any(route => route.Source == source && route.Action == action); suffix++)
                         action = $"{stem}_{suffix}";
                 }
-                selectedAction = action;
-                TryEdit(() => UIAuthoring.Connect(workspace, source, action,
+                TryEdit(() => SaveRoute(source, originalAction, action,
                     target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage, target.Id));
                 evt.StopPropagation();
             });
@@ -385,12 +423,8 @@ namespace UniGameUI.Editor
             }
             SetChoices((UIRouteKind)kindField.value, current?.Target);
             kindField.RegisterValueChangedCallback(evt => SetChoices((UIRouteKind)evt.newValue, null));
-            sidebar.Add(new Button(() => TryEdit(() =>
-            {
-                UIAuthoring.Connect(workspace, selected.Id, actionField.value, (UIRouteKind)kindField.value,
-                    targetField?.value);
-                selectedAction = actionField.value;
-            })) { text = "儲存路由" });
+            sidebar.Add(new Button(() => TryEdit(() => SaveRoute(selected.Id, current?.Action,
+                actionField.value, (UIRouteKind)kindField.value, targetField?.value))) { text = "儲存路由" });
             if (current != null)
             {
                 sidebar.Add(new Button(() => TryEdit(() =>
@@ -404,6 +438,15 @@ namespace UniGameUI.Editor
                     DrawSidebar();
                 }) { text = "新增另一條路由" });
             }
+        }
+
+        private void SaveRoute(string source, string originalAction, string action, UIRouteKind kind, string target)
+        {
+            if (originalAction == null)
+                UIAuthoring.Connect(workspace, source, action, kind, target);
+            else
+                UIAuthoring.UpdateRoute(workspace, source, originalAction, action, kind, target);
+            selectedAction = action;
         }
 
         private void DrawEdges(MeshGenerationContext context)

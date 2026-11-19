@@ -7,3 +7,7 @@
 3. 在交付 Scene 裡開啟 **Tools → UniGameUI → Blueprint**，用 **檢視全部 UI** 或藍圖節點定位畫面。單 Scene 頁面用 `Ctrl+S` 存檔。Popup 預覽的修改用 **套用到 Prefab** 儲存。
 
 動畫使用 [DOTween 標準版](https://dotween.demigiant.com/download)。匯入 DOTween 後，在 **Tools → Demigiant → DOTween Utility Panel** 完成 **Setup DOTween**。尚未安裝 DOTween 時，轉場會直接切換，導航仍可直接試跑。
+
+## 回歸測試
+
+在 Unity Test Runner 選擇 UniGameUI 的 Edit Mode 或 Play Mode 測試。Edit Mode 涵蓋局部更新、路由改名和 Undo、Prefab 覆寫、Scene 切換與建置清理。Play Mode 涵蓋返回、Popup、動畫同播與取消。有無 DOTween 都可以執行測試，Test Runner 會依環境選擇適用的動畫案例。

@@ -23,6 +23,7 @@ namespace UniGameUI.Editor
             public Vector2 referenceResolution;
             public int reviewColumns;
             public string startPage;
+            public string pageTransitionMode;
             public ViewSpec[] views;
             public RouteSpec[] routes;
         }
@@ -52,10 +53,11 @@ namespace UniGameUI.Editor
             public string ease;
             public float distance = float.NaN;
             public float angle = float.NaN;
+            public float zoomScale = float.NaN;
 
             public bool IsEmpty =>
                 string.IsNullOrEmpty(preset) && string.IsNullOrEmpty(direction) && string.IsNullOrEmpty(ease) &&
-                float.IsNaN(duration) && float.IsNaN(distance) && float.IsNaN(angle);
+                float.IsNaN(duration) && float.IsNaN(distance) && float.IsNaN(angle) && float.IsNaN(zoomScale);
         }
 
         [Serializable]
@@ -101,14 +103,21 @@ namespace UniGameUI.Editor
         private enum ElementKind { Text, Button, Image }
 
         [MenuItem("Tools/UniGameUI/Apply JSON Plan…")]
-        private static void ApplyFromMenu()
+        private static async void ApplyFromMenu()
         {
             var path = EditorUtility.OpenFilePanel("Apply UniGameUI plan", "", "json");
-            if (!string.IsNullOrEmpty(path))
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
             {
-                var root = Apply(File.ReadAllText(path));
+                var root = await ApplyAsync(File.ReadAllText(path));
                 SceneManager.SetActiveScene(root.gameObject.scene);
                 UIAuthoring.FocusReview(root);
+            }
+            catch (Exception exception)
+            {
+                EditorUtility.DisplayDialog("UniGameUI", exception.Message, "關閉");
             }
         }
 
@@ -123,13 +132,33 @@ namespace UniGameUI.Editor
 
         public static UIRoot Apply(string json, bool saveScene = false)
         {
+            return Apply(ReadPlan(json), saveScene, SceneManager.GetActiveScene());
+        }
+
+        public static async Awaitable<UIRoot> ApplyAsync(string json, bool saveScene = false)
+        {
+            var plan = ReadPlan(json);
+            var active = SceneManager.GetActiveScene();
+            if (!Application.isBatchMode && NeedsText(plan))
+                await UITmpResources.ImportWithEditorAsync();
+            return Apply(plan, saveScene, active);
+        }
+
+        private static Plan ReadPlan(string json)
+        {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new InvalidOperationException("Apply an authoring plan in Edit Mode.");
-            var plan = JsonUtility.FromJson<Plan>(json) ?? throw new ArgumentException("Invalid JSON plan.");
+            return JsonUtility.FromJson<Plan>(json) ?? throw new ArgumentException("Invalid JSON plan.");
+        }
+
+        private static UIRoot Apply(Plan plan, bool saveScene, Scene originalActiveScene)
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                throw new InvalidOperationException("Apply an authoring plan in Edit Mode.");
             if (saveScene && string.IsNullOrEmpty(plan.scenePath))
                 throw new ArgumentException("A saving plan must name the exact Scene asset path.");
 
-            var scene = FindScene(plan, out var createdScene);
+            var scene = FindScene(plan, originalActiveScene, out var createdScene);
             var createdPrefabs = new List<string>();
             Undo.IncrementCurrentGroup();
             var group = Undo.GetCurrentGroup();
@@ -160,6 +189,8 @@ namespace UniGameUI.Editor
                 }
                 if (plan.startPage != null)
                     UIAuthoring.SetStartPage(root, plan.startPage);
+                if (!string.IsNullOrEmpty(plan.pageTransitionMode))
+                    UIAuthoring.SetPageTransitionMode(root, Parse(plan.pageTransitionMode, root.PageTransitionMode));
 
                 var issues = UIValidation.Check(root);
                 var errors = issues.Where(issue => issue.Severity == UIIssueSeverity.Error);
@@ -193,11 +224,11 @@ namespace UniGameUI.Editor
                 .FirstOrDefault(element => element.Id == id)?.gameObject;
         }
 
-        private static Scene FindScene(Plan plan, out bool created)
+        private static Scene FindScene(Plan plan, Scene originalActiveScene, out bool created)
         {
             created = false;
             if (string.IsNullOrEmpty(plan.scenePath))
-                return SceneManager.GetActiveScene();
+                return originalActiveScene;
             UIAuthoring.CheckAssetPath(plan.scenePath, ".unity");
             var scene = SceneManager.GetSceneByPath(plan.scenePath);
             if (scene.IsValid() && scene.isLoaded)
@@ -463,7 +494,8 @@ namespace UniGameUI.Editor
                 Parse(animation.direction, current.Direction),
                 Parse(animation.ease, current.Ease),
                 Merge(current.Distance, animation.distance),
-                Merge(current.Angle, animation.angle));
+                Merge(current.Angle, animation.angle),
+                Merge(current.ZoomScale, animation.zoomScale));
         }
 
         private static bool IsUnset(Vector2 value)
@@ -497,7 +529,7 @@ namespace UniGameUI.Editor
 
         private static T GetOrAdd<T>(GameObject gameObject) where T : Component
         {
-            return gameObject.GetComponent<T>() ?? Undo.AddComponent<T>(gameObject);
+            return gameObject.TryGetComponent<T>(out var component) ? component : Undo.AddComponent<T>(gameObject);
         }
 
         private static T LoadAsset<T>(string path) where T : Object

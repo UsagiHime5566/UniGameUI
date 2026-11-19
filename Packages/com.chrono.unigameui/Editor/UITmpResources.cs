@@ -13,12 +13,65 @@ namespace UniGameUI.Editor
     {
         private const string AssetFolder = "Assets/TextMesh Pro";
         private const int TarBlockSize = 512;
+        private const string PackageName = "TMP Essential Resources";
+        private static bool importing;
 
         private sealed class Resource
         {
             public string Path;
             public byte[] Data;
             public byte[] Meta;
+        }
+
+        public static async Awaitable ImportWithEditorAsync()
+        {
+            if (Resources.Load<TMP_Settings>("TMP Settings"))
+                return;
+            if (importing)
+                throw new InvalidOperationException("TMP Essential Resources are already being imported.");
+
+            var bundle = FindBundle();
+            var completion = new AwaitableCompletionSource();
+            var deadline = EditorApplication.timeSinceStartup + 60;
+            string error = null;
+            importing = true;
+            EditorApplication.update += CheckImport;
+            AssetDatabase.importPackageFailed += ImportFailed;
+            AssetDatabase.importPackageCancelled += ImportCanceled;
+            try
+            {
+                AssetDatabase.ImportPackage(bundle, false);
+                await completion.Awaitable;
+            }
+            finally
+            {
+                EditorApplication.update -= CheckImport;
+                AssetDatabase.importPackageFailed -= ImportFailed;
+                AssetDatabase.importPackageCancelled -= ImportCanceled;
+                importing = false;
+            }
+
+            void CheckImport()
+            {
+                if (error != null)
+                    completion.TrySetException(new InvalidOperationException(error));
+                else if (!EditorApplication.isUpdating && Resources.Load<TMP_Settings>("TMP Settings"))
+                    completion.TrySetResult();
+                else if (EditorApplication.timeSinceStartup >= deadline)
+                    completion.TrySetException(new TimeoutException("TMP Essential Resources did not finish importing."));
+            }
+
+            void ImportFailed(string name, string message)
+            {
+                if (name == PackageName)
+                    error = message;
+            }
+
+            void ImportCanceled(string name)
+            {
+                if (name == PackageName)
+                    error = "TMP Essential Resources import was canceled.";
+            }
         }
 
         public static void Ensure()
@@ -31,11 +84,7 @@ namespace UniGameUI.Editor
                 throw new InvalidOperationException(
                     "Finish the existing TMP Essential Resources import from Window > TextMeshPro before creating text.");
 
-            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(TMP_Settings).Assembly);
-            var bundle = package == null ? "" : Path.Combine(package.resolvedPath, "Package Resources",
-                "TMP Essential Resources.unitypackage");
-            if (!File.Exists(bundle))
-                throw new FileNotFoundException("The installed uGUI package is missing TMP Essential Resources.", bundle);
+            var bundle = FindBundle();
 
             // The regular Unity package import is queued and may not run inside -executeMethod -quit.
             var temp = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Temp"));
@@ -81,6 +130,16 @@ namespace UniGameUI.Editor
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             if (!Resources.Load<TMP_Settings>("TMP Settings"))
                 throw new InvalidOperationException("TextMeshPro Essential Resources could not be loaded.");
+        }
+
+        private static string FindBundle()
+        {
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(TMP_Settings).Assembly);
+            var bundle = package == null ? "" : Path.Combine(package.resolvedPath, "Package Resources",
+                PackageName + ".unitypackage");
+            if (!File.Exists(bundle))
+                throw new FileNotFoundException("The installed uGUI package is missing TMP Essential Resources.", bundle);
+            return bundle;
         }
 
         private static IEnumerable<Resource> ReadPackage(string bundle)

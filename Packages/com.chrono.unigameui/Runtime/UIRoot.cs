@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.Events;
@@ -19,6 +20,7 @@ namespace UniGameUI
         [SerializeField] internal UIAuthoringMode mode;
         [SerializeField] internal Vector2 referenceResolution = new Vector2(1920, 1080);
         [SerializeField, Min(1)] internal int reviewColumns = 3;
+        [SerializeField, HideInInspector] internal UIPageTransitionMode pageTransitionMode;
         [SerializeField, HideInInspector] internal RectTransform reviewLayer;
         [SerializeField, HideInInspector] internal string startPageId;
         [SerializeField, HideInInspector] internal List<UIEntry> entries = new List<UIEntry>();
@@ -32,6 +34,7 @@ namespace UniGameUI
         private readonly List<UIView> popups = new List<UIView>();
         private RectTransform pageLayer;
         private RectTransform popupLayer;
+        private RectTransform stagingLayer;
         private UIView currentPage;
         private CancellationTokenSource lifetime;
         private bool ready;
@@ -40,6 +43,7 @@ namespace UniGameUI
         public UIAuthoringMode Mode => mode;
         public Vector2 ReferenceResolution => referenceResolution;
         public int ReviewColumns => reviewColumns;
+        public UIPageTransitionMode PageTransitionMode => pageTransitionMode;
         public IReadOnlyList<UIEntry> Entries => entries;
         public IReadOnlyList<UIRoute> Routes => routes;
         public string StartPageId => startPageId;
@@ -52,17 +56,16 @@ namespace UniGameUI
 
         private void Awake()
         {
-            if (!reviewLayer)
+            if (reviewLayer)
             {
-                Debug.LogError("Create a UniGameUI workspace with the Editor authoring tool.", this);
-                return;
+                reviewLayer.gameObject.SetActive(false);
+                stagingLayer = reviewLayer;
             }
 
             var canvas = GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             transform.localScale = Vector3.one;
             GetComponent<CanvasScaler>().referenceResolution = referenceResolution;
-            reviewLayer.gameObject.SetActive(false);
             pageLayer = CreateLayer("Pages");
             popupLayer = CreateLayer("Popups");
 
@@ -248,12 +251,16 @@ namespace UniGameUI
             var previousData = next.Data;
             try
             {
-                if (previous)
+                if (previous && pageTransitionMode == UIPageTransitionMode.Concurrent)
                 {
-                    await previous.HideAsync(cancellation);
-                    previous.gameObject.SetActive(false);
+                    await ChangePageConcurrentlyAsync(previous, next, data, cancellation);
                 }
-                await next.ShowAsync(data, cancellation);
+                else
+                {
+                    if (previous)
+                        await HidePreviousPageAsync(previous, cancellation);
+                    await next.ShowAsync(data, cancellation);
+                }
                 cancellation.ThrowIfCancellationRequested();
             }
             catch
@@ -272,6 +279,49 @@ namespace UniGameUI
             if (previous)
                 previous.FinishHiding();
             next.FinishShowing();
+        }
+
+        private static async Awaitable HidePreviousPageAsync(UIView view, CancellationToken cancellation)
+        {
+            await view.HideAsync(cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            view.gameObject.SetActive(false);
+        }
+
+        private static async Awaitable ChangePageConcurrentlyAsync(
+            UIView previous, UIView next, object data, CancellationToken cancellation)
+        {
+            next.transform.SetAsLastSibling();
+            using var pair = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            var completion = new AwaitableCompletionSource();
+            ExceptionDispatchInfo failure = null;
+            var remaining = 2;
+
+            Observe(HidePreviousPageAsync(previous, pair.Token));
+            Observe(next.ShowAsync(data, pair.Token));
+            await completion.Awaitable;
+            failure?.Throw();
+
+            async void Observe(Awaitable animation)
+            {
+                try
+                {
+                    await animation;
+                }
+                catch (Exception exception)
+                {
+                    if (failure == null)
+                    {
+                        failure = ExceptionDispatchInfo.Capture(exception);
+                        pair.Cancel();
+                    }
+                }
+                finally
+                {
+                    if (--remaining == 0)
+                        completion.TrySetResult();
+                }
+            }
         }
 
         private async Awaitable<UINavResult> OpenPopupCoreAsync(
@@ -339,7 +389,12 @@ namespace UniGameUI
 
         private UIView InstantiateView(UIEntry entry, RectTransform parent)
         {
-            var view = Instantiate(entry.Prefab, reviewLayer, false);
+            if (!stagingLayer)
+            {
+                stagingLayer = CreateLayer("Prefab Staging");
+                stagingLayer.gameObject.SetActive(false);
+            }
+            var view = Instantiate(entry.Prefab, stagingLayer, false);
             Prepare(view, parent);
             return view;
         }

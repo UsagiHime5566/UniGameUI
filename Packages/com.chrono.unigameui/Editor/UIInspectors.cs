@@ -19,6 +19,10 @@ namespace UniGameUI.Editor
             inspector.Add(columns);
             inspector.Add(new Button(() => UIAuthoring.ConfigureReview(root, resolution.value, columns.value))
                 { text = "更新審核排列設定" });
+            var transitionMode = new EnumField("切頁動畫", root.PageTransitionMode);
+            transitionMode.RegisterValueChangedCallback(change =>
+                UIAuthoring.SetPageTransitionMode(root, (UIPageTransitionMode)change.newValue));
+            inspector.Add(transitionMode);
             inspector.Add(new Button(UIBlueprintWindow.Open) { text = "開啟藍圖" });
             inspector.Add(new Button(() => UIAuthoring.FocusReview(root)) { text = "檢視全部 UI" });
             inspector.Add(new PropertyField(serializedObject.FindProperty("actionEmitted"), "送出動作事件"));
