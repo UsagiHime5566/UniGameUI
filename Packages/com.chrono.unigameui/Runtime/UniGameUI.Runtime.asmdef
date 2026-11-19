@@ -1,5 +1,5 @@
 {
   "name": "UniGameUI.Runtime",
   "rootNamespace": "UniGameUI",
-  "references": ["UnityEngine.UI"]
+  "references": ["UnityEngine.UI", "Unity.InputSystem", "Unity.TextMeshPro"]
 }

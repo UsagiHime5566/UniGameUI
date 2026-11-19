@@ -461,7 +461,22 @@ Prefab 模式的打包、外部磁碟安裝、互動 Editor 中的匯入，Claud
 
 ### 驗證方法
 
-在暫存區建一個最小專案，`Packages/manifest.json` 放 ugui 2.0.0、test-framework 1.6.0，以及 jsonserialize、uielements、ui、imgui、audio、physics、physics2d 模組（後三個是 DOTween 的模組腳本需要的），把套件複製到 `Packages/` 後執行：
+在暫存區建一個最小專案，`Packages/manifest.json` 放 ugui 2.0.0、inputsystem 1.19.0、test-framework 1.6.0，以及 jsonserialize、uielements、ui、imgui、audio、physics、physics2d 模組（後三個是 DOTween 的模組腳本需要的）。
+
+0.4.0 起套件只支援新的 Input System，副本專案第一次啟動前要先把 Active Input Handling 設成新系統，否則 Validate 會回報錯誤，導覽與返回鍵的測試也收不到輸入。做法是先放一個只有幾行的 `ProjectSettings/ProjectSettings.asset`，Unity 第一次開啟時會補齊其餘欄位：
+
+```yaml
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  runInBackground: 1
+  activeInputHandler: 1
+```
+
+`runInBackground: 1` 是給打包驗證用的：以 `-batchmode` 執行的 Player 沒有視窗焦點，關閉時 `InputSystemUIInputModule` 不處理輸入。
+
+把套件複製到 `Packages/` 後執行：
 
 1. `-runTests -testPlatform EditMode` 與 `-runTests -testPlatform PlayMode`。
 2. 用 `-importPackage` 匯入本機 Asset Store 快取裡的 DOTween，再跑一次 PlayMode。

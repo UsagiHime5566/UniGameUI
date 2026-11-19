@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using Object = UnityEngine.Object;
 
 namespace UniGameUI.Editor
@@ -103,11 +105,51 @@ namespace UniGameUI.Editor
                 CheckBindings(entry, entry.Review, routes, issues, false);
             }
 
-            var eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsSortMode.None);
-            if (eventSystems.Length != 1 || !eventSystems[0].GetComponent<BaseInputModule>())
-                issues.Add(Warning("Use one active EventSystem with an input module in the loaded scenes."));
+            CheckInput(issues);
             UIIdConstants.Check(root, scenePath, checkConstantsFile, issues);
             return issues;
+        }
+
+        // 測試用：模擬 Player Settings 的 Active Input Handling（0 舊、1 新、2 兩者）。
+        internal static int? ActiveInputHandlingOverride;
+
+        private static void CheckInput(List<UIIssue> issues)
+        {
+            var eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsSortMode.None);
+            if (eventSystems.Length != 1)
+            {
+                issues.Add(Error($"載入的 Scene 裡要有剛好一個啟用的 EventSystem（目前 {eventSystems.Length} 個）。" +
+                    "建立工作區時會自動加上；多個 Scene 同時開啟時請只保留一個。"));
+            }
+            else if (eventSystems[0].GetComponent<BaseInputModule>() is not InputSystemUIInputModule)
+            {
+                issues.Add(Error($"EventSystem「{eventSystems[0].name}」的輸入模組必須是 InputSystemUIInputModule。" +
+                    "請移除其他輸入模組，再加上 Input System UI Input Module。"));
+            }
+
+            if (ActiveInputHandling() == 0)
+            {
+                issues.Add(Error("Player Settings 的 Active Input Handling 只啟用舊的 Input Manager。" +
+                    "請改成 Input System Package (New) 或 Both，並重新啟動 Editor。"));
+            }
+        }
+
+        private static int ActiveInputHandling()
+        {
+            if (ActiveInputHandlingOverride.HasValue)
+                return ActiveInputHandlingOverride.Value;
+
+            var settings = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset");
+            var property = settings.Length == 0 || !settings[0]
+                ? null
+                : new SerializedObject(settings[0]).FindProperty("activeInputHandler");
+            if (property != null)
+                return property.intValue;
+#if ENABLE_INPUT_SYSTEM
+            return 1;
+#else
+            return 0;
+#endif
         }
 
         private static void CheckBindings(UIEntry entry, UIView view, HashSet<(string, string)> routes,

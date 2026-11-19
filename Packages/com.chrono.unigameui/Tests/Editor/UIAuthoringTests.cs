@@ -22,7 +22,7 @@ using Object = UnityEngine.Object;
 
 namespace UniGameUI.Editor.Tests
 {
-    public sealed class UIAuthoringTests
+    public sealed partial class UIAuthoringTests
     {
         private const string GeneratedParent = "Assets/UniGameUI";
         private const string Generated = GeneratedParent + "/Generated";

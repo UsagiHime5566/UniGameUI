@@ -1,6 +1,12 @@
 {
   "name": "UniGameUI.Runtime.Tests",
-  "references": ["UniGameUI.Runtime", "UnityEngine.UI"],
+  "references": [
+    "UniGameUI.Runtime",
+    "UnityEngine.UI",
+    "Unity.InputSystem",
+    "Unity.InputSystem.TestFramework",
+    "Unity.TextMeshPro"
+  ],
   "optionalUnityReferences": ["TestAssemblies"],
   "autoReferenced": false,
   "defineConstraints": ["UNIGAMEUI_TEST_FRAMEWORK"],

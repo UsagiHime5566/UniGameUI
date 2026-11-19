@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
@@ -584,17 +585,8 @@ namespace UniGameUI.Editor
         {
             if (scene.GetRootGameObjects().Any(root => root.GetComponentInChildren<EventSystem>(true)))
                 return;
-            var gameObject = new GameObject("EventSystem", typeof(EventSystem));
+            var gameObject = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             SceneManager.MoveGameObjectToScene(gameObject, scene);
-#if ENABLE_INPUT_SYSTEM
-            var module = Type.GetType("UnityEngine.InputSystem.UI.InputSystemUIInputModule, Unity.InputSystem");
-            if (module != null)
-                gameObject.AddComponent(module);
-            else
-                Debug.LogError("Install and enable an Input System UI input module for this EventSystem.", gameObject);
-#else
-            gameObject.AddComponent<StandaloneInputModule>();
-#endif
             Undo.RegisterCreatedObjectUndo(gameObject, "Create UI EventSystem");
         }
 
