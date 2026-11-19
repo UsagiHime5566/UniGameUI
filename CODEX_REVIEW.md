@@ -9,9 +9,10 @@
 - 第四輪：2026-11-20，commit `487f4b6`（Claude 審核第二批）
 - 第二批修正：2026-11-20，commit `45b7e0b`
 - 第五輪：2026-11-20，commit `45b7e0b`（Claude 複驗第二批修正）
+- 第三批改進：2026-11-20，commit `db8691f`（0.4.0，Claude 子 session 實作，尚未打標籤、尚未審核）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一批與第二批都已通過獨立審核。第二批的 G1～G5 已修正，Claude 複驗後確認全部符合，**0.3.0 可以打 `v0.3.0` 標籤**。複驗結果見「第五輪審核」，剩下的互動操作見「未驗證」。第三批（0.4.0）的詳細規格已寫進 `ROADMAP.md`，待實作。
+**現況：** 第一批與第二批都已通過獨立審核。第二批的 G1～G5 已修正，Claude 複驗後確認全部符合，**0.3.0 可以打 `v0.3.0` 標籤**。複驗結果見「第五輪審核」，剩下的互動操作見「未驗證」。第三批（0.4.0）的十一項已由 Claude 的子 session 實作，**等主 session 獨立審核**；實作者自己的測試結果、打包驗證與「與規格不同的地方」見「驗證紀錄」的「第三批改進（0.4.0）」。
 
 **分工：** 2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，這份文件裡提到 codex 的地方是當時的紀錄。
 
@@ -30,7 +31,7 @@
 | M3 | 審核複本被打包進 build | 已修正、已用實際打包驗證 |
 | M4 | `UINavResult.Unavailable` 包太多情況 | 已修正，PlayMode 已驗證回傳值與 Console 診斷 |
 | M5 | 遊戲端 API 不足 | 已補 View 查詢、歷史、Popup 結果及全域事件，PlayMode 已驗證 |
-| L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵排在第三批；Overlay 以外的模式與 Safe Area 不做 |
+| L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵已在第三批（3-7）實作，待審核；Overlay 以外的模式與 Safe Area 不做 |
 | L2 | 藍圖視窗不跟隨 Scene 切換 | 已修正、已驗證 |
 | L3 | 切頁只能依序播放 | 已修正（新增 `Concurrent` 模式）、已驗證 |
 | L4 | 沒有縮放預設動畫 | 已修正（新增 `Zoom`）、已驗證 |
@@ -41,7 +42,7 @@
 | DOTween 疑慮 | 轉場中停用 UIRoot 可能引發 Unity 錯誤 | 已排除（見驗證紀錄） |
 | N1～N5 | 第二輪發現的小問題 | 已修正，外部安裝及自動測試通過，實際拖線與 Inspector 操作待人工確認 |
 | P1 | 所有畫面共用一個 Canvas | 已新增子 Canvas 與修復工具，已驗證 Prefab 覆寫、raycast 與 Windows Player |
-| P2 | Popup 每次開啟都重新建立 | 排在第三批 |
+| P2 | Popup 每次開啟都重新建立 | 已在第三批（3-8）新增重用選項，預設仍是重新建立；PlayMode 已驗證，待審核 |
 | P3 | 頁面不會釋放 | AgentGuide 已註明單 Scene 與 Prefab 頁面的保留方式 |
 | U1 | `UIView` 不能繼承 | 已新增 `IUIViewHandler` 與 `UIViewBehaviour`，PlayMode 與 Windows Player 已驗證 |
 | U2 | ID 全是字串 | 已自動產生常數，已驗證存檔、重產、名稱衝突與 Player 編譯 |
@@ -56,7 +57,8 @@
 | G3 | 事件派送依賴 Unity 的非公開方法，失效時沒有退路 | 已加入公開 `Invoke()` 備援。正常反射與模擬方法缺失的路徑都通過 PlayMode。Claude 另外改掉方法名稱實際模擬，導航全部正常；IL2CPP 仍未驗證 |
 | G4 | AgentGuide 要補的說明 | 已補齊五點。另驗證瞬間切換時 `OnShown` 可早於 `Start`。Claude 已核對內容 |
 | G5 | 零碎項目（計畫欄位寫錯位置沒有提示、訊息用字） | 已修正。JSON 預檢會定位不適用的欄位，通知例外與導航失敗使用不同訊息。Claude 已在 log 確認兩種訊息 |
-| I1 | 第五輪的小提醒（測試依賴靜態旗標、指南一句話不好讀） | 不影響通過，併入第三批的第一項 |
+| I1 | 第五輪的小提醒（測試依賴靜態旗標、指南一句話不好讀） | 已在第三批（3-1）處理：測試開始前重設旗標，指南改成直接說明。待審核 |
+| 3-1～3-11 | 第三批：元件與輸入（0.4.0） | 已實作。四組自動測試全數通過，Windows Player（Mono、High Managed Stripping）驗證通過；IL2CPP 與互動操作未驗證。待審核 |
 
 ## 第五輪審核：第二批修正（0.3.0）
 
@@ -321,6 +323,66 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 
 ## 驗證紀錄
 
+### 第三批改進（0.4.0）
+
+以下是實作者（Claude 的子 session）自己的紀錄，等主 session 獨立複驗。十一項各一個 commit（`240ed57` 到 `db8691f`），分支 `feat/batch-3` 已快轉合併回 `main`。
+
+使用 Unity 6000.3.19f1 的隔離副本，Active Input Handling 設為新的 Input System。EditMode 啟用圖形裝置，PlayMode 使用批次模式。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 56 | 0 | 0 |
+| 有 DOTween | PlayMode | 67 | 0 | 1 |
+| 無 DOTween | EditMode | 20 | 0 | 36 |
+| 無 DOTween | PlayMode | 63 | 0 | 5 |
+
+- 改動前的基準是 25、38 加 1 略過、17 加 8 略過、35 加 4 略過。既有案例全部保留並通過，新增 EditMode 31 個、PlayMode 29 個。
+- 有 DOTween 時略過只供無 DOTween 環境執行的瞬間切換案例。無 DOTween 時，EditMode 略過所有需要套用 JSON 計畫的案例（沒有 DOTween 時計畫會被擋下），PlayMode 略過需要真實動畫的案例，包含新增的「轉場中按返回鍵」。
+- 既有的 PlayMode 案例只改了共用的建立程式：現在會建立一個帶 `InputSystemUIInputModule` 的 EventSystem，因為工作區在執行期找不到它會記錄錯誤。raycast 的案例改用這個共用的 EventSystem。
+- 導覽、返回鍵、點遮罩與確認框的 PlayMode 案例用 Input System 的 `InputTestFixture` 建立鍵盤、滑鼠、手把與觸控螢幕。事件只排進佇列，由下一個影格的輸入更新處理，順序和實際執行時相同（輸入、輸入模組、工作區）。
+- 測試用的起始元件安裝在自己的資料夾：EditMode 用 `Assets/UniGameUI-TestWidgets`，會改到元件的案例另外用各自的暫存資料夾；PlayMode 用 `Assets/UniGameUI-PlayModeWidgets`，由 `IPrebuildSetup` 在進入 Play Mode 前安裝。測試不會動到 `Assets/UniGameUI/Widgets`。跑完後確認副本專案的 `Assets` 沒有留下這些資料夾、`Assets/UniGameUI`，以及測試自己匯入的 `Assets/TextMesh Pro`。
+
+**打包驗證（Windows 64 位元、Mono、High Managed Stripping、含 DOTween）**
+
+先用腳本把 AgentGuide 裡所有的 C# 與 JSON 區塊原文抽出來，再照下面的順序在全新的副本專案執行。指南印出來的內容就是實際套用、編譯與執行的內容。
+
+1. 用 CLI（`UIPlan.RunFromCommandLine`）套用指南的示例計畫。專案原本沒有元件集，套用時自動安裝起始元件，建立 `Workshop.unity`（四個 View、五條路由、登記起始確認框）並產生常數。
+2. 用 CLI 套用只有兩個頁面的 `Launch.unity` 計畫，給 `LaunchPage` 範本用。
+3. 開著 Workshop Scene，用 `UIPlan.Apply` 套用指南的自訂元件計畫（`PrimaryButton` 比照 `Button`、`Minimap` 是 `Custom`）。
+4. 指南的七個類別（`WorkshopPage`、`SettingsPage`、`ShopPage`、`GameLocalizer`、`LanguageSwitcher`、`UnsavedChangesGuard`、`LaunchPage`）與兩段只有陳述式的片段，放進獨立的 asmdef 編譯通過。這個 asmdef 引用 `UniGameUI.Runtime`、`UniGameUI.Generated`、`Unity.TextMeshPro`、`UnityEngine.UI`、`Unity.InputSystem`。把頁面腳本掛到對應的 View 之後，Validate 沒有任何問題，打包成功。
+5. 執行檔以 `-batchmode -nographics` 執行，結束碼 0。探測腳本依序確認：
+   - **十種元件：** `Text`、`Image`、`Panel`、`Button`、`Toggle`、`Slider`、`ProgressBar`、`Dropdown`、`InputField`、`ScrollList` 都在啟用的畫面上，有啟用的 Graphic 與子 Canvas，並用 `View.Get<T>()` 取得表中的型別。兩個自訂元件也取得。改滑桿的值會進到頁面腳本在 `Awake` 訂閱的監聽。清單有三個項目，`GetInItem` 取得文字，點擊觸發 `ItemClicked`。
+   - **確認框：** 透過 `WorkshopPage` 的 `ConfirmAsync` 確定一次（執行了刪除）、取消一次（沒有執行），第二次開啟是同一個實例。另外直接呼叫 `ConfirmAsync` 各一次，分別回傳 true 與 false。
+   - **虛擬手把**（`InputSystem.AddDevice<Gamepad>()` 加 `QueueStateEvent`）：方向鍵進入導覽模式並選取 `defaultSelected` 指定的按鈕，再按一次移到下一顆，確定鍵開啟商店頁，取消鍵返回並恢復原本的選取，在最底層再按一次觸發 `BackRequestedAtRoot`。之後用虛擬滑鼠移動，回到 `Pointer` 模式並清除選取。
+   - **切換語言：** `RefreshLocalization()` 之後現存頁面的文字更新，`OnLocalizationChanged` 更新了頁面腳本自己組出來的文字。沒有翻譯的鍵值各警告一次，訊息帶畫面與元件。
+6. 批次模式的圖形裝置是 Null。這裡的「顯示」指物件啟用而且有可以繪製的 Graphic，**沒有驗證實際畫出來的畫面**，外觀要人工確認。
+7. **沒有驗證 IL2CPP**，這台電腦沒有 6000.3.19f1 的 IL2CPP 模組。
+
+**與規格不同的地方**
+
+規格說型別、方法與欄位名稱可以調整，以下是實際調整與補上的部分，請審核時一併判斷。
+
+1. **元件集多記兩個 Prefab。** `UIWidgetSet` 多了 `ListItem` 與 `Confirm` 兩個屬性，用來記錄清單項目與確認框的 Prefab，這樣它們和十個元件一樣可以搬位置，重複安裝時也知道缺不缺。另外有 `UIWidgetSet.Find(name)` 與 `UIWidgets.ConfirmPrefabPath`。
+2. **清單多了方向的設定。** `UIList` 多了 `Direction` 屬性與 `UIListDirection` 列舉；內容物件上的版面配置是新的 `UIListLayout`（一個可以切換方向的 Layout Group）。計畫的 `direction` 只寫入清單上的欄位，執行期才套用到版面配置與 ScrollRect。專案把內容物件換成 Unity 內建的 Layout Group 時，清單只負責產生項目，不改排列設定。
+3. **計畫寫出的欄位一律固定成覆寫。** Unity 只把「和 Prefab 不同」的值記成覆寫。為了符合「有設定的不變」，計畫寫出的欄位即使數值剛好和元件 Prefab 相同，也會固定成覆寫（先暫時改成別的值讓覆寫成立，再改回來）。陣列欄位（`options`、`optionKeys`）沒有這樣處理。
+4. **View 的選項跟著 `updateExisting`。** `defaultSelected`、`backKey`、`popupCache`、`overlayClick` 和背景、動畫一樣，只在新建 View 或 View 設了 `updateExisting` 時寫入；這四個欄位的檢查則不論有沒有 `updateExisting` 都會做。
+5. **選取的記憶只用在「回到」畫面。** 關閉 Popup 回到底下的畫面、或返回上一頁時，恢復該畫面上次的選取。往前切到一個頁面、或開啟一個 Popup（包含重用的實例）時，從預設選取元件開始。規格寫的是「選取這個畫面上次被選取的元件」；照字面做的話，重用的確認框第二次開啟會停在上次按的「確定」，和「預設選取取消」衝突。
+6. **手把的取消鍵在 `Pointer` 模式下會同時切換模式並返回。** 規格說進入導覽的那一次輸入只用來建立選取；實作上，方向與確定確實不會同時移動或按下，但取消鍵仍然照返回鍵的五個步驟處理，玩家不必按兩次才能返回。
+7. **複製確認框不能換畫面 ID。** View Prefab 的畫面 ID 存在 Prefab 裡，Inspector 不能改，複製出來的檔案仍然是 `confirm`，用別的 ID 登記會在套用前報錯（訊息已改成說明畫面 ID 不符）。同一個工作區要有第二種樣式的確認框時，做法是用計畫建立新的 Popup、放進 `title`、`message`、`confirm`、`cancel` 四個元件，再把 `UIConfirmPopup` 掛到根節點，已用 EditMode 測試確認可行並寫進 AgentGuide。**這和規格「複製 Prefab，用 popupId 指定」的字面不同，要不要加一個「複製 View Prefab 並換 ID」的工具，請使用者決定。**
+8. **查不到鍵值的警告以工作區為單位。** 每個鍵值在同一個 `UIRoot` 只警告一次，切換語言不會重新計算；文字與圖片的鍵值分開計。`root.Localize()` 查不到時也算在內。`IUILocalizer` 自己丟例外時記錄例外，當成查不到。
+9. **Validate 多了三項規格沒列的錯誤：** 元件集裡有空白或重複的名稱、元件集的項目沒有 Prefab、Popup 設了點遮罩關閉但沒有遮罩物件。
+10. **起始輸入框不會一選到就進入編輯。** 起始的 `InputField` 把 TMP 的 `shouldActivateOnSelect` 關掉，按確定或用滑鼠點擊才開始編輯。否則用手把或鍵盤移到輸入框時，方向輸入會被輸入框吃掉，走不出來。
+11. **其他新增的公開成員：** `UIView.Overlay`；`UIConfirmPopup` 的四個元件 ID 常數；`UILocalizedText.Key`、`UILocalizedImage.Key`、`UILocalizedDropdown.Keys`；抽象基底 `UILocalizedElement`。
+12. **測試組件可以存取 Runtime 的 internal。** `UniGameUI.Runtime` 新增了對 `UniGameUI.Editor.Tests` 的 `InternalsVisibleTo`。
+
+**實作時發現、值得知道的行為**
+
+- **TMP 的預設字型沒有中文字。** 確認框的預設按鈕文字「確定」、「取消」在沒有設定預設字型的專案會顯示成方框，並有 TMP 的缺字警告。已寫進 AgentGuide 與 README：要顯示中文請先用 `defaultFontPath` 或 `UIWidgets.SetDefaultFont` 設定字型。
+- **刪掉被確認框用到的元件 Prefab 會弄壞確認框。** `Confirm.prefab` 巢狀引用 `Text.prefab` 與 `Button.prefab`。把這兩個檔案刪掉再重新安裝，新的 Prefab 是不同的 GUID，確認框裡的巢狀實例會變成遺失，要連 `Confirm.prefab` 一起刪掉重裝。場景裡既有的元件實例也是同樣的情況。這是 Prefab 連結本身的限制，沒有另外處理。
+- **換 Scene 會讓先前拿到的元件集物件失效。** Editor 換 Scene 時會卸載沒有被引用的資產，之後要重新呼叫 `UIWidgets.Find()`。套件自己的流程都是在開好 Scene 之後才取元件集。
+- **`InputSystemUIInputModule` 的確定與取消只看當前影格。** 它用 `WasPerformedThisDynamicUpdate()` 判斷，所以測試要把事件排進佇列、讓下一個影格的輸入更新處理；在協程中途直接更新輸入系統，模組會漏掉那次按鍵。
+- **輸入框自己會用取消鍵結束編輯。** TMP 的輸入框收到取消時會結束編輯，所以編輯中按 Esc 的結果是「結束編輯」，再按一次才是返回。
+
 ### 第二批修正複驗（0.3.0）
 
 使用 Unity 6000.3.19f1 的隔離副本。先在修正前用四個案例重現目前頁留在返回歷史與通知期間缺少警告，再執行修正後的完整測試。EditMode 使用圖形裝置，PlayMode 以批次模式執行。
@@ -478,13 +540,28 @@ PlayerSettings:
 
 把套件複製到 `Packages/` 後執行：
 
-1. `-runTests -testPlatform EditMode` 與 `-runTests -testPlatform PlayMode`。
-2. 用 `-importPackage` 匯入本機 Asset Store 快取裡的 DOTween，再跑一次 PlayMode。
+1. `-runTests -testPlatform EditMode` 與 `-runTests -testPlatform PlayMode`。EditMode 不要加 `-nographics`。
+2. 用 `-importPackage` 匯入本機 Asset Store 快取裡的 DOTween，再跑一次 PlayMode。實務上準備兩個副本專案（有、無 DOTween）比較省時間，兩個可以同時跑。
 3. 用 `-executeMethod` 呼叫 `BuildPipeline.BuildPlayer`，再執行產出的執行檔。
+
+0.4.0 的打包驗證分成四次啟動：用 `UIPlan.RunFromCommandLine` 套用計畫（產生常數）、套用第二份計畫、放進遊戲腳本後用 `-executeMethod` 掛上頁面腳本並打包、執行執行檔。遊戲腳本要等常數產生之後才放進專案，否則第一次啟動就會編譯失敗。在執行檔裡模擬手把時，先把 `InputSystem.settings.backgroundBehavior` 設成 `IgnoreFocus`，再用 `InputSystem.AddDevice<Gamepad>()` 與 `InputSystem.QueueStateEvent` 送出按鍵，每次按下與放開之間等幾個影格。
 
 使用者的 Editor 開著專案時，CLI 拿不到專案鎖，所以一律在副本上驗證。
 
 ## 未驗證
+
+第三批（0.4.0）以下項目沒有驗證，需要在互動 Editor 或實機人工確認：
+
+- **起始元件的實際外觀。** 自動測試與打包驗證都沒有看畫面。請在 Scene 與 Game 視窗確認十個元件、清單項目與確認框的樣子、大小與對齊，以及下拉選單展開後的清單。
+- **用真的滑鼠與手把操作時的選取表現。** 改用滑鼠時選取外框是否消失、點過的按鈕是否不留選取、手把第一次輸入是否只出現選取而不移動、關閉 Popup 與返回後選取是否回到原位。自動測試用的是模擬裝置。
+- **下拉選單與輸入框搭配手把的操作。** 展開、選擇、取消收起；輸入框按確定進入編輯、取消或確定結束編輯。實體鍵盤輸入文字時方向鍵與 WASD 不會切換模式。
+- **清單用手把捲動時的手感**，以及項目很多時的表現（不做虛擬化）。
+- **Inspector 的新欄位：** `UIView` 的「預設選取元件」、「不回應返回鍵」，Popup 的「關閉後保留並重用」、「點遮罩關閉」；`UIRoot` 的「取消鍵當成返回」；元件集的 Inspector，特別是在那裡換預設字型。自動測試只確認欄位存在而且綁定正確。
+- **選單 Tools → UniGameUI → Install Starter Widgets**，以及互動模式第一次安裝時 TMP Essential Resources 的匯入。
+- **IL2CPP Player。** 這台電腦沒有 6000.3.19f1 的 IL2CPP 模組。
+- **實體手把的按鍵對應。** 框架讀的是輸入模組上的動作，測試用的是預設動作與虛擬的標準手把。
+- **關閉 Domain Reload 的 Play Mode。** 沒有實測。
+- **多個 Scene 同時開著、各有 EventSystem 的情況。** 依規格這會讓 Validate 回報錯誤，套件的 EditMode 測試在這種環境下會有案例失敗；批次模式的測試每次只開一個 Scene。
 
 第二批的藍圖儲存邏輯與錯誤計畫的預檢已由測試覆蓋。互動 Editor 待人工確認錯誤計畫的對話框、藍圖右欄「返回歷史」選單、「關閉結果」輸入框及拖線，以及 Add Component 中的 `UniGameUI/UI Element Id`。本次 Unity 安裝只有 Windows Mono 模組，IL2CPP Player 未執行。
 
