@@ -17,8 +17,11 @@ namespace UniGameUI
         [SerializeField, HideInInspector] internal RectTransform motion;
         [SerializeField, HideInInspector] internal RectTransform content;
         [SerializeField, HideInInspector] internal CanvasGroup canvasGroup;
+        [SerializeField, HideInInspector] internal RectTransform overlay;
         [SerializeField] internal Selectable defaultSelected;
         [SerializeField] internal bool blocksBackKey;
+        [SerializeField] internal bool reusesInstance;
+        [SerializeField] internal bool closesOnOverlayClick;
         [SerializeField] internal UITransition enter = new UITransition();
         [SerializeField] internal UITransition exit = new UITransition();
         [SerializeField] private UnityEvent showing = new UnityEvent();
@@ -35,6 +38,11 @@ namespace UniGameUI
         public RectTransform Motion => motion;
         public RectTransform Content => content;
         public CanvasGroup Group => canvasGroup;
+
+        /// <summary>
+        /// Popup 的遮罩物件。頁面沒有遮罩。
+        /// </summary>
+        public RectTransform Overlay => overlay;
         public UITransition Enter => enter;
         public UITransition Exit => exit;
         public UnityEvent Showing => showing;
@@ -51,6 +59,16 @@ namespace UniGameUI
         /// 這個畫面在最上層時不回應返回鍵。畫面上的返回按鈕照舊走路由。
         /// </summary>
         public bool BlocksBackKey => blocksBackKey;
+
+        /// <summary>
+        /// 只對 Popup 有意義：關閉後保留實例，下次開啟重用。預設每次開啟都重新建立。
+        /// </summary>
+        public bool ReusesInstance => reusesInstance;
+
+        /// <summary>
+        /// 只對 Popup 有意義：點擊遮罩等同不帶結果的關閉。預設不關閉。
+        /// </summary>
+        public bool ClosesOnOverlayClick => closesOnOverlayClick;
         public object Data { get; internal set; }
         public UIRoot Root { get; internal set; }
 

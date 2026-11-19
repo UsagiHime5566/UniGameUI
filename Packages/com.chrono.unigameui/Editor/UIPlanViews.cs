@@ -10,12 +10,21 @@ namespace UniGameUI.Editor
     public static partial class UIPlan
     {
         private enum BackKeyMode { Back, Ignore }
+        private enum PopupCache { Recreate, Reuse }
+        private enum OverlayClick { Ignore, Close }
 
         private static void PreflightViewOptions(ViewSpec view, UIEntryKind kind, UIView existingReview,
             WidgetCatalog catalog)
         {
             PreflightDefaultSelected(view, existingReview, catalog);
             Parse(view.backKey, BackKeyMode.Back);
+            foreach (var (field, value) in new[] { ("popupCache", view.popupCache), ("overlayClick", view.overlayClick) })
+            {
+                if (value != null && kind != UIEntryKind.Popup)
+                    throw new ArgumentException($"畫面「{view.id}」是頁面，{field} 欄位只適用於 Popup。");
+            }
+            Parse(view.popupCache, PopupCache.Recreate);
+            Parse(view.overlayClick, OverlayClick.Ignore);
         }
 
         private static void PreflightDefaultSelected(ViewSpec view, UIView existingReview, WidgetCatalog catalog)
@@ -54,7 +63,8 @@ namespace UniGameUI.Editor
 
         private static void ApplyViewOptions(UIView view, ViewSpec spec)
         {
-            if (spec.defaultSelected == null && string.IsNullOrEmpty(spec.backKey))
+            if (spec.defaultSelected == null && string.IsNullOrEmpty(spec.backKey) &&
+                string.IsNullOrEmpty(spec.popupCache) && string.IsNullOrEmpty(spec.overlayClick))
                 return;
 
             Undo.RecordObject(view, "Set UI view options");
@@ -75,6 +85,18 @@ namespace UniGameUI.Editor
             }
             if (!string.IsNullOrEmpty(spec.backKey))
                 view.blocksBackKey = Parse(spec.backKey, BackKeyMode.Back) == BackKeyMode.Ignore;
+            if (!string.IsNullOrEmpty(spec.popupCache))
+                view.reusesInstance = Parse(spec.popupCache, PopupCache.Recreate) == PopupCache.Reuse;
+            if (!string.IsNullOrEmpty(spec.overlayClick))
+            {
+                var closes = Parse(spec.overlayClick, OverlayClick.Ignore) == OverlayClick.Close;
+                // 0.4.0 之前建立的 Popup 沒有記錄遮罩，依名稱補上。
+                if (closes && !view.overlay)
+                    view.overlay = view.transform.Find("Overlay") as RectTransform;
+                if (closes && !view.overlay)
+                    throw new ArgumentException($"畫面「{view.Id}」沒有遮罩物件，無法把 overlayClick 設成 Close。");
+                view.closesOnOverlayClick = closes;
+            }
             UIAuthoring.RecordOverride(view);
         }
     }

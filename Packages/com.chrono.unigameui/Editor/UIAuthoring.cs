@@ -621,6 +621,7 @@ namespace UniGameUI.Editor
                 var shade = CreateRect("Overlay", rect);
                 UIRoot.Stretch(shade);
                 shade.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.60f);
+                view.overlay = shade;
             }
 
             view.motion = CreateRect("Motion", rect);

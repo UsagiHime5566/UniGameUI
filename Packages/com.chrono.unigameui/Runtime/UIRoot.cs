@@ -34,6 +34,7 @@ namespace UniGameUI
         private readonly List<UIView> popups = new List<UIView>();
         private readonly Dictionary<UIView, AwaitableCompletionSource<object>> popupResults =
             new Dictionary<UIView, AwaitableCompletionSource<object>>();
+        private readonly Dictionary<string, UIView> retainedPopups = new Dictionary<string, UIView>();
         private IReadOnlyList<UIView> popupList;
         private List<(AwaitableCompletionSource<object> Source, object Result)> closedPopupResults;
         private RectTransform pageLayer;
@@ -610,7 +611,12 @@ namespace UniGameUI
             if (popups.Exists(popup => popup && popup.Id == id))
                 return Unavailable(request, $"Popup '{id}' 已經開啟。");
 
-            var popup = InstantiateView(entry, popupLayer);
+            // 設成重用的 Popup 關閉後會保留。下次開啟用同一個實例，並移到 Popup 層的最上面。
+            var popup = retainedPopups.Remove(id, out var retained) && retained
+                ? retained
+                : InstantiateView(entry, popupLayer);
+            popup.transform.SetAsLastSibling();
+            popup.lastSelected = null;
             using var transition = CancellationTokenSource.CreateLinkedTokenSource(cancellation, popup.destroyCancellationToken);
             try
             {
@@ -622,7 +628,7 @@ namespace UniGameUI
                 if (popup)
                 {
                     popup.gameObject.SetActive(false);
-                    Destroy(popup.gameObject);
+                    ReleasePopup(popup);
                 }
                 throw;
             }
@@ -662,11 +668,22 @@ namespace UniGameUI
             }
             popup.FinishHiding(request);
             if (popup)
+                ReleasePopup(popup);
+        }
+
+        private void ReleasePopup(UIView popup)
+        {
+            if (popup.ReusesInstance && !string.IsNullOrEmpty(popup.Id))
+                retainedPopups[popup.Id] = popup;
+            else
                 Destroy(popup.gameObject);
         }
 
         internal void OnViewDestroyed(UIView view)
         {
+            if (!string.IsNullOrEmpty(view.Id) && retainedPopups.TryGetValue(view.Id, out var retained) &&
+                ReferenceEquals(retained, view))
+                retainedPopups.Remove(view.Id);
             if (popups.Remove(view))
                 RefreshInput();
             if (popupResults.Remove(view, out var pending))
@@ -706,6 +723,12 @@ namespace UniGameUI
             rect.SetParent(parent, false);
             Stretch(rect);
             view.SetInput(false);
+            if (!view.overlay)
+                return;
+            // 遮罩要能接到點擊，才有辦法做「點遮罩關閉」。是否關閉由 View 的設定決定。
+            if (!view.overlay.TryGetComponent<UIOverlayClick>(out var click))
+                click = view.overlay.gameObject.AddComponent<UIOverlayClick>();
+            click.view = view;
         }
 
         private void RefreshInput()

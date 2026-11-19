@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -61,11 +62,28 @@ namespace UniGameUI.Editor
                     HelpBoxMessageType.Info));
             inspector.Add(new PropertyField(serializedObject.FindProperty("defaultSelected"), "預設選取元件"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("blocksBackKey"), "不回應返回鍵"));
+            var popupOptions = new VisualElement();
+            popupOptions.Add(new PropertyField(serializedObject.FindProperty("reusesInstance"), "關閉後保留並重用"));
+            popupOptions.Add(new PropertyField(serializedObject.FindProperty("closesOnOverlayClick"), "點遮罩關閉"));
+            popupOptions.style.display = IsPopup(view) ? DisplayStyle.Flex : DisplayStyle.None;
+            inspector.Add(popupOptions);
             inspector.Add(new PropertyField(serializedObject.FindProperty("showing"), "Showing"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("shown"), "Shown"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("hiding"), "Hiding"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("hidden"), "Hidden"));
             return inspector;
+        }
+
+        // UIView 本身不記錄種類。有遮罩或已經開了 Popup 選項的就是 Popup，否則查所屬工作區的登記。
+        private static bool IsPopup(UIView view)
+        {
+            if (view.Overlay || view.ReusesInstance || view.ClosesOnOverlayClick)
+                return true;
+            var root = view.GetComponentInParent<UIRoot>(true);
+            var entry = root
+                ? root.Entries.FirstOrDefault(item => item != null && (item.Review == view || item.Prefab == view))
+                : null;
+            return entry != null && entry.Kind == UIEntryKind.Popup;
         }
     }
 

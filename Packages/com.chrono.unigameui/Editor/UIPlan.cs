@@ -41,6 +41,8 @@ namespace UniGameUI.Editor
             public string background;
             public string defaultSelected;
             public string backKey;
+            public string popupCache;
+            public string overlayClick;
             public AnimationSpec enter;
             public AnimationSpec exit;
             public ElementSpec[] elements;

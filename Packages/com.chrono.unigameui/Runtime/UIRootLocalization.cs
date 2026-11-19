@@ -91,6 +91,11 @@ namespace UniGameUI
                 if (popup)
                     views.Add(popup);
             }
+            foreach (var popup in retainedPopups.Values)
+            {
+                if (popup)
+                    views.Add(popup);
+            }
         }
 
         /// <summary>

@@ -801,6 +801,58 @@ namespace UniGameUI.Editor.Tests
             Assert.That(UIAuthoring.FindEntry(root, "other"), Is.Null);
         }
 
+        [Test]
+        public void PlanSetsPopupReuseAndOverlayClickAndRejectsThemOnPages()
+        {
+            RequireDOTween();
+            SceneManager.SetActiveScene(NewScene("Batch3 Popup Options"));
+            var root = UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"" }},
+                {{ ""id"": ""quit"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Quit.prefab"",
+                   ""popupCache"": ""Reuse"", ""overlayClick"": ""Close"" }},
+                {{ ""id"": ""tip"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Tip.prefab"" }}
+            ] }}");
+            var quit = UIAuthoring.FindEntry(root, "quit");
+            Assert.That(quit.Prefab.ReusesInstance, Is.True);
+            Assert.That(quit.Prefab.ClosesOnOverlayClick, Is.True);
+            Assert.That(quit.Prefab.Overlay, Is.Not.Null);
+            Assert.That(quit.Prefab.Overlay.parent, Is.EqualTo(quit.Prefab.transform));
+            Assert.That(quit.Prefab.Overlay.GetComponent<Image>().raycastTarget, Is.True);
+            Assert.That(UIAuthoring.HasReviewOverrides(quit), Is.False);
+            var tip = UIAuthoring.FindEntry(root, "tip");
+            Assert.That(tip.Prefab.ReusesInstance, Is.False);
+            Assert.That(tip.Prefab.ClosesOnOverlayClick, Is.False);
+            Assert.That(tip.Prefab.Overlay, Is.Not.Null);
+            Assert.That(UIAuthoring.FindEntry(root, "home").Review.Overlay, Is.Null);
+
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""quit"", ""kind"": ""Popup"", ""popupCache"": ""Recreate"" }] }");
+            Assert.That(quit.Review.ReusesInstance, Is.True, "既有的 View 要有 updateExisting 才會改");
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""quit"", ""kind"": ""Popup"", ""updateExisting"": true,
+                ""popupCache"": ""Recreate"" }] }");
+            Assert.That(quit.Review.ReusesInstance, Is.False);
+            Assert.That(quit.Review.ClosesOnOverlayClick, Is.True, "沒寫的選項維持原狀");
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""quit"", ""updateExisting"": true, ""overlayClick"": ""Ignore"" }] }");
+            Assert.That(quit.Review.ClosesOnOverlayClick, Is.False);
+
+            foreach (var field in new[] { "popupCache\": \"Reuse", "overlayClick\": \"Close" })
+            {
+                var name = field.Split('"')[0];
+                var onPage = Assert.Throws<ArgumentException>(() => UIPlan.Apply(
+                    "{ \"views\": [{ \"id\": \"home\", \"updateExisting\": true, \"" + field +
+                    "\" }, { \"id\": \"other\" }] }"), name);
+                Assert.That(onPage.Message, Does.Contain("home").And.Contain(name).And.Contain("Popup"));
+                var onNewPage = Assert.Throws<ArgumentException>(() => UIPlan.Apply(
+                    "{ \"views\": [{ \"id\": \"other\", \"" + field + "\" }] }"), name);
+                Assert.That(onNewPage.Message, Does.Contain("other").And.Contain(name));
+            }
+            Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""tip"", ""updateExisting"": true, ""popupCache"": ""Sometimes"" }, { ""id"": ""other"" }] }"));
+            Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""tip"", ""updateExisting"": true, ""overlayClick"": ""Maybe"" }, { ""id"": ""other"" }] }"));
+            Assert.That(UIAuthoring.FindEntry(root, "other"), Is.Null);
+            Assert.That(tip.Review.ReusesInstance || tip.Review.ClosesOnOverlayClick, Is.False);
+        }
+
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)
         {
             return set.Find(widget).Prefab.GetComponentInChildren<TMP_Text>(true).font;
