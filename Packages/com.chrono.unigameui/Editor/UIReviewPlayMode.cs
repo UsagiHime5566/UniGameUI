@@ -27,7 +27,7 @@ namespace UniGameUI.Editor
                 return;
 
             var names = pending.Select(entry => $"{entry.Review.gameObject.scene.name} / {entry.Title}");
-            var message = "下列頁面有待套用的 Prefab 覆寫。直接進入會使用目前已儲存的 Prefab。\n\n" +
+            var message = "下列畫面有待套用的 Prefab 覆寫。直接進入會使用目前已儲存的 Prefab。\n\n" +
                 string.Join("\n", names);
             var choice = EditorUtility.DisplayDialogComplex("UniGameUI Prefab 覆寫", message,
                 "套用並進入", "取消", "直接進入");

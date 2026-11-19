@@ -148,6 +148,7 @@ namespace UniGameUI.Editor
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new InvalidOperationException("Apply an authoring plan in Edit Mode.");
+            UIDOTweenSetup.CheckReady();
             return JsonUtility.FromJson<Plan>(json) ?? throw new ArgumentException("Invalid JSON plan.");
         }
 
@@ -163,9 +164,10 @@ namespace UniGameUI.Editor
             Undo.IncrementCurrentGroup();
             var group = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Apply UniGameUI plan");
+            UIRoot root;
             try
             {
-                var root = UIAuthoring.FindWorkspace(scene);
+                root = UIAuthoring.FindWorkspace(scene);
                 var mode = Parse(plan.mode, root ? root.Mode : UIAuthoringMode.SingleScene);
                 Preflight(plan, root, mode);
                 if (NeedsText(plan))
@@ -192,7 +194,7 @@ namespace UniGameUI.Editor
                 if (!string.IsNullOrEmpty(plan.pageTransitionMode))
                     UIAuthoring.SetPageTransitionMode(root, Parse(plan.pageTransitionMode, root.PageTransitionMode));
 
-                var issues = UIValidation.Check(root);
+                var issues = UIValidation.Check(root, saveScene || createdScene ? plan.scenePath : scene.path, false);
                 var errors = issues.Where(issue => issue.Severity == UIIssueSeverity.Error);
                 if (errors.Any())
                     throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
@@ -203,9 +205,6 @@ namespace UniGameUI.Editor
                     throw new IOException($"Could not save Scene '{plan.scenePath}'.");
 
                 Undo.CollapseUndoOperations(group);
-                Debug.Log($"UniGameUI plan applied to {scene.path}: {root.Entries.Count} views, " +
-                    $"{root.Routes.Count} routes. DOTween: {UITransition.IsDOTweenReady}.", root);
-                return root;
             }
             catch
             {
@@ -216,6 +215,11 @@ namespace UniGameUI.Editor
                     EditorSceneManager.CloseScene(scene, true);
                 throw;
             }
+
+            UIIdConstants.Generate(root);
+            Debug.Log($"UniGameUI plan applied to {scene.path}: {root.Entries.Count} views, " +
+                $"{root.Routes.Count} routes. DOTween: {UITransition.IsDOTweenReady}.", root);
+            return root;
         }
 
         public static GameObject FindElement(UIView view, string id)

@@ -71,9 +71,15 @@ namespace UniGameUI
 
             foreach (var entry in entries)
             {
-                if (entry == null || string.IsNullOrWhiteSpace(entry.Id) || !entriesById.TryAdd(entry.Id, entry))
+                var id = entry?.Id;
+                if (string.IsNullOrWhiteSpace(id))
                 {
-                    Debug.LogError("UniGameUI contains a missing or duplicate view ID.", this);
+                    NotFound("Awake", $"畫面 ID '{id}' 缺漏。");
+                    continue;
+                }
+                if (!entriesById.TryAdd(id, entry))
+                {
+                    NotFound("Awake", $"畫面 ID '{id}' 重複。");
                     continue;
                 }
 
@@ -86,8 +92,13 @@ namespace UniGameUI
 
             foreach (var route in routes)
             {
-                if (route == null || !routesByAction.TryAdd((route.Source, route.Action), route))
-                    Debug.LogError("UniGameUI contains a missing or duplicate route.", this);
+                var source = route?.Source;
+                var action = route?.Action;
+                if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(action) ||
+                    !entriesById.ContainsKey(source))
+                    NotFound("Awake", $"路由 '{source}'/'{action}' 的來源或動作缺漏。");
+                else if (!routesByAction.TryAdd((source, action), route))
+                    NotFound("Awake", $"路由 '{source}'/'{action}' 重複。");
             }
             ready = true;
         }
@@ -114,41 +125,50 @@ namespace UniGameUI
         public Awaitable<UINavResult> ShowPageAsync(
             string id, object data = null, CancellationToken cancellation = default)
         {
-            return RunAsync(token => ShowPageCoreAsync(id, data, token), cancellation);
+            var request = $"ShowPage '{id}'";
+            return RunAsync(request, token => ShowPageCoreAsync(id, data, token, request), cancellation);
         }
 
         public Awaitable<UINavResult> OpenPopupAsync(
             string id, object data = null, CancellationToken cancellation = default)
         {
-            return RunAsync(token => OpenPopupCoreAsync(id, data, token), cancellation);
+            var request = $"OpenPopup '{id}'";
+            return RunAsync(request, token => OpenPopupCoreAsync(id, data, token, request), cancellation);
         }
 
-        public Awaitable<UINavResult> ClosePopupAsync(CancellationToken cancellation = default)
+        public async Awaitable<UINavResult> ClosePopupAsync(CancellationToken cancellation = default)
         {
-            return RunAsync(ClosePopupCoreAsync, cancellation);
+            await Awaitable.MainThreadAsync();
+            var request = $"ClosePopup '{CurrentPopupId ?? "(無)"}'";
+            return await RunAsync(request, token => ClosePopupCoreAsync(token, request), cancellation);
         }
 
-        public Awaitable<UINavResult> BackAsync(CancellationToken cancellation = default)
+        public async Awaitable<UINavResult> BackAsync(CancellationToken cancellation = default)
         {
-            return RunAsync(BackCoreAsync, cancellation);
+            await Awaitable.MainThreadAsync();
+            var request = $"Back '{CurrentPopupId ?? CurrentPageId ?? "(無)"}'";
+            return await RunAsync(request, token => BackCoreAsync(token, request), cancellation);
         }
 
         public async Awaitable<UINavResult> TriggerAsync(
             string source, string action, CancellationToken cancellation = default)
         {
             await Awaitable.MainThreadAsync();
+            var request = $"Trigger '{source}'/'{action}'";
             if (busy)
                 return UINavResult.Busy;
             if (!CanNavigate())
-                return UINavResult.Unavailable;
+                return Unavailable(request, "工作區停用或尚未就緒。");
             if (cancellation.IsCancellationRequested)
                 return UINavResult.Canceled;
 
+            if (!routesByAction.TryGetValue((source, action), out var route))
+                return NotFound(request, "找不到路由。");
             var active = popups.Count > 0 ? TopPopup : currentPage;
-            if (!active || active.Id != source || !routesByAction.TryGetValue((source, action), out var route))
-                return UINavResult.Unavailable;
+            if (!active || active.Id != source)
+                return Unavailable(request, "來源不是目前最上層的畫面。");
             if (route.Kind != UIRouteKind.Emit)
-                return await RunAsync(token => FollowRouteAsync(route, token), cancellation);
+                return await RunAsync(request, token => FollowRouteAsync(route, token, request), cancellation);
 
             try
             {
@@ -157,19 +177,18 @@ namespace UniGameUI
             }
             catch (Exception exception)
             {
-                Debug.LogException(exception, this);
-                return UINavResult.Unavailable;
+                return Failed(request, exception);
             }
         }
 
         private async Awaitable<UINavResult> RunAsync(
-            Func<CancellationToken, Awaitable<UINavResult>> operation, CancellationToken cancellation)
+            string request, Func<CancellationToken, Awaitable<UINavResult>> operation, CancellationToken cancellation)
         {
             await Awaitable.MainThreadAsync();
             if (busy)
                 return UINavResult.Busy;
             if (!CanNavigate())
-                return UINavResult.Unavailable;
+                return Unavailable(request, "工作區停用或尚未就緒。");
 
             busy = true;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellation);
@@ -185,8 +204,7 @@ namespace UniGameUI
             }
             catch (Exception exception)
             {
-                Debug.LogException(exception, this);
-                return UINavResult.Unavailable;
+                return Failed(request, exception);
             }
             finally
             {
@@ -195,37 +213,66 @@ namespace UniGameUI
             }
         }
 
+        private UINavResult NotFound(string request, string detail)
+        {
+            Debug.LogError(Diagnostic(request, detail), this);
+            return UINavResult.NotFound;
+        }
+
+        private UINavResult Unavailable(string request, string detail)
+        {
+            Debug.LogWarning(Diagnostic(request, detail), this);
+            return UINavResult.Unavailable;
+        }
+
+        private UINavResult Failed(string request, Exception exception)
+        {
+            var message = Diagnostic(request, $"執行失敗。{exception.Message}");
+            Debug.LogError(message, this);
+            Debug.LogException(new InvalidOperationException($"{message}\n{exception}"), this);
+            return UINavResult.Failed;
+        }
+
+        private string Diagnostic(string request, string detail)
+        {
+            var scene = this ? gameObject.scene.name : "(工作區已銷毀)";
+            return $"UniGameUI: {request} {detail}（Scene: {scene}）";
+        }
+
         private bool CanNavigate()
         {
             return this && ready && isActiveAndEnabled && lifetime != null;
         }
 
-        private async Awaitable<UINavResult> FollowRouteAsync(UIRoute route, CancellationToken cancellation)
+        private async Awaitable<UINavResult> FollowRouteAsync(
+            UIRoute route, CancellationToken cancellation, string request)
         {
             switch (route.Kind)
             {
                 case UIRouteKind.ShowPage:
-                    return await ShowPageCoreAsync(route.Target, null, cancellation);
+                    return await ShowPageCoreAsync(route.Target, null, cancellation, request);
                 case UIRouteKind.OpenPopup:
-                    return await OpenPopupCoreAsync(route.Target, null, cancellation);
+                    return await OpenPopupCoreAsync(route.Target, null, cancellation, request);
                 case UIRouteKind.Back:
-                    return await BackCoreAsync(cancellation);
+                    return await BackCoreAsync(cancellation, request);
                 case UIRouteKind.ClosePopup:
-                    return await ClosePopupCoreAsync(cancellation);
+                    return await ClosePopupCoreAsync(cancellation, request);
                 default:
-                    return UINavResult.Unavailable;
+                    throw new InvalidOperationException($"無法識別路由種類 '{route.Kind}'。");
             }
         }
 
         private async Awaitable<UINavResult> ShowPageCoreAsync(
-            string id, object data, CancellationToken cancellation)
+            string id, object data, CancellationToken cancellation, string request)
         {
-            if (string.IsNullOrEmpty(id) || CurrentPageId == id || !GetPage(id, out var next))
-                return UINavResult.Unavailable;
+            if (string.IsNullOrWhiteSpace(id) || !GetPage(id, out var next))
+                return NotFound(request, $"找不到頁面 '{id}'。");
+            if (CurrentPageId == id)
+                return Unavailable(request, $"目前已在頁面 '{id}'。");
 
             var previousId = CurrentPageId;
             while (popups.Count > 0)
-                await ClosePopupCoreAsync(cancellation);
+                await ClosePopupCoreAsync(cancellation, request);
 
             await ChangePageAsync(next, data, cancellation);
             if (previousId != null)
@@ -233,12 +280,14 @@ namespace UniGameUI
             return UINavResult.Completed;
         }
 
-        private async Awaitable<UINavResult> BackCoreAsync(CancellationToken cancellation)
+        private async Awaitable<UINavResult> BackCoreAsync(CancellationToken cancellation, string request)
         {
             if (popups.Count > 0)
-                return await ClosePopupCoreAsync(cancellation);
-            if (history.Count == 0 || !GetPage(history[^1], out var previous))
+                return await ClosePopupCoreAsync(cancellation, request);
+            if (history.Count == 0)
                 return UINavResult.Unavailable;
+            if (!GetPage(history[^1], out var previous))
+                return NotFound(request, $"找不到上一頁 '{history[^1]}'。");
 
             await ChangePageAsync(previous, previous.Data, cancellation);
             history.RemoveAt(history.Count - 1);
@@ -262,9 +311,14 @@ namespace UniGameUI
                     await next.ShowAsync(data, cancellation);
                 }
                 cancellation.ThrowIfCancellationRequested();
+                currentPage = next;
+                if (previous)
+                    previous.FinishHiding();
+                next.FinishShowing();
             }
             catch
             {
+                currentPage = previous;
                 if (next)
                 {
                     next.gameObject.SetActive(false);
@@ -274,11 +328,6 @@ namespace UniGameUI
                     previous.gameObject.SetActive(true);
                 throw;
             }
-
-            currentPage = next;
-            if (previous)
-                previous.FinishHiding();
-            next.FinishShowing();
         }
 
         private static async Awaitable HidePreviousPageAsync(UIView view, CancellationToken cancellation)
@@ -325,21 +374,27 @@ namespace UniGameUI
         }
 
         private async Awaitable<UINavResult> OpenPopupCoreAsync(
-            string id, object data, CancellationToken cancellation)
+            string id, object data, CancellationToken cancellation, string request)
         {
-            if (string.IsNullOrEmpty(id) || !entriesById.TryGetValue(id, out var entry) ||
-                entry.Kind != UIEntryKind.Popup || !entry.Prefab ||
-                popups.Exists(popup => popup && popup.Id == id))
-                return UINavResult.Unavailable;
+            if (string.IsNullOrWhiteSpace(id) || !entriesById.TryGetValue(id, out var entry) ||
+                entry.Kind != UIEntryKind.Popup)
+                return NotFound(request, $"找不到 Popup '{id}'。");
+            if (!entry.Prefab)
+                return NotFound(request, $"Popup '{id}' 缺少 Prefab。");
+            if (popups.Exists(popup => popup && popup.Id == id))
+                return Unavailable(request, $"Popup '{id}' 已經開啟。");
 
             var popup = InstantiateView(entry, popupLayer);
             try
             {
                 await popup.ShowAsync(data, cancellation);
                 cancellation.ThrowIfCancellationRequested();
+                popups.Add(popup);
+                popup.FinishShowing();
             }
             catch
             {
+                popups.Remove(popup);
                 if (popup)
                 {
                     popup.gameObject.SetActive(false);
@@ -348,15 +403,13 @@ namespace UniGameUI
                 throw;
             }
 
-            popups.Add(popup);
-            popup.FinishShowing();
             return UINavResult.Completed;
         }
 
-        private async Awaitable<UINavResult> ClosePopupCoreAsync(CancellationToken cancellation)
+        private async Awaitable<UINavResult> ClosePopupCoreAsync(CancellationToken cancellation, string request)
         {
             if (popups.Count == 0)
-                return UINavResult.Unavailable;
+                return Unavailable(request, "目前沒有 Popup 可關閉。");
 
             var popup = TopPopup;
             if (popup)
@@ -368,7 +421,17 @@ namespace UniGameUI
             popups.RemoveAt(popups.Count - 1);
             if (popup)
             {
-                popup.FinishHiding();
+                try
+                {
+                    popup.FinishHiding();
+                }
+                catch
+                {
+                    popups.Add(popup);
+                    if (popup)
+                        popup.gameObject.SetActive(true);
+                    throw;
+                }
                 Destroy(popup.gameObject);
             }
             return UINavResult.Completed;

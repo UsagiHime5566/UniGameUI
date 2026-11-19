@@ -25,6 +25,11 @@ namespace UniGameUI.Editor
     {
         public static IReadOnlyList<UIIssue> Check(UIRoot root)
         {
+            return Check(root, root ? root.gameObject.scene.path : null, true);
+        }
+
+        internal static IReadOnlyList<UIIssue> Check(UIRoot root, string scenePath, bool checkConstantsFile)
+        {
             var issues = new List<UIIssue>();
             var views = new Dictionary<string, UIEntry>();
             var routes = new HashSet<(string, string)>();
@@ -33,6 +38,10 @@ namespace UniGameUI.Editor
                 issues.Add(Error("The scene has no authored UniGameUI workspace."));
                 return issues;
             }
+
+            var dotween = UIDOTweenSetup.Status;
+            if (dotween != UIDOTweenStatus.Ready)
+                issues.Add(Error(UIDOTweenSetup.SetupMessage(dotween)));
 
             foreach (var entry in root.Entries)
             {
@@ -52,6 +61,9 @@ namespace UniGameUI.Editor
                     issues.Add(Error($"{entry.Id}: runtime Prefab or required references are missing."));
                 if (UIAuthoring.HasReviewOverrides(entry))
                     issues.Add(Warning($"{entry.Id}: review has overrides waiting to be applied to the Prefab."));
+                if (UIAuthoring.NeedsViewCanvas(entry.Review) ||
+                    (usesPrefab && UIAuthoring.NeedsViewCanvas(entry.Prefab)))
+                    issues.Add(Warning($"「{entry.Id}」缺少子 Canvas 或 GraphicRaycaster，可在藍圖視窗按「補上子 Canvas」。"));
 
                 CheckTransitions(entry.Review, entry.Id, issues);
                 if (usesPrefab)
@@ -78,6 +90,8 @@ namespace UniGameUI.Editor
 
             foreach (var entry in views.Values)
             {
+                if (root.Mode == UIAuthoringMode.Prefab || entry.Kind == UIEntryKind.Popup)
+                    CheckBindings(entry, entry.Prefab, routes, issues, true);
                 if (!entry.Review)
                     continue;
                 var elementIds = new HashSet<string>();
@@ -86,27 +100,36 @@ namespace UniGameUI.Editor
                     if (string.IsNullOrEmpty(element.Id) || !elementIds.Add(element.Id))
                         issues.Add(Error($"{entry.Id}: duplicate or empty element ID on {element.name}."));
                 }
-                var bindings = entry.Review.GetComponentsInChildren<UIButtonAction>(true);
-                foreach (var binding in bindings)
-                {
-                    if (!routes.Contains((entry.Id, binding.Action)))
-                        issues.Add(Error($"{entry.Id}/{binding.name}: no route for '{binding.Action}'."));
-                }
+                CheckBindings(entry, entry.Review, routes, issues, false);
             }
 
             var eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsSortMode.None);
             if (eventSystems.Length != 1 || !eventSystems[0].GetComponent<BaseInputModule>())
                 issues.Add(Warning("Use one active EventSystem with an input module in the loaded scenes."));
+            UIIdConstants.Check(root, scenePath, checkConstantsFile, issues);
             return issues;
+        }
+
+        private static void CheckBindings(UIEntry entry, UIView view, HashSet<(string, string)> routes,
+            List<UIIssue> issues, bool isPrefab)
+        {
+            if (!view)
+                return;
+            foreach (var binding in view.GetComponentsInChildren<UIButtonAction>(true))
+            {
+                if (binding.GetComponentInParent<UIView>(true) != view || routes.Contains((entry.Id, binding.Action)))
+                    continue;
+                var message = $"「{entry.Id}/{binding.name}」的動作 '{binding.Action}' 找不到路由。";
+                issues.Add(Error(isPrefab
+                    ? $"Prefab 本體中{message}請修正審核實例的綁定並套用覆寫。"
+                    : message));
+            }
         }
 
         private static void CheckTransitions(UIView view, string label, List<UIIssue> issues)
         {
             if (!view)
                 return;
-            if (!UITransition.IsDOTweenReady &&
-                (view.Enter.Preset != UITransitionPreset.None || view.Exit.Preset != UITransitionPreset.None))
-                issues.Add(Warning($"{label}: transitions switch instantly until DOTween is installed and set up."));
 #if DOTWEEN
             if ((view.Enter.Preset == UITransitionPreset.Custom || view.Exit.Preset == UITransitionPreset.Custom) &&
                 !view.GetComponent<UIDOTweenAnimation>())

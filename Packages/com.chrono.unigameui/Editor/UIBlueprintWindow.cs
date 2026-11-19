@@ -129,6 +129,7 @@ namespace UniGameUI.Editor
 
         private void Rebuild()
         {
+            selectedAction = SelectedRouteAction();
             if (scroll != null)
                 scrollOffset = scroll.scrollOffset;
             rootVisualElement.Clear();
@@ -154,6 +155,15 @@ namespace UniGameUI.Editor
             });
             AddToolbarButton(toolbar, "Agent 指南", OpenGuide);
 
+            var dotween = UIDOTweenSetup.Status;
+            if (dotween != UIDOTweenStatus.Ready)
+            {
+                rootVisualElement.Add(new HelpBox(UIDOTweenSetup.SetupMessage(dotween), HelpBoxMessageType.Warning));
+                var setup = new Button(UIDOTweenSetup.ShowPrompt) { text = "安裝或設定 DOTween" };
+                setup.SetEnabled(!EditorApplication.isPlayingOrWillChangePlaymode);
+                rootVisualElement.Add(setup);
+            }
+
             if (!workspace)
             {
                 rootVisualElement.Add(new HelpBox("目前沒有 UI 工作區。可先請 agent 依需求套用計畫，或在這裡建立空白工作區。",
@@ -175,6 +185,9 @@ namespace UniGameUI.Editor
             AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace));
             AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace));
             AddToolbarButton(toolbar, "Validate", ShowValidation);
+            if (workspace.Entries.Any(entry => entry != null &&
+                (UIAuthoring.NeedsViewCanvas(entry.Review) || UIAuthoring.NeedsViewCanvas(entry.Prefab))))
+                AddToolbarButton(toolbar, "補上子 Canvas", () => TryEdit(() => UIAuthoring.RepairViewCanvases(workspace)));
 
             var split = new TwoPaneSplitView(1, 308, TwoPaneSplitViewOrientation.Horizontal);
             split.style.flexGrow = 1;
@@ -297,7 +310,7 @@ namespace UniGameUI.Editor
                 SelectNode(source);
                 wireSource = source;
                 wireAction = actionField?.value;
-                wireOriginalAction = selectedAction;
+                wireOriginalAction = SelectedRouteAction();
                 wireTip = stage.WorldToLocal((Vector2)evt.position);
                 port.CapturePointer(evt.pointerId);
                 edges.MarkDirtyRepaint();
@@ -342,6 +355,14 @@ namespace UniGameUI.Editor
                 wireTip = null;
                 edges.MarkDirtyRepaint();
             });
+        }
+
+        private string SelectedRouteAction()
+        {
+            if (!workspace || string.IsNullOrEmpty(selectedAction))
+                return null;
+            return workspace.Routes.Any(route => route.Source == selectedId && route.Action == selectedAction)
+                ? selectedAction : null;
         }
 
         private void SelectNode(string id)
@@ -521,6 +542,7 @@ namespace UniGameUI.Editor
 
         private void ShowValidation()
         {
+            UIIdConstants.GenerateForValidation(workspace, new List<UIIssue>());
             var issues = UIValidation.Check(workspace);
             EditorUtility.DisplayDialog("UniGameUI Validate",
                 issues.Count == 0 ? "未發現配置問題。" : string.Join(Environment.NewLine, issues), "關閉");

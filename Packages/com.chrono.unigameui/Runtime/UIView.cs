@@ -1,7 +1,7 @@
-using System;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Serialization;
 
 namespace UniGameUI
 {
@@ -17,7 +17,7 @@ namespace UniGameUI
         [SerializeField] internal UITransition enter = new UITransition();
         [SerializeField] internal UITransition exit = new UITransition();
         [SerializeField] private UnityEvent showing = new UnityEvent();
-        [SerializeField] private UnityEvent showed = new UnityEvent();
+        [SerializeField, FormerlySerializedAs("showed")] private UnityEvent shown = new UnityEvent();
         [SerializeField] private UnityEvent hiding = new UnityEvent();
         [SerializeField] private UnityEvent hidden = new UnityEvent();
 
@@ -28,7 +28,7 @@ namespace UniGameUI
         public UITransition Enter => enter;
         public UITransition Exit => exit;
         public UnityEvent Showing => showing;
-        public UnityEvent Showed => showed;
+        public UnityEvent Shown => shown;
         public UnityEvent Hiding => hiding;
         public UnityEvent Hidden => hidden;
         public object Data { get; internal set; }
@@ -39,7 +39,7 @@ namespace UniGameUI
             Data = data;
             SetInput(false);
             gameObject.SetActive(true);
-            Invoke(showing);
+            showing.Invoke();
             await UITransition.PlayAsync(this, enter, true, cancellation);
         }
 
@@ -47,19 +47,19 @@ namespace UniGameUI
         {
             cancellation.ThrowIfCancellationRequested();
             SetInput(false);
-            Invoke(hiding);
+            hiding.Invoke();
             await UITransition.PlayAsync(this, exit, false, cancellation);
         }
 
         internal void FinishShowing()
         {
-            Invoke(showed);
+            shown.Invoke();
         }
 
         internal void FinishHiding()
         {
             gameObject.SetActive(false);
-            Invoke(hidden);
+            hidden.Invoke();
         }
 
         internal void SetInput(bool enabled)
@@ -68,16 +68,5 @@ namespace UniGameUI
             canvasGroup.blocksRaycasts = enabled;
         }
 
-        private void Invoke(UnityEvent callback)
-        {
-            try
-            {
-                callback.Invoke();
-            }
-            catch (Exception exception)
-            {
-                Debug.LogException(exception, this);
-            }
-        }
     }
 }

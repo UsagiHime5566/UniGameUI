@@ -12,7 +12,7 @@ namespace UniGameUI.Editor
 
         public void OnProcessScene(Scene scene, BuildReport report)
         {
-            if (report != null || BuildPipeline.isBuildingPlayer)
+            if (BuildPipeline.isBuildingPlayer)
                 StripReview(scene);
         }
 

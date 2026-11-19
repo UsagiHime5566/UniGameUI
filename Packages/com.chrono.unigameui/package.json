@@ -1,6 +1,6 @@
 {
   "name": "com.chrono.unigameui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "UniGameUI",
   "description": "Scene-first uGUI authoring, editable navigation blueprints, and Awaitable page and popup transitions.",
   "unity": "6000.3",

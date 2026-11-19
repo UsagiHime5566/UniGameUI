@@ -9,6 +9,10 @@
 /.vscode/
 /.idea/
 /.utmp/
+/Assets/Plugins/Demigiant/
+/Assets/Plugins/Demigiant.meta
+/Assets/**/DOTweenSettings.asset
+/Assets/**/DOTweenSettings.asset.meta
 *.csproj
 *.sln
 *.slnx

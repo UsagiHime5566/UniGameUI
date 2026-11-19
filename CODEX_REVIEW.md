@@ -3,9 +3,10 @@
 - 審核者：Claude
 - 第一輪：2026-11-19，commit `020b424`（H1、H2 由 Claude 修正於 `e8062f8`）
 - 第二輪：2026-11-19，commit `0cabfec`（codex 處理第一輪待辦）
+- 第一批改進：2026-11-20，`v0.2.0`
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一輪的待辦已全部處理並通過驗證，沒有發現回歸。這份文件現在列的是第二輪發現的小問題（N1～N5），以及新增的效能與擴充性待辦（P1～P3、U1、U2）。
+**現況：** 第一批的六項改進已實作，Unity 自動測試與 Windows Player 已通過。本文件保留各項目的原始說明與互動操作的待驗證清單。
 
 原本標示「需使用者決定」的項目已在 2026-11-20 定案，排進 `ROADMAP.md` 的四批工作裡。要做哪一項、怎麼做，以 `ROADMAP.md` 為準；這份文件保留各項目的問題說明。
 
@@ -20,22 +21,23 @@
 | M1 | 藍圖無法改路由名稱 | 已修正、已驗證 |
 | M2 | Prefab 覆寫未套用時進 Play 沒提示 | 已修正；邏輯已驗證，對話框本身未驗證 |
 | M3 | 審核複本被打包進 build | 已修正、已用實際打包驗證 |
-| M4 | `UINavResult.Unavailable` 包太多情況 | 已定案，排在第一批（1-3） |
+| M4 | `UINavResult.Unavailable` 包太多情況 | 已修正，PlayMode 已驗證回傳值與 Console 診斷 |
 | M5 | 遊戲端 API 不足 | 已定案，排在第二批 |
 | L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵排在第三批；Overlay 以外的模式與 Safe Area 不做 |
 | L2 | 藍圖視窗不跟隨 Scene 切換 | 已修正、已驗證 |
 | L3 | 切頁只能依序播放 | 已修正（新增 `Concurrent` 模式）、已驗證 |
 | L4 | 沒有縮放預設動畫 | 已修正（新增 `Zoom`）、已驗證 |
 | L5 | TMP 資源匯入只有自製解析 | 已修正；互動模式的新路徑未驗證 |
-| L6 | 對 Unity 物件用 `??` | 大致修正，剩一處（見 N5） |
-| L7 | 沒有測試；`Showed` 命名 | 測試已補；改名排在第一批（1-6） |
+| L6 | 對 Unity 物件用 `??` | 已修正剩餘的 SceneView 判斷，EditMode 已驗證 |
+| L7 | 沒有測試；顯示完成事件命名 | 已改為 `Shown`，舊欄位的持久事件已用 Scene 載入驗證 |
+| 1-2 | DOTween 必裝 | 三種狀態與本機匯入均已驗證，提示對話框待人工確認 |
 | DOTween 疑慮 | 轉場中停用 UIRoot 可能引發 Unity 錯誤 | 已排除（見驗證紀錄） |
-| N1～N5 | 第二輪發現的小問題 | 排在第一批（1-1），待處理 |
-| P1 | 所有畫面共用一個 Canvas | 排在第一批（1-5），待處理 |
+| N1～N5 | 第二輪發現的小問題 | 已修正，外部安裝及自動測試通過，實際拖線與 Inspector 操作待人工確認 |
+| P1 | 所有畫面共用一個 Canvas | 已新增子 Canvas 與修復工具，已驗證 Prefab 覆寫、raycast 與 Windows Player |
 | P2 | Popup 每次開啟都重新建立 | 排在第三批 |
 | P3 | 頁面不會釋放 | 排在第二批（只在文件註明） |
 | U1 | `UIView` 不能繼承 | 已定案採用介面做法，排在第二批 |
-| U2 | ID 全是字串 | 已定案自動產生常數，排在第一批（1-4） |
+| U2 | ID 全是字串 | 已自動產生常數，已驗證存檔、重產、名稱衝突與 Player 編譯 |
 
 ## 第二輪發現的小問題
 
@@ -156,6 +158,22 @@
 
 ## 驗證紀錄
 
+### 第一批改進（`v0.2.0`）
+
+使用 Unity 6000.3.19f1 的隔離專案。EditMode 使用可用圖形裝置驗證 Scene View，PlayMode 以批次模式執行。
+
+| 測試 | 通過 | 失敗 | 略過 |
+|---|---:|---:|---:|
+| EditMode，有 DOTween | 19 | 0 | 0 |
+| PlayMode，有 DOTween | 13 | 0 | 1 |
+| EditMode，無 DOTween | 16 | 0 | 3 |
+| PlayMode，無 DOTween | 11 | 0 | 3 |
+| 外部磁碟安裝，以 `testables` 啟用單項 EditMode | 1 | 0 | 0 |
+
+略過的是只適用於有 DOTween 或無 DOTween 的案例。另以只有 DOTween DLL 的專案確認待 Setup 的驗證錯誤，並在非批次 Editor 從本機官方套件呼叫 `ImportLocalPackage()`，確認匯入後重新編譯並進入就緒狀態。
+
+實際建置並執行 Windows Player。單 Scene 與 Prefab 模式都使用生成的 ID 常數導航，成功切頁、開關 Popup 並返回。Popup 按鈕命中 raycast，底下頁面的按鈕沒有命中。兩種模式的 Player 場景都已剝除審核複本。
+
 ### 第二輪（commit `0cabfec`）
 
 | 測試 | 沒有 DOTween | 有 DOTween |
@@ -187,6 +205,12 @@
 使用者的 Editor 開著專案時，CLI 拿不到專案鎖，所以一律在副本上驗證。
 
 ## 未驗證
+
+第一批仍需在互動 Editor 人工確認以下操作。
+
+- DOTween 未就緒時的啟動提示、每個工作階段只提示一次、Play Mode 的提示狀態，以及本機匯入、Asset Store、稍後與 Utility Panel 的按鈕。
+- 儲存藍圖路由後 Undo，再從同一節點的輸出端拖線。切頁動畫欄位的 Undo 顯示與 Play Mode 停用。
+- 從藍圖按 **Validate** 更新常數，以及按 **補上子 Canvas** 修復舊 Scene。兩個入口所呼叫的生成與修復已用自動測試覆蓋。
 
 以下只能在互動的 Editor 裡操作，批次模式測不到：
 

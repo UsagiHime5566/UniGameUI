@@ -2,15 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
+using TMPro;
 using UnityEditor;
+using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.Serialization;
+using UnityEngine.TestTools;
 using UnityEngine.UIElements;
 using Button = UnityEngine.UI.Button;
+using GraphicRaycaster = UnityEngine.UI.GraphicRaycaster;
 using Image = UnityEngine.UI.Image;
+using Object = UnityEngine.Object;
 
 namespace UniGameUI.Editor.Tests
 {
@@ -19,34 +27,60 @@ namespace UniGameUI.Editor.Tests
         private readonly List<Scene> scenes = new List<Scene>();
         private Scene original;
         private string folder;
+        private bool importedTmp;
 
         [SetUp]
         public void SetUp()
         {
             original = SceneManager.GetActiveScene();
             folder = "Assets/UniGameUI-Tests-" + Guid.NewGuid().ToString("N");
+            importedTmp = false;
+            EditorApplication.LockReloadAssemblies();
         }
 
         [TearDown]
         public void TearDown()
         {
-            if (original.IsValid() && original.isLoaded)
-                SceneManager.SetActiveScene(original);
-            foreach (var scene in scenes)
+            try
             {
-                if (scene.IsValid() && scene.isLoaded && SceneManager.sceneCount > 1)
-                    EditorSceneManager.CloseScene(scene, true);
-                else if (scene.IsValid() && scene.isLoaded)
-                    EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                if (original.IsValid() && original.isLoaded)
+                    SceneManager.SetActiveScene(original);
+                foreach (var scene in scenes)
+                {
+                    if (scene.IsValid() && scene.isLoaded && SceneManager.sceneCount > 1)
+                        EditorSceneManager.CloseScene(scene, true);
+                    else if (scene.IsValid() && scene.isLoaded)
+                        EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                }
+                scenes.Clear();
+                DeleteGeneratedFixtures();
+                if (AssetDatabase.IsValidFolder(folder))
+                    AssetDatabase.DeleteAsset(folder);
+                if (importedTmp && AssetDatabase.IsValidFolder("Assets/TextMesh Pro"))
+                    AssetDatabase.DeleteAsset("Assets/TextMesh Pro");
             }
-            scenes.Clear();
-            if (AssetDatabase.IsValidFolder(folder))
-                AssetDatabase.DeleteAsset(folder);
+            finally
+            {
+                EditorApplication.UnlockReloadAssemblies();
+            }
+        }
+
+        private void DeleteGeneratedFixtures()
+        {
+            const string generated = "Assets/UniGameUI/Generated";
+            if (!Directory.Exists(generated))
+                return;
+            foreach (var file in Directory.EnumerateFiles(generated, "*.cs"))
+            {
+                if (File.ReadLines(file).Take(4).Any(line => line.StartsWith("// 場景路徑: " + folder + "/", StringComparison.Ordinal)))
+                    AssetDatabase.DeleteAsset(file.Replace('\\', '/'));
+            }
         }
 
         [Test]
         public void PartialPlanKeepsHandEditedLayoutAndTransitions()
         {
+            RequireDOTween();
             var scene = NewScene("PartialPlan");
             SceneManager.SetActiveScene(scene);
             var root = UIPlan.Apply(@"{
@@ -120,7 +154,7 @@ namespace UniGameUI.Editor.Tests
             Assert.That(first.Action, Is.EqualTo("renamed"));
             Assert.That(second.Action, Is.EqualTo("renamed"));
             Assert.That(elsewhere.Action, Is.EqualTo("old"));
-            Assert.That(UIValidation.Check(root).Any(issue => issue.Severity == UIIssueSeverity.Error), Is.False);
+            Assert.That(FunctionalErrors(root), Is.Empty);
 
             Undo.PerformUndo();
             Assert.That(root.Routes.Any(route => route.Source == "home" && route.Action == "old"), Is.True);
@@ -206,7 +240,356 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
-        private Scene NewScene(string name)
+        [Test]
+        public void UndoClearsTheBlueprintRouteSelection()
+        {
+            var scene = NewScene("Batch1 Route Undo");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            SceneManager.SetActiveScene(scene);
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                Undo.FlushUndoRecordObjects();
+                Undo.IncrementCurrentGroup();
+                UIAuthoring.Connect(root, "home", "newRoute", UIRouteKind.Emit);
+                Undo.FlushUndoRecordObjects();
+                var serialized = new SerializedObject(window);
+                serialized.FindProperty("selectedId").stringValue = "home";
+                serialized.FindProperty("selectedAction").stringValue = "newRoute";
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                window.CreateGUI();
+                Undo.PerformUndo();
+
+                serialized.Update();
+                Assert.That(root.Routes, Is.Empty);
+                Assert.That(serialized.FindProperty("selectedId").stringValue, Is.EqualTo("home"));
+                Assert.That(serialized.FindProperty("selectedAction").stringValue, Is.Null.Or.Empty);
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+            }
+        }
+
+        [Test]
+        public void RuntimePrefabBindingErrorsClearWhenOverridesAreApplied()
+        {
+            var root = UIAuthoring.CreateWorkspace(NewScene("Batch1 Prefab Binding"));
+            var popup = UIAuthoring.CreatePopup(root, "popup", "Popup", $"{folder}/Binding.prefab");
+            CreateBinding(popup, "oldClose");
+            UIAuthoring.ApplyReviewOverrides(root, "popup");
+            UIAuthoring.Connect(root, "popup", "oldClose", UIRouteKind.ClosePopup);
+            Assert.That(FunctionalErrors(root), Is.Empty);
+
+            UIAuthoring.UpdateRoute(root, "popup", "oldClose", "close", UIRouteKind.ClosePopup);
+            Assert.That(FunctionalErrors(root).Single().Message, Does.Contain("Prefab 本體").And.Contain("oldClose"));
+            UIAuthoring.ApplyReviewOverrides(root, "popup");
+            Assert.That(FunctionalErrors(root), Is.Empty);
+        }
+
+        [Test]
+        public void TransitionInspectorUsesTheSerializedUndoableField()
+        {
+            var root = UIAuthoring.CreateWorkspace(NewScene("Batch1 Inspector"));
+            var inspector = UnityEditor.Editor.CreateEditor(root);
+            try
+            {
+                var controls = inspector.CreateInspectorGUI();
+                Assert.That(controls.Query<PropertyField>().ToList().Any(field => field.bindingPath == "pageTransitionMode"),
+                    Is.True);
+                Undo.FlushUndoRecordObjects();
+                Undo.IncrementCurrentGroup();
+                var property = inspector.serializedObject.FindProperty("pageTransitionMode");
+                property.enumValueIndex = (int)UIPageTransitionMode.Concurrent;
+                inspector.serializedObject.ApplyModifiedProperties();
+                Undo.FlushUndoRecordObjects();
+                Assert.That(root.PageTransitionMode, Is.EqualTo(UIPageTransitionMode.Concurrent));
+                Undo.PerformUndo();
+                inspector.serializedObject.Update();
+                Assert.That(property.enumValueIndex, Is.EqualTo((int)UIPageTransitionMode.Sequential));
+            }
+            finally
+            {
+                Object.DestroyImmediate(inspector);
+            }
+        }
+
+        [Test]
+        public void NonPlayerSceneProcessingKeepsReviewInstances()
+        {
+            var scene = NewScene("Batch1 Non Player");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            var popup = UIAuthoring.CreatePopup(root, "popup", "Popup", $"{folder}/Retained.prefab");
+            new UIReviewBuildProcessor().OnProcessScene(scene, null);
+            Assert.That(popup != null, Is.True);
+            Assert.That(popup.transform.IsChildOf(root.transform.Find("UI Review")), Is.True);
+        }
+
+        [Test]
+        public void FocusReviewSelectsTheView()
+        {
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+                Assert.Ignore("此案例需要圖形裝置才能建立 Scene View。");
+            var root = UIAuthoring.CreateWorkspace(NewScene("Batch1 Focus"));
+            var page = UIAuthoring.CreatePage(root, "home", "Home");
+            var oldSelection = Selection.activeObject;
+            var oldWindow = SceneView.lastActiveSceneView;
+            try
+            {
+                UIAuthoring.FocusReview(root, "home");
+                Assert.That(Selection.activeGameObject, Is.EqualTo(page.gameObject));
+                Assert.That(EditorWindow.GetWindow<SceneView>().in2DMode, Is.True);
+            }
+            finally
+            {
+                Selection.activeObject = oldSelection;
+                if (!oldWindow)
+                    EditorWindow.GetWindow<SceneView>().Close();
+            }
+        }
+
+        [Test]
+        public void DOTweenValidationReportsOneWorkspaceErrorAndBlocksPlansWhenUnavailable()
+        {
+            var scene = NewScene("Batch1 DOTween");
+            SceneManager.SetActiveScene(scene);
+            var root = UIAuthoring.CreateWorkspace(scene);
+            var page = UIAuthoring.CreatePage(root, "home", "Home");
+            UIAuthoring.SetTransition(page, true, UITransitionPreset.Fade);
+            UIAuthoring.SetTransition(page, false, UITransitionPreset.Zoom);
+            var dependencyIssues = UIValidation.Check(root).Where(issue => issue.Message.Contains("Setup DOTween")).ToArray();
+            if (UIDOTweenSetup.IsReady)
+            {
+                Assert.That(UIDOTweenSetup.Status, Is.EqualTo(UIDOTweenStatus.Ready));
+                Assert.That(dependencyIssues, Is.Empty);
+                return;
+            }
+
+            Assert.That(dependencyIssues.Length, Is.EqualTo(1));
+            Assert.That(dependencyIssues[0].Severity, Is.EqualTo(UIIssueSeverity.Error));
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                UIPlan.Apply(@"{ ""views"": [{ ""id"": ""other"" }] }"));
+            Assert.That(exception.Message, Does.Contain("Setup DOTween"));
+            Assert.That(root.Entries.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void LocalDOTweenSearchFindsTheStandardPackageUnderAnyCategory()
+        {
+            var temp = Path.Combine(Path.GetTempPath(), "UniGameUI-Cache-" + Guid.NewGuid().ToString("N"));
+            var category = Path.Combine(temp, "Demigiant", "任意分類", "Nested");
+            try
+            {
+                Directory.CreateDirectory(category);
+                File.WriteAllText(Path.Combine(category, "DOTween Pro.unitypackage"), "");
+                File.WriteAllText(Path.Combine(category, "DOTween Editor Preview.unitypackage"), "");
+                Assert.That(UIDOTweenSetup.FindLocalPackage(temp), Is.Null);
+                var standard = Path.Combine(category, "DOTween HOTween v2.unitypackage");
+                File.WriteAllText(standard, "");
+                Assert.That(UIDOTweenSetup.FindLocalPackage(temp), Is.EqualTo(standard));
+            }
+            finally
+            {
+                if (Directory.Exists(temp))
+                    Directory.Delete(temp, true);
+            }
+        }
+
+        [Test]
+        public void GeneratedConstantsTrackSaveApplyAndViewChangesWithoutRewriting()
+        {
+            RequireDOTween();
+            var scene = NewScene("Batch1 Constants");
+            var path = "Assets/UniGameUI/Generated/Batch1ConstantsUI.cs";
+            SceneManager.SetActiveScene(scene);
+            var root = UIAuthoring.CreateWorkspace(scene);
+            var page = UIAuthoring.CreatePage(root, "workshop", "Workshop");
+            var popup = UIAuthoring.CreatePopup(root, "archive", "Archive", $"{folder}/Archive.prefab");
+            UIAuthoring.Connect(root, "workshop", "openArchive", UIRouteKind.OpenPopup, "archive");
+            UIAuthoring.Connect(root, "archive", "close", UIRouteKind.ClosePopup);
+            var button = CreateBinding(page, "openArchive");
+            SetElementId(button.gameObject, "open_archive");
+            var previewOnly = CreateBinding(popup, "previewOnly");
+            SetElementId(previewOnly.gameObject, "preview-icon");
+
+            Assert.That(UIValidation.Check(root).Any(issue => issue.Severity == UIIssueSeverity.Warning &&
+                issue.Message.Contains(path)), Is.True);
+            Assert.That(File.Exists(path), Is.False);
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            var originalSource = File.ReadAllText(path);
+            Assert.That(originalSource, Does.StartWith("// <auto-generated>").And.Contain("namespace UniGameUI.Generated")
+                .And.Contain("public static class Batch1ConstantsUI")
+                .And.Contain("public const string Workshop = \"workshop\";")
+                .And.Contain("public const string PreviewOnly = \"previewOnly\";")
+                .And.Contain("public const string PreviewIcon = \"preview-icon\";"));
+
+            File.SetLastWriteTimeUtc(path, new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            var previousTimestamp = File.GetLastWriteTimeUtc(path);
+            Assert.That(UIIdConstants.Generate(root), Is.EqualTo(path));
+            Assert.That(File.GetLastWriteTimeUtc(path), Is.EqualTo(previousTimestamp));
+
+            var serialized = new SerializedObject(root);
+            serialized.FindProperty("entries").DeleteArrayElementAtIndex(1);
+            serialized.FindProperty("routes").ClearArray();
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""9-end"", ""title"": ""New"" }], ""routes"": [
+                { ""source"": ""workshop"", ""action"": ""openArchive"", ""kind"": ""Emit"" }
+            ] }");
+            var updatedSource = File.ReadAllText(path);
+            Assert.That(updatedSource, Does.Contain("public const string _9End = \"9-end\";")
+                .And.Not.Contain("public const string Archive ="));
+        }
+
+        [Test]
+        public void IDCollisionsInEachConstantGroupAreErrors()
+        {
+            var root = UIAuthoring.CreateWorkspace(NewScene("Batch1 ID Collision"));
+            var first = UIAuthoring.CreatePage(root, "open_archive", "First");
+            UIAuthoring.CreatePage(root, "open-archive", "Second");
+            UIAuthoring.Connect(root, first.Id, "action_one", UIRouteKind.Emit);
+            UIAuthoring.Connect(root, first.Id, "action-one", UIRouteKind.Emit);
+            SetElementId(CreateBinding(first, "action_one").gameObject, "card_icon");
+            SetElementId(CreateBinding(first, "action-one").gameObject, "card-icon");
+
+            var messages = FunctionalErrors(root).Select(issue => issue.Message).ToArray();
+            Assert.That(messages.Length, Is.EqualTo(4), string.Join("\n", messages));
+            Assert.That(messages.Any(message => message.Contains("Views") && message.Contains("open-archive")), Is.True);
+            Assert.That(messages.Any(message => message.Contains("Actions") && message.Contains("action-one")), Is.True);
+            Assert.That(messages.Any(message => message.Contains("OpenArchive") && message.Contains("card-icon")), Is.True);
+            Assert.Throws<InvalidOperationException>(() => UIIdConstants.Generate(root));
+        }
+
+        [Test]
+        public void SameNamedScenesWithWorkspacesConflictEvenAfterOneCloses()
+        {
+            var firstScene = NewScene("Batch1 Duplicate Scene");
+            var first = UIAuthoring.CreateWorkspace(firstScene);
+            Assert.That(EditorSceneManager.SaveScene(firstScene), Is.True);
+            var other = NewScene("Batch1 Duplicate Scene", "Other");
+            var otherPath = other.path;
+            var second = UIAuthoring.CreateWorkspace(other);
+            Assert.That(FunctionalErrors(second).Any(issue => issue.Message.Contains(firstScene.path)), Is.True);
+
+            LogAssert.Expect(LogType.Error, new Regex("無法更新場景.*", RegexOptions.Singleline));
+            Assert.That(EditorSceneManager.SaveScene(other), Is.True);
+            Assert.That(EditorSceneManager.CloseScene(other, true), Is.True);
+            Assert.That(FunctionalErrors(first).Any(issue => issue.Message.Contains(otherPath)), Is.True);
+        }
+
+        [Test]
+        public void TMPPopupHasItsOwnCanvasWithoutFalseOverrides()
+        {
+            RequireDOTween();
+            importedTmp = !Directory.Exists("Assets/TextMesh Pro") && !File.Exists("Assets/TextMesh Pro.meta");
+            var scene = NewScene("Batch1 TMP Canvas");
+            SceneManager.SetActiveScene(scene);
+            var root = UIPlan.Apply($@"{{
+                ""views"": [{{
+                    ""id"": ""popup"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/TextPopup.prefab"",
+                    ""elements"": [{{""id"": ""message"", ""kind"": ""Text"", ""text"": ""Popup message""}}]
+                }}]
+            }}");
+            var entry = UIAuthoring.FindEntry(root, "popup");
+            entry.Review.GetComponentInChildren<TextMeshProUGUI>().ForceMeshUpdate();
+            Canvas.ForceUpdateCanvases();
+            AssertChildCanvas(entry.Review);
+            AssertChildCanvas(entry.Prefab);
+            Assert.That(UIAuthoring.HasReviewOverrides(entry), Is.False);
+        }
+
+        [Test]
+        public void CanvasRepairUpdatesPrefabComponentsAndKeepsUnrelatedOverrides()
+        {
+            var scene = NewScene("Batch1 Repair Canvas");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            var page = UIAuthoring.CreatePage(root, "home", "Home");
+            Object.DestroyImmediate(page.GetComponent<GraphicRaycaster>());
+            Object.DestroyImmediate(page.GetComponent<Canvas>());
+            var popupPath = $"{folder}/Repair.prefab";
+            var popup = UIAuthoring.CreatePopup(root, "popup", "Popup", popupPath);
+            var prefab = PrefabUtility.LoadPrefabContents(popupPath);
+            try
+            {
+                Object.DestroyImmediate(prefab.GetComponent<GraphicRaycaster>());
+                Object.DestroyImmediate(prefab.GetComponent<Canvas>());
+                PrefabUtility.SaveAsPrefabAsset(prefab, popupPath);
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(prefab);
+            }
+
+            var overlay = popup.GetComponentInChildren<Image>();
+            overlay.color = Color.magenta;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(overlay);
+            var entry = UIAuthoring.FindEntry(root, "popup");
+            Assert.That(UIValidation.Check(root).Count(issue => issue.Message.Contains("缺少子 Canvas")), Is.EqualTo(2));
+            UIAuthoring.RepairViewCanvases(root);
+            AssertChildCanvas(page);
+            AssertChildCanvas(entry.Review);
+            AssertChildCanvas(entry.Prefab);
+            Assert.That(overlay.color, Is.EqualTo(Color.magenta));
+            Assert.That(entry.Prefab.GetComponentInChildren<Image>().color, Is.Not.EqualTo(Color.magenta));
+            Assert.That(UIAuthoring.HasReviewOverrides(entry), Is.True);
+        }
+
+        [Test]
+        public void ShownRestoresPersistentListenersFromThePreviousSerializedField()
+        {
+            var scene = NewScene("Batch1 Event Migration");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            var page = UIAuthoring.CreatePage(root, "home", "Home");
+            UnityEventTools.AddBoolPersistentListener(page.Shown, page.gameObject.SetActive, true);
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            var path = scene.path;
+            var legacy = typeof(UIView).GetField("shown", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetCustomAttribute<FormerlySerializedAsAttribute>().oldName;
+            var yaml = File.ReadAllText(path);
+            Assert.That(yaml, Does.Contain("  shown:"));
+            if (SceneManager.sceneCount == 1)
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            else
+                EditorSceneManager.CloseScene(scene, true);
+            File.WriteAllText(path, yaml.Replace("  shown:", $"  {legacy}:"));
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+            var mode = SceneManager.sceneCount == 1 && string.IsNullOrEmpty(SceneManager.GetActiveScene().path)
+                ? OpenSceneMode.Single : OpenSceneMode.Additive;
+            var reopened = EditorSceneManager.OpenScene(path, mode);
+            scenes.Add(reopened);
+            var migrated = UIAuthoring.FindEntry(UIAuthoring.FindWorkspace(reopened), "home").Review;
+            Assert.That(migrated.Shown.GetPersistentEventCount(), Is.EqualTo(1));
+            Assert.That(migrated.Shown.GetPersistentTarget(0), Is.EqualTo(migrated.gameObject));
+            Assert.That(migrated.Shown.GetPersistentMethodName(0), Is.EqualTo(nameof(GameObject.SetActive)));
+        }
+
+        private static void RequireDOTween()
+        {
+            if (!UIDOTweenSetup.IsReady)
+                Assert.Ignore("此案例需要 DOTween，請先匯入並完成 Setup DOTween。");
+        }
+
+        private static IEnumerable<UIIssue> FunctionalErrors(UIRoot root)
+        {
+            return UIValidation.Check(root).Where(issue => issue.Severity == UIIssueSeverity.Error &&
+                !issue.Message.Contains("Setup DOTween"));
+        }
+
+        private static void SetElementId(GameObject gameObject, string id)
+        {
+            var serialized = new SerializedObject(gameObject.AddComponent<UIElementId>());
+            serialized.FindProperty("id").stringValue = id;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void AssertChildCanvas(UIView view)
+        {
+            Assert.That(view.TryGetComponent<Canvas>(out var canvas), Is.True);
+            Assert.That(canvas.overrideSorting, Is.False);
+            Assert.That(view.TryGetComponent<GraphicRaycaster>(out _), Is.True);
+        }
+
+        private Scene NewScene(string name, string subfolder = null)
         {
             var active = SceneManager.GetActiveScene();
             var replaceUntitled = SceneManager.sceneCount == 1 &&
@@ -216,7 +599,14 @@ namespace UniGameUI.Editor.Tests
             scenes.Add(scene);
             if (!AssetDatabase.IsValidFolder(folder))
                 AssetDatabase.CreateFolder("Assets", Path.GetFileName(folder));
-            Assert.That(EditorSceneManager.SaveScene(scene, $"{folder}/{name}.unity"), Is.True);
+            var destination = folder;
+            if (subfolder != null)
+            {
+                if (!AssetDatabase.IsValidFolder($"{folder}/{subfolder}"))
+                    AssetDatabase.CreateFolder(folder, subfolder);
+                destination = $"{folder}/{subfolder}";
+            }
+            Assert.That(EditorSceneManager.SaveScene(scene, $"{destination}/{name}.unity"), Is.True);
             return scene;
         }
 

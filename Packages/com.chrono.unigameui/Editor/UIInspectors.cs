@@ -19,9 +19,17 @@ namespace UniGameUI.Editor
             inspector.Add(columns);
             inspector.Add(new Button(() => UIAuthoring.ConfigureReview(root, resolution.value, columns.value))
                 { text = "更新審核排列設定" });
-            var transitionMode = new EnumField("切頁動畫", root.PageTransitionMode);
-            transitionMode.RegisterValueChangedCallback(change =>
-                UIAuthoring.SetPageTransitionMode(root, (UIPageTransitionMode)change.newValue));
+            var transitionMode = new PropertyField(serializedObject.FindProperty("pageTransitionMode"), "切頁動畫")
+                { bindingPath = "pageTransitionMode" };
+            void RefreshTransitionMode(PlayModeStateChange change)
+            {
+                transitionMode.SetEnabled(change == PlayModeStateChange.EnteredEditMode);
+            }
+            transitionMode.SetEnabled(!EditorApplication.isPlayingOrWillChangePlaymode);
+            transitionMode.RegisterCallback<AttachToPanelEvent>(_ =>
+                EditorApplication.playModeStateChanged += RefreshTransitionMode);
+            transitionMode.RegisterCallback<DetachFromPanelEvent>(_ =>
+                EditorApplication.playModeStateChanged -= RefreshTransitionMode);
             inspector.Add(transitionMode);
             inspector.Add(new Button(UIBlueprintWindow.Open) { text = "開啟藍圖" });
             inspector.Add(new Button(() => UIAuthoring.FocusReview(root)) { text = "檢視全部 UI" });
@@ -47,11 +55,11 @@ namespace UniGameUI.Editor
             controls.Add(new Button(UIAnimationPreview.Stop) { text = "停止預覽" });
             controls.SetEnabled(UITransition.IsDOTweenReady && !EditorUtility.IsPersistent(view));
             inspector.Add(controls);
-            if (!UITransition.IsDOTweenReady)
-                inspector.Add(new HelpBox("尚未安裝 DOTween，轉場會直接切換。安裝並完成 Setup DOTween 後可播放及預覽動畫。",
+            if (!UIDOTweenSetup.IsReady)
+                inspector.Add(new HelpBox(UIDOTweenSetup.SetupMessage(UIDOTweenSetup.Status),
                     HelpBoxMessageType.Info));
             inspector.Add(new PropertyField(serializedObject.FindProperty("showing"), "Showing"));
-            inspector.Add(new PropertyField(serializedObject.FindProperty("showed"), "Showed"));
+            inspector.Add(new PropertyField(serializedObject.FindProperty("shown"), "Shown"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("hiding"), "Hiding"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("hidden"), "Hidden"));
             return inspector;

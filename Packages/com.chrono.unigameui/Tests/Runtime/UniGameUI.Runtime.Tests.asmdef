@@ -1,6 +1,6 @@
 {
   "name": "UniGameUI.Runtime.Tests",
-  "references": ["UniGameUI.Runtime"],
+  "references": ["UniGameUI.Runtime", "UnityEngine.UI"],
   "optionalUnityReferences": ["TestAssemblies"],
   "autoReferenced": false,
   "defineConstraints": ["UNIGAMEUI_TEST_FRAMEWORK"],

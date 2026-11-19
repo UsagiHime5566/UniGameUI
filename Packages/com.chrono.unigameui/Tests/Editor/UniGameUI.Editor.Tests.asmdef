@@ -1,6 +1,6 @@
 {
   "name": "UniGameUI.Editor.Tests",
-  "references": ["UniGameUI.Editor", "UniGameUI.Runtime", "UnityEngine.UI"],
+  "references": ["UniGameUI.Editor", "UniGameUI.Runtime", "UnityEngine.UI", "Unity.TextMeshPro"],
   "includePlatforms": ["Editor"],
   "optionalUnityReferences": ["TestAssemblies"],
   "autoReferenced": false,

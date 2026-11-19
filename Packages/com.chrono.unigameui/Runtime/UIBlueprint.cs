@@ -11,7 +11,7 @@ namespace UniGameUI
     public enum UIPageTransitionMode { Sequential, Concurrent }
     public enum UIEntryKind { Page, Popup }
     public enum UIRouteKind { ShowPage, OpenPopup, Back, ClosePopup, Emit }
-    public enum UINavResult { Completed, Busy, Unavailable, Canceled }
+    public enum UINavResult { Completed, Busy, Canceled, Unavailable, NotFound, Failed }
 
     [Serializable]
     public sealed class UIEntry

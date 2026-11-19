@@ -17,6 +17,8 @@ namespace UniGameUI.Editor
     {
         private const float ReviewScale = 0.01f;
         private const float ReviewSpacing = 96f;
+        private const AdditionalCanvasShaderChannels TextShaderChannels = AdditionalCanvasShaderChannels.TexCoord1 |
+            AdditionalCanvasShaderChannels.Normal | AdditionalCanvasShaderChannels.Tangent;
 
         public static UIRoot FindWorkspace(Scene scene)
         {
@@ -251,7 +253,9 @@ namespace UniGameUI.Editor
         public static void FocusReview(UIRoot root, string id = null)
         {
             CheckRoot(root);
-            var sceneView = SceneView.lastActiveSceneView ?? EditorWindow.GetWindow<SceneView>();
+            var sceneView = SceneView.lastActiveSceneView;
+            if (!sceneView)
+                sceneView = EditorWindow.GetWindow<SceneView>();
             sceneView.in2DMode = true;
             if (!string.IsNullOrEmpty(id))
             {
@@ -315,6 +319,62 @@ namespace UniGameUI.Editor
         {
             CheckRoot(root);
             ApplyReviewOverrides(FindEntry(root, id));
+        }
+
+        internal static bool NeedsViewCanvas(UIView view)
+        {
+            return view && (!view.TryGetComponent<Canvas>(out _) || !view.TryGetComponent<GraphicRaycaster>(out _));
+        }
+
+        internal static void RepairViewCanvases(UIRoot root)
+        {
+            CheckRoot(root);
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("修正子 Canvas");
+            try
+            {
+                foreach (var entry in root.Entries)
+                {
+                    if (entry == null || !entry.Review ||
+                        (!NeedsViewCanvas(entry.Review) && !NeedsViewCanvas(entry.Prefab)))
+                        continue;
+
+                    var prefab = entry.Prefab;
+                    var path = prefab ? AssetDatabase.GetAssetPath(prefab) : null;
+                    if (prefab && PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(entry.Review.gameObject) != path)
+                        throw new InvalidOperationException($"「{entry.Id}」的審核畫面與 Prefab 本體未連結。");
+
+                    EnsureViewComponent<Canvas>(entry.Review, prefab, path, ConfigureViewCanvas);
+                    EnsureViewComponent<GraphicRaycaster>(entry.Review, prefab, path);
+                }
+                MarkChanged(root);
+                Undo.CollapseUndoOperations(group);
+            }
+            catch
+            {
+                Undo.RevertAllDownToGroup(group);
+                throw;
+            }
+        }
+
+        private static void EnsureViewComponent<T>(
+            UIView view, UIView prefab, string path, Action<T> configure = null) where T : Component
+        {
+            var source = prefab ? prefab.GetComponent<T>() : null;
+            if (!view.TryGetComponent<T>(out var component))
+            {
+                if (source)
+                {
+                    PrefabUtility.RevertRemovedComponent(view.gameObject, source, InteractionMode.UserAction);
+                    return;
+                }
+                component = Undo.AddComponent<T>(view.gameObject);
+                configure?.Invoke(component);
+            }
+
+            if (prefab && !source && PrefabUtility.IsAddedComponentOverride(component))
+                PrefabUtility.ApplyAddedComponent(component, path, InteractionMode.UserAction);
         }
 
         internal static void ApplyReviewOverrides(UIEntry entry)
@@ -453,6 +513,8 @@ namespace UniGameUI.Editor
             var rect = CreateRect(title, frame);
             Undo.RegisterCreatedObjectUndo(rect.gameObject, "Create UI view");
             var view = Undo.AddComponent<UIView>(rect.gameObject);
+            ConfigureViewCanvas(Undo.AddComponent<Canvas>(rect.gameObject));
+            Undo.AddComponent<GraphicRaycaster>(rect.gameObject);
             view.id = id;
             view.canvasGroup = rect.GetComponent<CanvasGroup>();
             if (kind == UIEntryKind.Popup)
@@ -473,6 +535,12 @@ namespace UniGameUI.Editor
             UIRoot.Stretch(view.content);
             UIRoot.Stretch(rect);
             return view;
+        }
+
+        private static void ConfigureViewCanvas(Canvas canvas)
+        {
+            Undo.RecordObject(canvas, "設定子 Canvas");
+            canvas.additionalShaderChannels |= TextShaderChannels;
         }
 
         private static RectTransform CreateRect(string name, Transform parent)

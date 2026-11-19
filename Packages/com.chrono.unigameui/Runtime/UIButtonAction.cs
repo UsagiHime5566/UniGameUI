@@ -28,8 +28,15 @@ namespace UniGameUI
         {
             var view = GetComponentInParent<UIView>();
             var root = GetComponentInParent<UIRoot>();
-            if (view && root)
-                await root.TriggerAsync(view.Id, action);
+            if (!view || !root)
+            {
+                var missing = !view ? "UIView" : "UIRoot";
+                Debug.LogError($"UniGameUI: UIButtonAction '{(view ? view.Id : name)}'/'{action}' " +
+                    $"找不到上層的 {missing}。（Scene: {gameObject.scene.name}）",
+                    root ? (Object)root : this);
+                return;
+            }
+            await root.TriggerAsync(view.Id, action);
         }
     }
 }
