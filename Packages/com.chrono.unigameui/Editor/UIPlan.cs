@@ -12,7 +12,7 @@ using Object = UnityEngine.Object;
 
 namespace UniGameUI.Editor
 {
-    public static class UIPlan
+    public static partial class UIPlan
     {
         [Serializable]
         private sealed class Plan
@@ -26,6 +26,8 @@ namespace UniGameUI.Editor
             public string pageTransitionMode;
             public ViewSpec[] views;
             public RouteSpec[] routes;
+            public WidgetSpec[] widgets;
+            public string defaultFontPath;
         }
 
         [Serializable]
@@ -61,22 +63,6 @@ namespace UniGameUI.Editor
         }
 
         [Serializable]
-        private sealed class ElementSpec
-        {
-            public string id;
-            public string kind;
-            public bool updateExisting;
-            public string text;
-            public string action;
-            public RectSpec rect;
-            public float fontSize;
-            public string fontPath;
-            public string color;
-            public string textColor;
-            public string spritePath;
-        }
-
-        [Serializable]
         private sealed class RectSpec
         {
             public Vector2 anchor = Unset;
@@ -88,7 +74,6 @@ namespace UniGameUI.Editor
 
         private static readonly Vector2 Unset = new Vector2(float.NaN, float.NaN);
         private static readonly Vector2 DefaultAnchor = new Vector2(0.5f, 0.5f);
-        private static readonly Vector2 DefaultSize = new Vector2(240, 72);
 
         [Serializable]
         private sealed class RouteSpec
@@ -101,8 +86,6 @@ namespace UniGameUI.Editor
             public string result;
             public bool replace;
         }
-
-        private enum ElementKind { Text, Button, Image }
 
         [MenuItem("Tools/UniGameUI/Apply JSON Plan…")]
         private static async void ApplyFromMenu()
@@ -141,7 +124,7 @@ namespace UniGameUI.Editor
         {
             var plan = ReadPlan(json);
             var active = SceneManager.GetActiveScene();
-            if (!Application.isBatchMode && NeedsText(plan))
+            if (!Application.isBatchMode && NeedsTmpResources(plan))
                 await UITmpResources.ImportWithEditorAsync();
             return Apply(plan, saveScene, active);
         }
@@ -167,13 +150,21 @@ namespace UniGameUI.Editor
             var group = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Apply UniGameUI plan");
             UIRoot root;
+            UIWidgetSet widgetSet = null;
+            string widgetSnapshot = null;
             try
             {
                 root = UIAuthoring.FindWorkspace(scene);
                 var mode = Parse(plan.mode, root ? root.Mode : UIAuthoringMode.SingleScene);
                 Preflight(plan, root, mode);
-                if (NeedsText(plan))
+                if (NeedsTmpResources(plan))
                     UITmpResources.Ensure();
+
+                // 檢查通過後才動元件集：補上缺少的起始元件，再登記計畫自己的元件。
+                widgetSet = UIWidgets.Install();
+                widgetSnapshot = EditorJsonUtility.ToJson(widgetSet);
+                foreach (var widget in plan.widgets ?? Array.Empty<WidgetSpec>())
+                    UIWidgets.Register(widget.name, widget.prefabPath, Parse(widget.like, UIWidgetKind.Custom));
 
                 root = UIAuthoring.CreateWorkspace(scene, mode);
                 if (plan.referenceResolution != Vector2.zero || plan.reviewColumns != 0)
@@ -182,7 +173,7 @@ namespace UniGameUI.Editor
                         plan.reviewColumns == 0 ? root.ReviewColumns : plan.reviewColumns);
 
                 foreach (var view in plan.views ?? Array.Empty<ViewSpec>())
-                    ApplyView(root, view, createdPrefabs);
+                    ApplyView(root, view, createdPrefabs, widgetSet);
                 foreach (var route in plan.routes ?? Array.Empty<RouteSpec>())
                 {
                     var existing = FindRoute(root, route);
@@ -208,11 +199,20 @@ namespace UniGameUI.Editor
                 if ((saveScene || createdScene) && !EditorSceneManager.SaveScene(scene, plan.scenePath))
                     throw new IOException($"Could not save Scene '{plan.scenePath}'.");
 
+                // 預設字型會改到元件 Prefab，留到其他步驟都成功之後才套用。
+                if (plan.defaultFontPath != null)
+                    UIWidgets.SetDefaultFont(plan.defaultFontPath);
                 Undo.CollapseUndoOperations(group);
             }
             catch
             {
                 Undo.RevertAllDownToGroup(group);
+                if (widgetSet && widgetSnapshot != null && EditorJsonUtility.ToJson(widgetSet) != widgetSnapshot)
+                {
+                    EditorJsonUtility.FromJsonOverwrite(widgetSnapshot, widgetSet);
+                    EditorUtility.SetDirty(widgetSet);
+                    AssetDatabase.SaveAssetIfDirty(widgetSet);
+                }
                 foreach (var path in createdPrefabs)
                     AssetDatabase.DeleteAsset(path);
                 if (createdScene && scene.IsValid() && scene.isLoaded)
@@ -260,11 +260,19 @@ namespace UniGameUI.Editor
         {
             if (root && root.Mode != mode)
                 throw new ArgumentException("The plan's authoring mode differs from the existing workspace.");
+            var catalog = ReadCatalog(plan);
+            if (plan.defaultFontPath != null)
+                UIWidgets.LoadFont(plan.defaultFontPath);
+
             var kinds = new Dictionary<string, UIEntryKind>();
+            var entries = new Dictionary<string, UIEntry>();
             if (root)
             {
                 foreach (var entry in root.Entries)
+                {
                     kinds.Add(entry.Id, entry.Kind);
+                    entries.Add(entry.Id, entry);
+                }
             }
 
             var viewIds = new HashSet<string>();
@@ -294,22 +302,7 @@ namespace UniGameUI.Editor
                     throw new ArgumentException($"Single Scene page '{view.id}' cannot have a Prefab path.");
                 }
 
-                var elementIds = new HashSet<string>();
-                foreach (var element in view.elements ?? Array.Empty<ElementSpec>())
-                {
-                    UIAuthoring.CheckId(element.id);
-                    if (!elementIds.Add(element.id))
-                        throw new ArgumentException($"{view.id}: duplicate element ID '{element.id}'.");
-                    var type = Parse(element.kind, ElementKind.Text);
-                    if (!string.IsNullOrEmpty(element.action))
-                    {
-                        UIAuthoring.CheckId(element.action);
-                        if (type != ElementKind.Button)
-                            throw new ArgumentException($"{view.id}/{element.id}: only Buttons can dispatch actions.");
-                    }
-                    if (element.rect != null && (IsNonPositive(element.rect.size.x) || IsNonPositive(element.rect.size.y)))
-                        throw new ArgumentException($"{view.id}/{element.id}: size must be positive.");
-                }
+                PreflightElements(view, entries.TryGetValue(view.id, out var entry) ? entry.Review : null, catalog);
             }
 
             if (!string.IsNullOrEmpty(plan.startPage) &&
@@ -351,14 +344,14 @@ namespace UniGameUI.Editor
                 : UIHistoryMode.Push;
         }
 
-        private static bool NeedsText(Plan plan)
+        // 元件含有 TMP 文字，起始元件也要 TMP 的預設字型才建得出來。
+        private static bool NeedsTmpResources(Plan plan)
         {
-            return (plan.views ?? Array.Empty<ViewSpec>()).Any(view =>
-                (view.elements ?? Array.Empty<ElementSpec>()).Any(element =>
-                    element.text != null || Parse(element.kind, ElementKind.Text) == ElementKind.Text));
+            return UIWidgets.Find() == null ||
+                (plan.views ?? Array.Empty<ViewSpec>()).Any(view => view.elements != null && view.elements.Length > 0);
         }
 
-        private static void ApplyView(UIRoot root, ViewSpec spec, List<string> createdPrefabs)
+        private static void ApplyView(UIRoot root, ViewSpec spec, List<string> createdPrefabs, UIWidgetSet widgetSet)
         {
             var existing = UIAuthoring.FindEntry(root, spec.id);
             var kind = Parse(spec.kind, existing?.Kind ?? UIEntryKind.Page);
@@ -389,125 +382,9 @@ namespace UniGameUI.Editor
             }
 
             foreach (var element in spec.elements ?? Array.Empty<ElementSpec>())
-                ApplyElement(view, element);
+                ApplyElement(view, element, widgetSet);
             if (newPrefab)
                 UIAuthoring.ApplyReviewOverrides(root, spec.id);
-        }
-
-        private static void ApplyElement(UIView view, ElementSpec spec)
-        {
-            var gameObject = FindElement(view, spec.id);
-            var created = !gameObject;
-            if (!created && !spec.updateExisting)
-                return;
-            var kind = Parse(spec.kind, ElementKind.Text);
-            if (created)
-            {
-                gameObject = new GameObject(spec.id, typeof(RectTransform), typeof(UIElementId));
-                gameObject.transform.SetParent(view.Content, false);
-                gameObject.GetComponent<UIElementId>().id = spec.id;
-                Undo.RegisterCreatedObjectUndo(gameObject, "Create UI element");
-            }
-            else
-            {
-                var existingKind = gameObject.GetComponent<Button>() ? ElementKind.Button :
-                    gameObject.GetComponent<Image>() ? ElementKind.Image : ElementKind.Text;
-                if (kind != existingKind)
-                    throw new ArgumentException($"{view.Id}/{spec.id}: update the existing {existingKind} element.");
-            }
-
-            // Omitted rect fields keep the element's current layout; new elements start from the defaults.
-            var layout = spec.rect ?? new RectSpec();
-            if (created || !layout.IsEmpty)
-            {
-                var rect = (RectTransform)gameObject.transform;
-                Undo.RecordObject(rect, "Set UI layout");
-                if (created || !IsUnset(layout.anchor))
-                {
-                    var anchor = Merge(created ? DefaultAnchor : rect.anchorMin, layout.anchor);
-                    rect.anchorMin = anchor;
-                    rect.anchorMax = anchor;
-                }
-                if (created || !IsUnset(layout.position))
-                    rect.anchoredPosition = Merge(created ? Vector2.zero : rect.anchoredPosition, layout.position);
-                if (created || !IsUnset(layout.size))
-                    rect.sizeDelta = Merge(created ? DefaultSize : rect.sizeDelta, layout.size);
-                UIAuthoring.RecordOverride(rect);
-            }
-
-            if (kind == ElementKind.Text)
-            {
-                ApplyLabel(GetOrAdd<TextMeshProUGUI>(gameObject), spec, created, spec.textColor ?? spec.color);
-                return;
-            }
-
-            var image = GetOrAdd<Image>(gameObject);
-            if (created || spec.color != null || spec.spritePath != null)
-            {
-                Undo.RecordObject(image, "Set UI image");
-                if (created)
-                {
-                    image.color = kind == ElementKind.Button ? new Color32(45, 106, 204, 255) : Color.white;
-                    image.raycastTarget = kind == ElementKind.Button;
-                }
-                if (!string.IsNullOrEmpty(spec.color))
-                    image.color = ParseColor(spec.color);
-                if (!string.IsNullOrEmpty(spec.spritePath))
-                    image.sprite = LoadAsset<Sprite>(spec.spritePath);
-                UIAuthoring.RecordOverride(image);
-            }
-            if (kind != ElementKind.Button)
-                return;
-
-            var button = GetOrAdd<Button>(gameObject);
-            if (!button.targetGraphic)
-            {
-                Undo.RecordObject(button, "Set button graphic");
-                button.targetGraphic = image;
-                UIAuthoring.RecordOverride(button);
-            }
-            if (!string.IsNullOrEmpty(spec.action))
-                UIAuthoring.BindButton(button, spec.action);
-            if (spec.text == null && spec.fontPath == null && spec.textColor == null && spec.fontSize <= 0)
-                return;
-
-            var label = gameObject.GetComponentInChildren<TextMeshProUGUI>(true);
-            var createdLabel = !label;
-            if (createdLabel)
-            {
-                if (spec.text == null)
-                    return;
-                var labelObject = new GameObject("Label", typeof(RectTransform));
-                var labelRect = (RectTransform)labelObject.transform;
-                labelRect.SetParent(gameObject.transform, false);
-                UIRoot.Stretch(labelRect);
-                labelRect.offsetMin = new Vector2(12, 4);
-                labelRect.offsetMax = new Vector2(-12, -4);
-                Undo.RegisterCreatedObjectUndo(labelObject, "Create button label");
-                label = Undo.AddComponent<TextMeshProUGUI>(labelObject);
-            }
-            ApplyLabel(label, spec, createdLabel, spec.textColor);
-        }
-
-        private static void ApplyLabel(TextMeshProUGUI label, ElementSpec spec, bool created, string color)
-        {
-            Undo.RecordObject(label, "Set UI text");
-            if (created)
-            {
-                label.alignment = TextAlignmentOptions.Center;
-                label.fontSize = 32;
-                label.color = Color.white;
-                label.raycastTarget = false;
-            }
-            if (spec.text != null)
-                label.text = spec.text;
-            if (spec.fontSize > 0)
-                label.fontSize = spec.fontSize;
-            if (!string.IsNullOrEmpty(spec.fontPath))
-                label.font = LoadAsset<TMP_FontAsset>(spec.fontPath);
-            if (!string.IsNullOrEmpty(color))
-                label.color = ParseColor(color);
-            UIAuthoring.RecordOverride(label);
         }
 
         private static void SetAnimation(UIView view, bool entering, AnimationSpec animation)

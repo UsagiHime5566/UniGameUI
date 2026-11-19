@@ -30,7 +30,6 @@ namespace UniGameUI.Editor.Tests
         private readonly List<Scene> scenes = new List<Scene>();
         private Scene original;
         private string folder;
-        private bool importedTmp;
         private bool hadGeneratedParent;
         private bool hadGeneratedFolder;
         private bool hadGeneratedAssembly;
@@ -40,7 +39,7 @@ namespace UniGameUI.Editor.Tests
         {
             original = SceneManager.GetActiveScene();
             folder = "Assets/UniGameUI-Tests-" + Guid.NewGuid().ToString("N");
-            importedTmp = false;
+            PrepareWidgetFixtures();
             hadGeneratedParent = Directory.Exists(GeneratedParent);
             hadGeneratedFolder = Directory.Exists(Generated);
             hadGeneratedAssembly = File.Exists(GeneratedAssembly);
@@ -65,8 +64,7 @@ namespace UniGameUI.Editor.Tests
                 DeleteGeneratedFixtures();
                 if (AssetDatabase.IsValidFolder(folder))
                     AssetDatabase.DeleteAsset(folder);
-                if (importedTmp && AssetDatabase.IsValidFolder("Assets/TextMesh Pro"))
-                    AssetDatabase.DeleteAsset("Assets/TextMesh Pro");
+                UIWidgets.FolderOverride = SharedWidgets;
             }
             finally
             {
@@ -663,7 +661,6 @@ namespace UniGameUI.Editor.Tests
         public void TMPPopupHasItsOwnCanvasWithoutFalseOverrides()
         {
             RequireDOTween();
-            importedTmp = !Directory.Exists("Assets/TextMesh Pro") && !File.Exists("Assets/TextMesh Pro.meta");
             var scene = NewScene("Batch1 TMP Canvas");
             SceneManager.SetActiveScene(scene);
             var root = UIPlan.Apply($@"{{

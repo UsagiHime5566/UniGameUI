@@ -46,6 +46,10 @@ namespace UniGameUI.Editor
                 return existing;
             }
 
+            // 畫面上的元件都是元件集裡 Prefab 的實例，所以專案還沒有元件集時先安裝起始元件。
+            if (!UIWidgets.Find())
+                UIWidgets.Install();
+
             var gameObject = new GameObject("UniGameUI", typeof(RectTransform), typeof(Canvas),
                 typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(UIRoot));
             SceneManager.MoveGameObjectToScene(gameObject, scene);
@@ -432,12 +436,95 @@ namespace UniGameUI.Editor
             }
         }
 
-        internal static void RecordOverride(Object changed)
+        /// <summary>
+        /// 記錄 Prefab 實例的覆寫。<paramref name="pinnedProperties"/> 是計畫明確寫出的欄位，
+        /// 即使數值剛好和元件 Prefab 相同也要成為覆寫，之後修改元件 Prefab 才不會蓋掉它。
+        /// </summary>
+        internal static void RecordOverride(Object changed, params string[] pinnedProperties)
         {
             PrefabUtility.RecordPrefabInstancePropertyModifications(changed);
             EditorUtility.SetDirty(changed);
             if (changed is Component component && component.gameObject.scene.IsValid())
                 EditorSceneManager.MarkSceneDirty(component.gameObject.scene);
+            if (pinnedProperties.Length > 0)
+                PinOverrides(changed, pinnedProperties);
+        }
+
+        // Unity 只會把「和 Prefab 不同」的值記成覆寫，已經成立的覆寫則會保留。
+        // 所以數值相同時，先暫時改成別的值讓覆寫成立，再改回來。
+        private static void PinOverrides(Object target, string[] propertyPaths)
+        {
+            if (!target || !PrefabUtility.IsPartOfPrefabInstance(target))
+                return;
+
+            var serialized = new SerializedObject(target);
+            var restore = new List<Action>();
+            foreach (var path in propertyPaths)
+            {
+                var property = serialized.FindProperty(path);
+                if (property == null || property.prefabOverride)
+                    continue;
+                var action = Perturb(property);
+                if (action != null)
+                    restore.Add(action);
+            }
+            if (restore.Count == 0)
+                return;
+
+            serialized.ApplyModifiedProperties();
+            foreach (var action in restore)
+                action();
+            serialized.ApplyModifiedProperties();
+        }
+
+        private static Action Perturb(SerializedProperty property)
+        {
+            switch (property.propertyType)
+            {
+                case SerializedPropertyType.Float:
+                {
+                    var value = property.floatValue;
+                    property.floatValue = value + 1f;
+                    return () => property.floatValue = value;
+                }
+                case SerializedPropertyType.Integer:
+                case SerializedPropertyType.Enum:
+                {
+                    var value = property.intValue;
+                    property.intValue = value == 0 ? 1 : 0;
+                    return () => property.intValue = value;
+                }
+                case SerializedPropertyType.Boolean:
+                {
+                    var value = property.boolValue;
+                    property.boolValue = !value;
+                    return () => property.boolValue = value;
+                }
+                case SerializedPropertyType.String:
+                {
+                    var value = property.stringValue;
+                    property.stringValue = value + "*";
+                    return () => property.stringValue = value;
+                }
+                case SerializedPropertyType.Color:
+                {
+                    var value = property.colorValue;
+                    property.colorValue = new Color(
+                        value.r < 0.5f ? 1f : 0f, value.g < 0.5f ? 1f : 0f,
+                        value.b < 0.5f ? 1f : 0f, value.a < 0.5f ? 1f : 0f);
+                    return () => property.colorValue = value;
+                }
+                case SerializedPropertyType.ObjectReference:
+                {
+                    var value = property.objectReferenceValue;
+                    if (!value)
+                        return null;
+                    property.objectReferenceValue = null;
+                    return () => property.objectReferenceValue = value;
+                }
+                default:
+                    return null;
+            }
         }
 
         private static UIView CreateEntry(UIRoot root, string id, string title, UIEntryKind kind, string prefabPath)
