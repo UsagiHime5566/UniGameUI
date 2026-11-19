@@ -8,8 +8,10 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEditor.UIElements;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.UIElements;
 using Button = UnityEngine.UI.Button;
 using Image = UnityEngine.UI.Image;
 using Object = UnityEngine.Object;
@@ -942,6 +944,124 @@ namespace UniGameUI.Editor.Tests
             UIAuthoring.ApplyReviewOverrides(styled, "quitConfirm");
             Assert.That(styledEntry.Prefab.GetComponent<UIConfirmPopup>(), Is.Not.Null);
             Assert.That(FunctionalErrors(styled), Is.Empty);
+        }
+
+        [Test]
+        public void ValidationReportsBrokenWidgetSetsAndViewOptions()
+        {
+            RequireDOTween();
+            var widgets = UseIsolatedWidgets();
+            var scene = NewScene("Batch3 Validation");
+            SceneManager.SetActiveScene(scene);
+            var root = UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"", ""elements"": [
+                    {{ ""id"": ""start"", ""kind"": ""Button"", ""text"": ""Start"" }},
+                    {{ ""id"": ""volume"", ""kind"": ""Slider"" }}] }},
+                {{ ""id"": ""next"", ""elements"": [{{ ""id"": ""back"", ""kind"": ""Button"" }}] }},
+                {{ ""id"": ""popup"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Validation.prefab"" }}
+            ] }}");
+            Assert.That(FunctionalErrors(root), Is.Empty);
+            var home = UIAuthoring.FindEntry(root, "home").Review;
+            var next = UIAuthoring.FindEntry(root, "next").Review;
+            var popup = UIAuthoring.FindEntry(root, "popup").Review;
+
+            // 預設選取元件不在這個畫面裡。
+            home.defaultSelected = UIPlan.FindElement(next, "back").GetComponent<Button>();
+            Assert.That(SingleError(root), Does.Contain("home").And.Contain("back").And.Contain("不在這個畫面裡"));
+            home.defaultSelected = UIPlan.FindElement(home, "start").GetComponent<Button>();
+            Assert.That(FunctionalErrors(root), Is.Empty);
+
+            // 頁面開了只對 Popup 有意義的選項。
+            home.reusesInstance = true;
+            Assert.That(SingleError(root), Does.Contain("home").And.Contain("Popup"));
+            home.reusesInstance = false;
+            next.closesOnOverlayClick = true;
+            Assert.That(SingleError(root), Does.Contain("next").And.Contain("Popup"));
+            next.closesOnOverlayClick = false;
+            popup.reusesInstance = true;
+            popup.closesOnOverlayClick = true;
+            Assert.That(FunctionalErrors(root), Is.Empty, "Popup 可以開啟這兩個選項");
+            var overlay = popup.overlay;
+            popup.overlay = null;
+            Assert.That(SingleError(root), Does.Contain("popup").And.Contain("遮罩"));
+            popup.overlay = overlay;
+
+            // 元件記錄的名稱不在元件集裡。
+            var start = UIPlan.FindElement(home, "start").GetComponent<UIElementId>();
+            start.kind = "Vanished";
+            Assert.That(SingleError(root), Does.Contain("home/start").And.Contain("Vanished").And.Contain("Button"));
+            start.kind = "Button";
+
+            // 元件 Prefab 缺少行為類別需要的元件。
+            EditPrefab($"{widgets}/Slider.prefab", contents => Object.DestroyImmediate(contents.GetComponent<Slider>()));
+            Assert.That(SingleError(root), Does.Contain("Slider").And.Contain("缺少"));
+            Assert.That(AssetDatabase.DeleteAsset($"{widgets}/Slider.prefab"), Is.True);
+            Assert.That(SingleError(root), Does.Contain("Slider").And.Contain("沒有 Prefab"));
+            UIWidgets.Install();
+            Assert.That(FunctionalErrors(root).Select(issue => issue.Message).Where(message => message.Contains("元件集")),
+                Is.Empty);
+
+            // 元件集超過一個，或不存在。
+            var setPath = AssetDatabase.GetAssetPath(UIWidgets.Find());
+            var copyPath = $"{widgets}/Second.asset";
+            Assert.That(AssetDatabase.CopyAsset(setPath, copyPath), Is.True);
+            var tooMany = FunctionalErrors(root).Select(issue => issue.Message)
+                .Single(message => message.Contains("超過一個元件集"));
+            Assert.That(tooMany, Does.Contain(setPath).And.Contain(copyPath));
+            Assert.That(Assert.Throws<InvalidOperationException>(() => UIPlan.Apply(@"{ ""views"": [{ ""id"": ""more"" }] }"))
+                .Message, Does.Contain("超過一個元件集"));
+            Assert.That(AssetDatabase.DeleteAsset(copyPath), Is.True);
+            Assert.That(AssetDatabase.DeleteAsset(setPath), Is.True);
+            Assert.That(FunctionalErrors(root).Select(issue => issue.Message)
+                .Count(message => message.Contains("沒有元件集")), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void InspectorsShowTheNewViewRootAndWidgetSetSettings()
+        {
+            var root = UIAuthoring.CreateWorkspace(NewScene("Batch3 Inspectors"));
+            var page = UIAuthoring.CreatePage(root, "home", "Home");
+            var popup = UIAuthoring.CreatePopup(root, "popup", "Popup", $"{folder}/Inspector.prefab");
+            Assert.That(BoundPaths(root), Does.Contain("handlesBackKey").And.Contain("pageTransitionMode"));
+            Assert.That(BoundPaths(page), Does.Contain("defaultSelected").And.Contain("blocksBackKey"));
+            Assert.That(PopupOptions(page).style.display.value, Is.EqualTo(DisplayStyle.None));
+            Assert.That(BoundPaths(popup), Does.Contain("reusesInstance").And.Contain("closesOnOverlayClick"));
+            Assert.That(PopupOptions(popup).style.display.value, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(BoundPaths(UIWidgets.Find()),
+                Does.Contain("widgets").And.Contain("listItem").And.Contain("confirm"));
+
+            string[] BoundPaths(Object target)
+            {
+                var inspector = UnityEditor.Editor.CreateEditor(target);
+                try
+                {
+                    return inspector.CreateInspectorGUI().Query<PropertyField>().ToList()
+                        .Select(field => field.bindingPath).ToArray();
+                }
+                finally
+                {
+                    Object.DestroyImmediate(inspector);
+                }
+            }
+
+            VisualElement PopupOptions(UIView view)
+            {
+                var inspector = UnityEditor.Editor.CreateEditor(view);
+                try
+                {
+                    return inspector.CreateInspectorGUI().Query<PropertyField>().ToList()
+                        .First(field => field.bindingPath == "reusesInstance").parent;
+                }
+                finally
+                {
+                    Object.DestroyImmediate(inspector);
+                }
+            }
+        }
+
+        private static string SingleError(UIRoot root)
+        {
+            return FunctionalErrors(root).Select(issue => issue.Message).Single();
         }
 
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)

@@ -1,4 +1,6 @@
+using System;
 using System.Linq;
+using TMPro;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -84,6 +86,65 @@ namespace UniGameUI.Editor
                 ? root.Entries.FirstOrDefault(item => item != null && (item.Review == view || item.Prefab == view))
                 : null;
             return entry != null && entry.Kind == UIEntryKind.Popup;
+        }
+    }
+
+    [CustomEditor(typeof(UIWidgetSet))]
+    public sealed class UIWidgetSetInspector : UnityEditor.Editor
+    {
+        public override VisualElement CreateInspectorGUI()
+        {
+            var set = (UIWidgetSet)target;
+            var inspector = new VisualElement();
+            inspector.Add(new HelpBox("畫面上的元件都是這裡登記的 Prefab 的實例。修改 Prefab 的美術，所有畫面跟著變。",
+                HelpBoxMessageType.Info));
+
+            // 換預設字型時要連同元件 Prefab 裡的文字一起換，所以不直接綁定欄位。
+            var font = new ObjectField("預設字型")
+            {
+                objectType = typeof(TMP_FontAsset), allowSceneObjects = false, value = set.DefaultFont
+            };
+            font.RegisterValueChangedCallback(change =>
+            {
+                try
+                {
+                    UIWidgets.SetDefaultFont(AssetDatabase.GetAssetPath(change.newValue));
+                }
+                catch (Exception exception)
+                {
+                    font.SetValueWithoutNotify(set.DefaultFont);
+                    EditorUtility.DisplayDialog("UniGameUI", exception.Message, "關閉");
+                }
+            });
+            inspector.Add(font);
+            inspector.Add(new PropertyField(serializedObject.FindProperty("widgets"), "元件"));
+            inspector.Add(new PropertyField(serializedObject.FindProperty("listItem"), "清單項目"));
+            inspector.Add(new PropertyField(serializedObject.FindProperty("confirm"), "確認框"));
+            inspector.Add(new Button(() =>
+            {
+                try
+                {
+                    UIWidgets.Install();
+                }
+                catch (Exception exception)
+                {
+                    EditorUtility.DisplayDialog("UniGameUI", exception.Message, "關閉");
+                }
+            }) { text = "補上缺少的起始元件" });
+            return inspector;
+        }
+    }
+
+    [CustomPropertyDrawer(typeof(UIWidgetEntry))]
+    public sealed class UIWidgetEntryDrawer : PropertyDrawer
+    {
+        public override VisualElement CreatePropertyGUI(SerializedProperty property)
+        {
+            var row = new VisualElement();
+            row.Add(new PropertyField(property.FindPropertyRelative("name"), "名稱"));
+            row.Add(new PropertyField(property.FindPropertyRelative("kind"), "行為類別"));
+            row.Add(new PropertyField(property.FindPropertyRelative("prefab"), "Prefab"));
+            return row;
         }
     }
 

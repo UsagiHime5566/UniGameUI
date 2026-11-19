@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -70,6 +71,9 @@ namespace UniGameUI.Editor
                 CheckTransitions(entry.Review, entry.Id, issues);
                 if (usesPrefab)
                     CheckTransitions(entry.Prefab, entry.Id + " Prefab", issues);
+                CheckViewOptions(entry, entry.Review, "", issues);
+                if (usesPrefab)
+                    CheckViewOptions(entry, entry.Prefab, " 的 Prefab 本體", issues);
             }
 
             if (!string.IsNullOrEmpty(root.StartPageId) &&
@@ -106,8 +110,78 @@ namespace UniGameUI.Editor
             }
 
             CheckInput(issues);
+            CheckWidgets(views.Values, issues);
             UIIdConstants.Check(root, scenePath, checkConstantsFile, issues);
             return issues;
+        }
+
+        private static void CheckViewOptions(UIEntry entry, UIView view, string where, List<UIIssue> issues)
+        {
+            if (!view)
+                return;
+
+            var selected = view.DefaultSelected;
+            if (!ReferenceEquals(selected, null) && !selected)
+                issues.Add(Error($"「{entry.Id}」{where}的預設選取元件已經遺失，請重新指定或清除。"));
+            else if (selected && !selected.transform.IsChildOf(view.transform))
+                issues.Add(Error($"「{entry.Id}」{where}的預設選取元件「{selected.name}」不在這個畫面裡。"));
+
+            if (entry.Kind == UIEntryKind.Page && (view.ReusesInstance || view.ClosesOnOverlayClick))
+            {
+                issues.Add(Error($"「{entry.Id}」{where}是頁面，卻開啟了只對 Popup 有意義的選項" +
+                    "（關閉後保留並重用、點遮罩關閉）。請在 Inspector 關閉。"));
+            }
+            if (entry.Kind == UIEntryKind.Popup && view.ClosesOnOverlayClick && !view.Overlay)
+                issues.Add(Error($"「{entry.Id}」{where}設定了點遮罩關閉，但沒有遮罩物件。"));
+        }
+
+        private static void CheckWidgets(IEnumerable<UIEntry> entries, List<UIIssue> issues)
+        {
+            var sets = UIWidgets.FindAll();
+            if (sets.Count == 0)
+            {
+                issues.Add(Error("專案沒有元件集。請執行 Tools → UniGameUI → Install Starter Widgets。"));
+                return;
+            }
+            if (sets.Count > 1)
+            {
+                issues.Add(Error(UIWidgets.MultipleSetsMessage(sets)));
+                return;
+            }
+
+            var set = sets[0];
+            var names = new HashSet<string>();
+            foreach (var widget in set.Widgets)
+            {
+                if (widget == null || string.IsNullOrEmpty(widget.Name) || !names.Add(widget.Name))
+                {
+                    issues.Add(Error($"元件集裡有空白或重複的名稱「{widget?.Name}」。"));
+                    continue;
+                }
+                if (!widget.Prefab)
+                {
+                    issues.Add(Error($"元件集的「{widget.Name}」沒有 Prefab。" +
+                        "請重新指定，內建元件可以用 Install Starter Widgets 補回。"));
+                    continue;
+                }
+                var missing = UIWidgets.MissingRequirement(widget.Kind, widget.Prefab);
+                if (missing != null)
+                    issues.Add(Error($"元件集的「{widget.Name}」比照 {widget.Kind}，但 {missing}"));
+            }
+
+            foreach (var entry in entries)
+            {
+                if (!entry.Review)
+                    continue;
+                foreach (var element in UIPlan.ElementsOf(entry.Review))
+                {
+                    if (!string.IsNullOrEmpty(element.Kind) && !names.Contains(element.Kind))
+                    {
+                        issues.Add(Error($"「{entry.Id}/{element.Id}」記錄的元件名稱「{element.Kind}」" +
+                            $"不在元件集裡。可用的名稱：{string.Join("、", names.OrderBy(name => name))}。"));
+                    }
+                }
+            }
         }
 
         // 測試用：模擬 Player Settings 的 Active Input Handling（0 舊、1 新、2 兩者）。
