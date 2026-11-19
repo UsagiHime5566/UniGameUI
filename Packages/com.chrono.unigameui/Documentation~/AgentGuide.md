@@ -7,7 +7,7 @@
 1. 確認 Unity 6.3+、uGUI 2.0，並找出使用者要編輯的 Scene。套件匯入後沒有預建工作區或 UI。
 2. 預設採用 `SingleScene`。頁面、參考解析度、節點位置與路由都存於 Scene 的 UniGameUI 工作區。所有 Popup 都是 Prefab。若使用者要共用頁面資產，建立工作區時可以明確指定 `Prefab` 模式。
 3. 已存在的工作區沿用原模式與穩定 ID。記錄場景是否有尚未存檔的修改，並查看 `UIAuthoring.HasReviewOverrides(entry)`。有開啟中的 Editor 時，優先在其 Edit Mode 使用公開 C# API 或 **Apply JSON Plan…**。CLI 在該專案已由另一個 Editor 開啟時無法取得專案鎖，使用隔離副本測試。
-4. 選用動畫前確認 `UITransition.IsDOTweenReady`。導入官方 DOTween 標準版並完成 **Setup DOTween**，等待編譯。驗證工具會回報缺少 DOTween 的動畫。若當次只需要反覆測導航，可用 `None` 試跑。
+4. 選用動畫前確認 `UITransition.IsDOTweenReady`。導入官方 DOTween 標準版並完成 **Setup DOTween**，等待編譯。尚未安裝 DOTween 時，所有轉場都會直接切換並在 Console 警告一次，導航仍可試跑；驗證工具也會回報這些動畫。
 
 ## 入口
 
@@ -75,6 +75,7 @@
 - 元件支援 `Text`、`Button`、`Image`。矩形座標是 Unity RectTransform 的 anchor 與參考解析度下的座標，Y 向上。可指定 `fontSize`、`fontPath`（TMP Font Asset）、`textColor`、`color`、`spritePath`。首次建立文字時，工具會安裝 uGUI 附帶的 TMP Essential Resources。若專案曾匯入部分資源，先透過 **Window → TextMeshPro → Import TMP Essential Resources** 完成安裝。使用中文或其他語系時，交付前確認字型涵蓋所需字符。
 - `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Custom`，例如 `"enter": { "preset": "Slide", "duration": 0.2, "direction": "Left", "distance": 180, "ease": "OutQuad" }`。方向有 `Left`、`Right`、`Up`、`Down`。另可設定 `angle`，以及 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
 - 既有頁面可直接新增其他 ID 的元件。要修改既有元件時，指定該元件 ID、原 `kind`、`updateExisting: true` 與要寫入的欄位。若要更新既有 View 的背景或動畫，在 View 設 `updateExisting: true`。要改既有路由在線上加 `replace: true`。平常省略這些選項，重跑可保留人工編修。
+- 更新時只寫入有提供的欄位。`rect` 的 `anchor`、`position`、`size` 與 `enter`／`exit` 的各欄位若省略，維持目前的值；例如只給 `"rect": { "size": { "x": 320, "y": 80 } }` 不會移動元件，只給 `"enter": { "duration": 0.4 }` 不會改動畫種類。
 - 新建立的 Prefab 會存入本次生成的內容。既有 Prefab 的調整會出現在 Scene 預覽並標示待套用，由使用者用 **套用到 Prefab** 審核後提交。先從藍圖查看待套用狀態。
 
 ## 公開 C# API

@@ -86,10 +86,19 @@ namespace UniGameUI
                 pose.Restore(view);
             }
 #else
-            throw new InvalidOperationException(
-                "UniGameUI animations require DOTween. Import the standard DOTween package and run Setup DOTween.");
+            // Without DOTween the transition switches instantly so navigation keeps working.
+            if (!warnedMissingDOTween)
+            {
+                warnedMissingDOTween = true;
+                Debug.LogWarning("UniGameUI transitions switch instantly until DOTween is imported and " +
+                    "Setup DOTween has run.", view);
+            }
 #endif
         }
+
+#if !DOTWEEN
+        private static bool warnedMissingDOTween;
+#endif
 
 #if DOTWEEN
         internal static Sequence CreateSequence(UIView view, UITransition transition, bool entering, UIViewPose pose)

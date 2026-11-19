@@ -44,7 +44,8 @@ namespace UniGameUI.Editor
             controls.SetEnabled(UITransition.IsDOTweenReady && !EditorUtility.IsPersistent(view));
             inspector.Add(controls);
             if (!UITransition.IsDOTweenReady)
-                inspector.Add(new HelpBox("安裝並完成 Setup DOTween 後可播放及預覽動畫。", HelpBoxMessageType.Info));
+                inspector.Add(new HelpBox("尚未安裝 DOTween，轉場會直接切換。安裝並完成 Setup DOTween 後可播放及預覽動畫。",
+                    HelpBoxMessageType.Info));
             inspector.Add(new PropertyField(serializedObject.FindProperty("showing"), "Showing"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("showed"), "Showed"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("hiding"), "Hiding"));

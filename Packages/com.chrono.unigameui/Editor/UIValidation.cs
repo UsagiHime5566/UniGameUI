@@ -106,7 +106,7 @@ namespace UniGameUI.Editor
                 return;
             if (!UITransition.IsDOTweenReady &&
                 (view.Enter.Preset != UITransitionPreset.None || view.Exit.Preset != UITransitionPreset.None))
-                issues.Add(Warning($"{label}: install and set up DOTween before playing animated transitions."));
+                issues.Add(Warning($"{label}: transitions switch instantly until DOTween is installed and set up."));
 #if DOTWEEN
             if ((view.Enter.Preset == UITransitionPreset.Custom || view.Exit.Preset == UITransitionPreset.Custom) &&
                 !view.GetComponent<UIDOTweenAnimation>())

@@ -41,15 +41,21 @@ namespace UniGameUI.Editor
             public ElementSpec[] elements;
         }
 
+        // JsonUtility instantiates missing nested objects instead of leaving them null.
+        // Numeric fields start as NaN so omitted values can be told apart and keep the current value.
         [Serializable]
         private sealed class AnimationSpec
         {
             public string preset;
-            public float duration = 0.25f;
+            public float duration = float.NaN;
             public string direction;
             public string ease;
-            public float distance = 120;
-            public float angle = 12;
+            public float distance = float.NaN;
+            public float angle = float.NaN;
+
+            public bool IsEmpty =>
+                string.IsNullOrEmpty(preset) && string.IsNullOrEmpty(direction) && string.IsNullOrEmpty(ease) &&
+                float.IsNaN(duration) && float.IsNaN(distance) && float.IsNaN(angle);
         }
 
         [Serializable]
@@ -71,10 +77,16 @@ namespace UniGameUI.Editor
         [Serializable]
         private sealed class RectSpec
         {
-            public Vector2 anchor = new Vector2(0.5f, 0.5f);
-            public Vector2 position;
-            public Vector2 size = new Vector2(240, 72);
+            public Vector2 anchor = Unset;
+            public Vector2 position = Unset;
+            public Vector2 size = Unset;
+
+            public bool IsEmpty => IsUnset(anchor) && IsUnset(position) && IsUnset(size);
         }
+
+        private static readonly Vector2 Unset = new Vector2(float.NaN, float.NaN);
+        private static readonly Vector2 DefaultAnchor = new Vector2(0.5f, 0.5f);
+        private static readonly Vector2 DefaultSize = new Vector2(240, 72);
 
         [Serializable]
         private sealed class RouteSpec
@@ -256,7 +268,7 @@ namespace UniGameUI.Editor
                         if (type != ElementKind.Button)
                             throw new ArgumentException($"{view.id}/{element.id}: only Buttons can dispatch actions.");
                     }
-                    if (element.rect != null && (element.rect.size.x <= 0 || element.rect.size.y <= 0))
+                    if (element.rect != null && (IsNonPositive(element.rect.size.x) || IsNonPositive(element.rect.size.y)))
                         throw new ArgumentException($"{view.id}/{element.id}: size must be positive.");
                 }
             }
@@ -345,15 +357,22 @@ namespace UniGameUI.Editor
                     throw new ArgumentException($"{view.Id}/{spec.id}: update the existing {existingKind} element.");
             }
 
-            if (created || spec.rect != null)
+            // Omitted rect fields keep the element's current layout; new elements start from the defaults.
+            var layout = spec.rect ?? new RectSpec();
+            if (created || !layout.IsEmpty)
             {
                 var rect = (RectTransform)gameObject.transform;
-                var layout = spec.rect ?? new RectSpec();
                 Undo.RecordObject(rect, "Set UI layout");
-                rect.anchorMin = layout.anchor;
-                rect.anchorMax = layout.anchor;
-                rect.anchoredPosition = layout.position;
-                rect.sizeDelta = layout.size;
+                if (created || !IsUnset(layout.anchor))
+                {
+                    var anchor = Merge(created ? DefaultAnchor : rect.anchorMin, layout.anchor);
+                    rect.anchorMin = anchor;
+                    rect.anchorMax = anchor;
+                }
+                if (created || !IsUnset(layout.position))
+                    rect.anchoredPosition = Merge(created ? Vector2.zero : rect.anchoredPosition, layout.position);
+                if (created || !IsUnset(layout.size))
+                    rect.sizeDelta = Merge(created ? DefaultSize : rect.sizeDelta, layout.size);
                 UIAuthoring.RecordOverride(rect);
             }
 
@@ -434,11 +453,37 @@ namespace UniGameUI.Editor
 
         private static void SetAnimation(UIView view, bool entering, AnimationSpec animation)
         {
-            if (animation == null)
+            // Omitted animation fields keep the view's current transition values.
+            if (animation == null || animation.IsEmpty)
                 return;
-            UIAuthoring.SetTransition(view, entering, Parse(animation.preset, UITransitionPreset.None),
-                animation.duration, Parse(animation.direction, UITransitionDirection.Right),
-                Parse(animation.ease, UITransitionEase.OutQuad), animation.distance, animation.angle);
+            var current = entering ? view.Enter : view.Exit;
+            UIAuthoring.SetTransition(view, entering,
+                Parse(animation.preset, current.Preset),
+                Merge(current.Duration, animation.duration),
+                Parse(animation.direction, current.Direction),
+                Parse(animation.ease, current.Ease),
+                Merge(current.Distance, animation.distance),
+                Merge(current.Angle, animation.angle));
+        }
+
+        private static bool IsUnset(Vector2 value)
+        {
+            return float.IsNaN(value.x) && float.IsNaN(value.y);
+        }
+
+        private static bool IsNonPositive(float value)
+        {
+            return !float.IsNaN(value) && value <= 0;
+        }
+
+        private static float Merge(float current, float value)
+        {
+            return float.IsNaN(value) ? current : value;
+        }
+
+        private static Vector2 Merge(Vector2 current, Vector2 value)
+        {
+            return new Vector2(Merge(current.x, value.x), Merge(current.y, value.y));
         }
 
         private static T Parse<T>(string value, T fallback) where T : struct, Enum
