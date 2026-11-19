@@ -9,10 +9,11 @@
 - 第四輪：2026-11-20，commit `487f4b6`（Claude 審核第二批）
 - 第二批修正：2026-11-20，commit `45b7e0b`
 - 第五輪：2026-11-20，commit `45b7e0b`（Claude 複驗第二批修正）
-- 第三批改進：2026-11-20，commit `db8691f`（0.4.0，Claude 子 session 實作，尚未打標籤、尚未審核）
+- 第三批改進：2026-11-20，commit `db8691f`（0.4.0，Claude 子 session 實作，尚未打標籤）
+- 第六輪：2026-11-20，commit `43bbd51`（Claude 審核第三批，發現 J1～J8，待修正）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一批與第二批都已通過獨立審核。第二批的 G1～G5 已修正，Claude 複驗後確認全部符合，**0.3.0 可以打 `v0.3.0` 標籤**。複驗結果見「第五輪審核」，剩下的互動操作見「未驗證」。第三批（0.4.0）的十一項已由 Claude 的子 session 實作，**等主 session 獨立審核**；實作者自己的測試結果、打包驗證與「與規格不同的地方」見「驗證紀錄」的「第三批改進（0.4.0）」。
+**現況：** 第一批與第二批都已通過獨立審核。第二批的 G1～G5 已修正，Claude 複驗後確認全部符合，**0.3.0 可以打 `v0.3.0` 標籤**。複驗結果見「第五輪審核」，剩下的互動操作見「未驗證」。第三批（0.4.0）的十一項已實作並經過 Claude 獨立審核：執行期的行為與規格相符，但 Editor 端發現 J1～J8，**修正並複驗之前不要打 `v0.4.0` 標籤**。審核結果見「第六輪審核」，修正的規則見 `ROADMAP.md` 的「第三批修正」。
 
 **分工：** 2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，這份文件裡提到 codex 的地方是當時的紀錄。
 
@@ -31,7 +32,7 @@
 | M3 | 審核複本被打包進 build | 已修正、已用實際打包驗證 |
 | M4 | `UINavResult.Unavailable` 包太多情況 | 已修正，PlayMode 已驗證回傳值與 Console 診斷 |
 | M5 | 遊戲端 API 不足 | 已補 View 查詢、歷史、Popup 結果及全域事件，PlayMode 已驗證 |
-| L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵已在第三批（3-7）實作，待審核；Overlay 以外的模式與 Safe Area 不做 |
+| L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵已在第三批（3-7）實作，Claude 已在 Windows Player 用虛擬的手把與鍵盤驗證；Overlay 以外的模式與 Safe Area 不做 |
 | L2 | 藍圖視窗不跟隨 Scene 切換 | 已修正、已驗證 |
 | L3 | 切頁只能依序播放 | 已修正（新增 `Concurrent` 模式）、已驗證 |
 | L4 | 沒有縮放預設動畫 | 已修正（新增 `Zoom`）、已驗證 |
@@ -42,7 +43,7 @@
 | DOTween 疑慮 | 轉場中停用 UIRoot 可能引發 Unity 錯誤 | 已排除（見驗證紀錄） |
 | N1～N5 | 第二輪發現的小問題 | 已修正，外部安裝及自動測試通過，實際拖線與 Inspector 操作待人工確認 |
 | P1 | 所有畫面共用一個 Canvas | 已新增子 Canvas 與修復工具，已驗證 Prefab 覆寫、raycast 與 Windows Player |
-| P2 | Popup 每次開啟都重新建立 | 已在第三批（3-8）新增重用選項，預設仍是重新建立；PlayMode 已驗證，待審核 |
+| P2 | Popup 每次開啟都重新建立 | 已在第三批（3-8）新增重用選項，預設仍是重新建立；PlayMode 與 Windows Player 已驗證 |
 | P3 | 頁面不會釋放 | AgentGuide 已註明單 Scene 與 Prefab 頁面的保留方式 |
 | U1 | `UIView` 不能繼承 | 已新增 `IUIViewHandler` 與 `UIViewBehaviour`，PlayMode 與 Windows Player 已驗證 |
 | U2 | ID 全是字串 | 已自動產生常數，已驗證存檔、重產、名稱衝突與 Player 編譯 |
@@ -57,8 +58,111 @@
 | G3 | 事件派送依賴 Unity 的非公開方法，失效時沒有退路 | 已加入公開 `Invoke()` 備援。正常反射與模擬方法缺失的路徑都通過 PlayMode。Claude 另外改掉方法名稱實際模擬，導航全部正常；IL2CPP 仍未驗證 |
 | G4 | AgentGuide 要補的說明 | 已補齊五點。另驗證瞬間切換時 `OnShown` 可早於 `Start`。Claude 已核對內容 |
 | G5 | 零碎項目（計畫欄位寫錯位置沒有提示、訊息用字） | 已修正。JSON 預檢會定位不適用的欄位，通知例外與導航失敗使用不同訊息。Claude 已在 log 確認兩種訊息 |
-| I1 | 第五輪的小提醒（測試依賴靜態旗標、指南一句話不好讀） | 已在第三批（3-1）處理：測試開始前重設旗標，指南改成直接說明。待審核 |
-| 3-1～3-11 | 第三批：元件與輸入（0.4.0） | 已實作。四組自動測試全數通過，Windows Player（Mono、High Managed Stripping）驗證通過；IL2CPP 與互動操作未驗證。待審核 |
+| I1 | 第五輪的小提醒（測試依賴靜態旗標、指南一句話不好讀） | 已在第三批（3-1）處理：測試開始前重設旗標，指南改成直接說明。Claude 已核對 |
+| 3-1～3-11 | 第三批：元件與輸入（0.4.0） | 已實作。Claude 重跑四組測試，結果相同；另在 Windows Player 走過 64 項檢查，全部通過。執行期的行為與規格相符，Editor 端的問題見 J1～J8。IL2CPP 與實際畫面未驗證 |
+| J1 | 計畫寫出的顏色只固定了一部分，改元件 Prefab 的顏色會讓畫面變色 | 待修正（高） |
+| J2 | 開著另一個有 UI 的 Scene 時，計畫套不進別的 Scene，還可能卡住 | 待修正（中） |
+| J3 | 登記既有的 View Prefab 時，預檢沒有看 Prefab 裡的內容 | 待修正（中） |
+| J4 | 起始下拉選單的捲軸寬度是 0 | 待修正（中低） |
+| J5～J7 | 選項的鍵值殘留、套用到一半才報錯、不存在的「待套用」 | 待修正（低） |
+| J8 | 讀程式碼發現的四點 | 待實作者用測試確認 |
+
+## 第六輪審核：第三批（0.4.0）
+
+十一項規格都已實作，執行期的行為逐項對照後與規格相符。四組自動測試的數量與結果和實作者的紀錄完全相同。我另外用操作指南的示例計畫建了一個專案，打包成執行檔，用虛擬的手把、鍵盤與滑鼠走過 64 項檢查，全部通過。細節見「驗證紀錄」的「第六輪」。
+
+**結論：還不能打 `v0.4.0` 標籤。** Editor 端有一個會讓畫面顏色悄悄跑掉的問題（J1），另外有兩個會讓計畫套不進去的情況（J2、J3），請修正後再複驗。其餘項目比較小，同一輪一起處理。修正的規則寫在 `ROADMAP.md` 的「第三批修正」。
+
+- J1～J7 都在副本專案上實際執行確認過。
+- J8 是讀程式碼發現的，沒有執行。請實作者先用測試確認，是真的才修。
+- J2 的根源是第三批規格 3-2 沒有考慮同時開著多個 Scene 的情況，不是實作偏離規格。
+
+### J1. 計畫寫出的顏色只固定了一部分，改元件 Prefab 的顏色會讓畫面變色
+
+- **嚴重度：** 高。這是「改 Prefab 就會改到所有畫面」的核心流程。
+- **位置：** `Editor/UIAuthoring.cs` 的 `PinOverrides`，用 `property.prefabOverride` 判斷要不要固定的地方。
+- **原因：** Unity 的覆寫是逐個分量記錄的。顏色只要有一個分量和元件 Prefab 不同，整個顏色欄位的 `prefabOverride` 就是 true，固定的步驟被跳過，其餘和 Prefab 相同的分量沒有成為覆寫。透明度通常兩邊都是 1，所以幾乎不會被固定。
+- **重現：** 計畫寫 `{ "id": "icon", "kind": "Image", "color": "#FFD25A" }`，之後把 `Image.prefab` 的顏色改成半透明的黑色。
+- **結果：**
+  - `icon` 變成 `#00D25A`、透明度 50%，既不是計畫寫的顏色，也不是 Prefab 的顏色。
+  - `Text` 寫 `"color": "#FF0000"`、`Button` 寫 `"textColor": "#FFFF00"`，在 Prefab 的文字顏色改成黑色之後都變成黑色。
+- **既有測試為什麼會通過：** 測試用的 `#FF0000` 和按鈕底色的三個分量剛好都不同，透明度沒有改。
+- **陣列也有同樣的缺口**（實作者列在「與規格不同的地方」第 3 點）：`options` 的數量剛好和元件 Prefab 相同時，陣列長度不是覆寫。專案刪掉 Prefab 裡的範例選項，這些實例的選項會跟著消失。這一點是讀程式碼判斷的，沒有執行。
+
+### J2. 開著另一個有 UI 的 Scene 時，計畫套不進別的 Scene，還可能卡住
+
+- **嚴重度：** 中。CLI 不受影響。在開著的 Editor 裡操作時會遇到，例如透過 Unity MCP。
+- **位置：** `Editor/UIValidation.cs` 的 EventSystem 檢查，`Editor/UIPlan.cs` 的 `FindScene` 與失敗時的還原。
+- **情況一：** Scene A 開著而且有工作區，套用 `scenePath` 指到另一個新 Scene 的計畫（`createScene: true`）。
+  - 新 Scene 以附加方式開啟，建立工作區時加上第二個 EventSystem。
+  - 套用完的檢查回報「目前 2 個」，整份計畫被還原。還原是乾淨的。
+  - 結果是第二個有 UI 的 Scene 沒辦法從開著的 Editor 建立。
+- **情況二：** 目標是已經存在的另一個 Scene。
+  - 一樣失敗，而且那個 Scene 留在附加開啟的狀態。
+  - 之後**任何計畫都會失敗**，包含指到原本那個 Scene 的，直到有人手動卸載它。
+- **根源：** 規格 3-2 把「載入的 Scene 裡不是剛好一個 EventSystem」列為 Error，沒有考慮計畫會把目標 Scene 附加開啟。第二批以前這是 Warning。
+- **另外（讀程式碼判斷，沒有執行）：** Scene 裡的 EventSystem 物件未啟用時，建立工作區不會補一個新的，檢查卻回報「0 個，建立工作區時會自動加上」，訊息與實際不符。
+
+### J3. 把既有的 View Prefab 登記成新畫面時，預檢沒有看 Prefab 裡的內容
+
+- **嚴重度：** 中。登記起始確認框、或在第二個 Scene 重用同一個 Popup Prefab 時會遇到。
+- **位置：** `Editor/UIPlan.cs` 的 `Preflight`。`existingReview` 只從這個工作區已登記的畫面取得。
+- **誤擋：** `{ "id": "confirm", "kind": "Popup", "prefabPath": "Assets/UniGameUI/Widgets/Confirm.prefab", "defaultSelected": "confirm" }` 回報「defaultSelected 指到不存在的元件 confirm」，但 Prefab 裡有這個按鈕。
+- **漏擋：** 同一個畫面寫 `"elements": [{ "id": "confirm", "kind": "Text", "updateExisting": true, "text": "Yes", "alignment": "Left" }]`，沒有任何錯誤就套用了。
+  - 原本記錄為 `Button` 的元件被當成 `Text` 更新，文字改成 `Yes`。
+  - `Button` 不支援的 `alignment` 也寫進去了。
+  - 「更新時 `kind` 必須相同」的規則被繞過。
+
+### J4. 起始下拉選單的捲軸寬度是 0
+
+- **嚴重度：** 中低。選項超過展開範圍（大約八個以上）時沒有捲軸可以拉。
+- **位置：** `Editor/UIStarterWidgets.cs` 建立下拉選單範本的地方。程式先設定直向捲軸的尺寸，之後 `scrollbar.SetDirection(BottomToTop, true)` 把寬高對調。
+- **結果：** 產生出來的 `Dropdown.prefab` 裡，捲軸的 `sizeDelta` 是 `(0, 40)`。
+
+### J5. 更新下拉選單的選項後，舊的多語系鍵值還留著
+
+- **嚴重度：** 低。
+- **重現：** 先建立三個選項與三個 `optionKeys`，再用 `updateExisting` 只寫 `"options": ["On", "Off"]`。
+- **結果：** 選項變成兩個，鍵值仍是原本三個，沒有報錯。執行期「On」會用「Low」的鍵值取值，顯示成錯的文字。
+
+### J6. 有些錯誤要套用到一半才會發現
+
+- **嚴重度：** 低。還原機制有確實復原，沒有留下半套的變更。
+- **例子：** `{ "kind": "Slider", "min": 5 }`（起始滑桿的 max 是 1）在建立了前面的元件之後才報錯。前面建立的元件有還原，Scene 檔案沒有變，但 Scene 被標成未儲存。
+- **同一類的還有（讀程式碼判斷）：**
+  - 下拉選單的 `value` 或 `optionKeys` 數量和既有選項不合。
+  - `spacing` 用在內容物件沒有版面配置元件的清單。
+  - 自訂元件的 Prefab 缺少該欄位需要的元件，例如比照 `Button` 卻沒有文字，計畫又寫了 `text`。
+  - `overlayClick: Close` 用在沒有遮罩的 Popup。
+- 這些都能在預檢時從元件 Prefab 或既有的實例算出來。
+
+### J7. 改過元件 Prefab 的文字顏色之後登記確認框，會出現不存在的「待套用」
+
+- **嚴重度：** 低。
+- **重現：** 用程式把 `Text.prefab` 與 `Button.prefab` 的文字顏色改成黑色，再用計畫把起始確認框登記到一個新的 Scene。
+- **結果：** `UIAuthoring.HasReviewOverrides` 對確認框回傳 true。四筆覆寫都是 TMP 自己衍生的 `m_fontColor32.rgba`，數值和 Prefab 傳下來的顏色相同。藍圖會顯示待套用，進 Play 前也會跳出詢問。
+- 顏色改變之前就登記好的確認框沒有這個現象。在 Inspector 手動改顏色會不會觸發，沒有驗證。
+
+### J8. 讀程式碼發現、沒有實際執行的項目
+
+請先各寫一個測試確認，是真的才修。
+
+- **`defaultFontPath` 在 Scene 存檔之後才套用**（`Editor/UIPlan.cs` 的 `Apply`）。換字型失敗時，Scene 已經存檔，字型換到一半，元件集的預設字型也沒有更新。
+- **`placeholder` 被安靜略過。** 自訂的輸入框類元件沒有 TMP 的 placeholder 時，`placeholder`、`placeholderKey` 什麼都沒寫，也沒有報錯（`Editor/UIPlanElements.cs`）。
+- **`SetDefaultFont` 可能換掉專案改過的字型。** 對輸入框是設定 `field.fontAsset`，TMP 會連 placeholder 一起換，包含已經被專案改成別的字型的那一個（`Editor/UIWidgets.cs` 的 `ReplaceFont`）。
+- **Play Mode 中按 Validate 可能誤報。** 沒有設定 `defaultSelected` 的畫面可能被判成「已經遺失」（`Editor/UIValidation.cs` 用 `!ReferenceEquals(selected, null) && !selected` 區分）。
+
+### 文件要補的說明
+
+- 「點遮罩關閉」所說的內容範圍是 `Content` 的矩形，不是看得見的美術。計畫建立的 Popup，`Content` 固定是畫面中央 60% 的範圍；對話框比它小時，範圍內的暗色區域點了不會關閉。要讓範圍貼齊對話框，請調整 `Motion` 的大小。
+
+### 「與規格不同的地方」的審核結果
+
+實作者列了十二點，見「驗證紀錄」的「第三批改進（0.4.0）」。
+
+- **第 1、2、4、5、6、8、9、10、11、12 點：接受。** 第 5 點（往前切頁或開啟 Popup 時從預設選取元件開始，關閉 Popup 或返回時才恢復上次的選取）比規格原本的寫法合理，`ROADMAP.md` 已照這個改。
+- **第 3 點：** 固定覆寫的做法接受，但目前只固定了一部分，陣列也沒有處理，見 J1。
+- **第 7 點（複製確認框不能換畫面 ID）：** 要不要加「複製 View Prefab 並換 ID」的工具，由使用者決定。Claude 的建議是不加，指南裡的做法（用計畫建立新的 Popup，再掛上 `UIConfirmPopup`）已經夠用。
 
 ## 第五輪審核：第二批修正（0.3.0）
 
@@ -323,6 +427,68 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 
 ## 驗證紀錄
 
+### 第六輪：Claude 對第三批的獨立驗證
+
+使用 Unity 6000.3.19f1，兩個全新的副本專案（有、無 DOTween），Active Input Handling 設為新的 Input System，套件內容取自 `43bbd51`。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 56 | 0 | 0 |
+| 有 DOTween | PlayMode | 67 | 0 | 1 |
+| 無 DOTween | EditMode | 20 | 0 | 36 |
+| 無 DOTween | PlayMode | 63 | 0 | 5 |
+
+四組的數量與結果都和實作者的紀錄相同。跑完後副本專案的 `Assets` 沒有留下測試用的資料夾。
+
+**執行檔（Windows 64 位元、Mono、High Managed Stripping、含 DOTween）**
+
+1. 用 CLI 套用操作指南的示例計畫（原文抽出）。再用 CLI 套用第二份計畫：在既有的 `workshop` 頁加兩顆按鈕，新增一個 `Reuse` 加 `Close` 的 Popup，以及一個 `backKey: Ignore` 的頁面。
+2. 指南的五個類別（`WorkshopPage`、`SettingsPage`、`ShopPage`、`GameLocalizer`、`UnsavedChangesGuard`）原文放進獨立的 asmdef，掛到對應的畫面。Validate 沒有任何問題，24 個由計畫建立的元件都是元件 Prefab 的實例。
+3. 執行檔以 `-batchmode -nographics` 執行，用 `InputSystem.AddDevice` 建立虛擬的手把、鍵盤與滑鼠。64 項檢查全部通過，結束碼 0。
+
+| 範圍 | 確認的內容 |
+|---|---|
+| 元件 | 十種元件在頁面顯示前就帶著計畫寫的值，並用 `View.Get<T>()` 取得表中的型別。面板不接收點擊。 |
+| 輸入模式 | 鍵盤的確定與取消不改變模式。鍵盤方向鍵進入導覽並選取 `defaultSelected`，那一次輸入沒有同時移動。事件順序是 `InputModeChanged` 再 `ElementSelected`。滑鼠移動回到 `Pointer` 並清除選取，點擊後不留選取。 |
+| 選取 | 往前切頁選到第一個可操作的元件。Popup 開著時連續八次方向輸入都留在 Popup 裡。關閉 Popup 與返回後恢復各畫面上次的選取。重用的確認框第二次開啟仍從「取消」開始。 |
+| 返回鍵 | 最底層按 Esc 觸發 `BackRequestedAtRoot` 一次。`UnsavedChangesGuard` 接手後開啟確認框；取消鍵關閉確認框並留在原頁，確定後才返回。`backKey: Ignore` 的頁面擋下 Esc 與手把的取消鍵，畫面上的返回按鈕照常。 |
+| 輸入框 | 滑鼠點擊進入編輯，編輯中按方向鍵不切換模式；第一次 Esc 只結束編輯，第二次才返回。手把導覽到輸入框不會自動進入編輯；確定鍵開始編輯，編輯中的方向輸入留在輸入框，取消鍵結束編輯，再按一次才返回。 |
+| 清單 | 頁面腳本填入三項。項目裡的 ID 不在 View 的查找範圍。點擊項目回報索引一次。30 項時用手把往下 25 次，選取的項目捲進可視範圍。 |
+| 多語系 | 指定 `Localizer` 後，沒有顯示的頁面與保留中的確認框都更新。查不到的鍵值各警告一次，重新整理後不重複。換掉翻譯表再呼叫 `RefreshLocalization()`，沒有翻譯的文字退回預設內容。`Localize` 的三種結果與頁面腳本的 `OnLocalizationChanged` 都正確。 |
+| Popup | 點在內容範圍內不關閉。點遮罩關閉，等待結果的程式收到「沒有值」。第二次開啟是同一個實例。關閉路由的結果照常送達。 |
+| 確認框 | 自訂按鈕文字、沒有標題時隱藏、多語系文字與預設文字並存。沒有登記時回傳 false，警告裡附上登記用的那一行計畫。 |
+
+**Editor 端的抽查（`-executeMethod`，19 項通過）**
+
+- 安裝兩次，`Assets/UniGameUI/Widgets` 裡所有檔案的雜湊完全相同。刪掉 `Toggle.prefab` 後只重建它，元件集跟著更新。
+- 沒寫顏色的按鈕跟著元件 Prefab 變色。顏色寫成和 Prefab 完全相同的值，或三個分量都不同的值，修改 Prefab 後維持不變。這兩種剛好是 J1 不會發生的情況。
+- 欄位寫錯元件時在套用前失敗，訊息指出畫面、元件與欄位，Scene 檔案沒有變。
+- 部分更新只改有寫的欄位。更新時換 `kind`、更新手動加上的元件都會報錯。
+- Validate 對第二個 EventSystem、頁面開了 Popup 專用的選項、預設選取元件在畫面外，都回報 Error。
+- 把元件登記成比照 `Button` 而 Prefab 沒有 `Button`，會報錯。
+
+**針對 Editor 端疑點的實際執行**
+
+Editor 端的程式碼另外交給一個不知道我的結論的子代理審閱。它提出的疑點我逐一在副本專案上執行，結果如下。
+
+| 項目 | 執行結果 |
+|---|---|
+| J1 | 白色圖片寫 `#FFD25A`，Prefab 改成半透明黑色後變成 `#00D25A`、透明度 50%。`Text` 的 `#FF0000` 與 `Button` 的 `textColor: #FFFF00` 在 Prefab 文字改成黑色後都變成黑色。沒寫顏色的圖片正確跟著 Prefab。 |
+| J2 | 開著一個有工作區的 Scene，套用指到新 Scene 的計畫：失敗並完整還原。套用指到既有 Scene 的計畫：失敗，該 Scene 留在附加開啟，接著指到原 Scene 的計畫也失敗。 |
+| J3 | 登記起始確認框並寫 `defaultSelected: confirm`：被擋下。對確認框的 `confirm` 按鈕用 `kind: Text` 的 `updateExisting`：套用成功，文字與對齊都被改寫。 |
+| J4 | 產生出來的 `Dropdown.prefab`，捲軸 `sizeDelta` 是 `(0, 40)`，錨點是右側直條。 |
+| J5 | 三個有鍵值的選項換成兩個沒寫鍵值的選項：套用成功，鍵值仍是三個。 |
+| J6 | `Slider` 的 `min: 5` 被擋下。前一個元件與後面的 Popup 都沒有留下，Scene 檔案相同，Prefab 數量相同，Scene 被標成未儲存。 |
+| J7 | 改過元件 Prefab 的文字顏色之後登記的確認框，`HasReviewOverrides` 是 true，四筆都是 `m_fontColor32.rgba`。同一個專案裡先登記的確認框是 false。新建立、內含下拉選單與輸入框的 Popup 是 false。 |
+
+**驗證過程的說明**
+
+- 第一輪 Editor 抽查中斷，原因是我的腳本在開著 Scene 的情況下套用另一個 Scene 的計畫，這就是 J2。
+- 第二輪執行檔有一項失敗，原因是我的探測腳本把 TMP 的 `onSelect` 當成「進入編輯」，它其實在被選取時就會觸發。修正腳本後，第三輪 64 項全部通過。
+- TMP 的輸入框在「被選取但沒有編輯」時收到取消鍵，會把自己排進下一次更新啟用。我另外量了這個情況：按下手把的取消鍵之後 120 個影格內，輸入框沒有任何一個影格是編輯狀態，畫面正常返回。
+
+**這一輪沒有驗證的：** 實際畫出來的畫面、實體手把與滑鼠、IL2CPP、互動 Editor 的 Inspector 與選單、關閉 Domain Reload 的 Play Mode。
+
 ### 第三批改進（0.4.0）
 
 以下是實作者（Claude 的子 session）自己的紀錄，等主 session 獨立複驗。十一項各一個 commit（`240ed57` 到 `db8691f`），分支 `feat/batch-3` 已快轉合併回 `main`。
@@ -550,7 +716,7 @@ PlayerSettings:
 
 ## 未驗證
 
-第三批（0.4.0）以下項目沒有驗證，需要在互動 Editor 或實機人工確認：
+第三批（0.4.0）以下項目沒有驗證，需要在互動 Editor 或實機人工確認。其中選取、返回鍵、輸入框搭配手把的**邏輯**，Claude 已在第六輪用虛擬裝置於 Windows Player 驗證過；下面要確認的是外觀、手感與實體裝置。
 
 - **起始元件的實際外觀。** 自動測試與打包驗證都沒有看畫面。請在 Scene 與 Game 視窗確認十個元件、清單項目與確認框的樣子、大小與對齊，以及下拉選單展開後的清單。
 - **用真的滑鼠與手把操作時的選取表現。** 改用滑鼠時選取外框是否消失、點過的按鈕是否不留選取、手把第一次輸入是否只出現選取而不移動、關閉 Popup 與返回後選取是否回到原位。自動測試用的是模擬裝置。
@@ -561,7 +727,7 @@ PlayerSettings:
 - **IL2CPP Player。** 這台電腦沒有 6000.3.19f1 的 IL2CPP 模組。
 - **實體手把的按鍵對應。** 框架讀的是輸入模組上的動作，測試用的是預設動作與虛擬的標準手把。
 - **關閉 Domain Reload 的 Play Mode。** 沒有實測。
-- **多個 Scene 同時開著、各有 EventSystem 的情況。** 依規格這會讓 Validate 回報錯誤，套件的 EditMode 測試在這種環境下會有案例失敗；批次模式的測試每次只開一個 Scene。
+- **多個 Scene 同時開著、各有 EventSystem 的情況。** Claude 已在第六輪實測，結果是 J2，修正後再複驗。
 
 第二批的藍圖儲存邏輯與錯誤計畫的預檢已由測試覆蓋。互動 Editor 待人工確認錯誤計畫的對話框、藍圖右欄「返回歷史」選單、「關閉結果」輸入框及拖線，以及 Add Component 中的 `UniGameUI/UI Element Id`。本次 Unity 安裝只有 Windows Mono 模組，IL2CPP Player 未執行。
 
