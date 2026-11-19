@@ -1,8 +1,8 @@
 {
   "name": "com.chrono.unigameui",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "displayName": "UniGameUI",
-  "description": "Scene-first uGUI authoring, editable navigation blueprints, and Awaitable page and popup transitions.",
+  "description": "Scene-first uGUI authoring, editable navigation blueprints, starter widgets, gamepad navigation, and Awaitable page and popup transitions.",
   "unity": "6000.3",
   "dependencies": {
     "com.unity.ugui": "2.0.0",

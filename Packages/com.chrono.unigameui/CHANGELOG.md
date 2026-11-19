@@ -1,5 +1,21 @@
 # 變更紀錄
 
+## 0.4.0（2026-11-20）
+
+- 新增相依 `com.unity.inputsystem`，只支援新的 Input System。新工作區的 EventSystem 直接使用 `InputSystemUIInputModule`；EventSystem 數量不對、輸入模組不對，或 Active Input Handling 只啟用舊的 Input Manager 時，Validate 回報錯誤。
+- 新增元件集 `UIWidgetSet` 與 `UIWidgets`。畫面上的元件改為專案 `Assets/UniGameUI/Widgets` 裡元件 Prefab 的實例，修改 Prefab 的美術會反映到所有畫面。起始元件有文字、圖片、面板、按鈕、開關、滑桿、進度條、下拉選單、輸入框、捲動清單，另附清單項目與確認框；安裝可以重複執行，只補上缺少的。
+- JSON 計畫的 `kind` 改為元件集裡的名稱，新增各元件的欄位、最上層的 `widgets`（登記自訂元件）與 `defaultFontPath`（預設字型）。欄位寫在不支援它的元件上、`kind` 不存在、更新時 `kind` 不同，都會在套用前報錯。只有計畫寫出的欄位會成為 Prefab 覆寫。`updateExisting` 只能用在由計畫建立的元件。
+- `UIElementId` 新增 `Kind`。新元件的預設大小取自元件 Prefab，不再是固定的 240×72。
+- 新增 `UIProgressBar`、`UIList`（依資料產生項目、`ItemClicked`、`GetInItem`）與 `UIListLayout`。`View.Get<T>()` 與 ID 常數不包含清單項目裡的元件。
+- 新增多語系接口：`IUILocalizer`、`UIRoot.Localizer`、`RefreshLocalization()`、`Localize()`、`LocalizationChanged`，以及 `UILocalizedText`、`UILocalizedImage`、`UILocalizedDropdown`。計畫支援 `textKey`、`spriteKey`、`placeholderKey`、`optionKeys`。`UIViewBehaviour` 新增 `OnLocalizationChanged()`。
+- 新增手把與鍵盤導覽：`UIRoot.InputMode`、`InputModeChanged`、`ElementSelected`，`UIView.DefaultSelected` 與計畫的 `defaultSelected`。以最後使用的輸入裝置為準，改用滑鼠時清除選取，滑鼠點過的按鈕不留在選取狀態，每個畫面記住自己的選取。
+- 新增返回鍵：Esc 與手把的取消鍵等同返回。`UIRoot.HandlesBackKey`、`BackRequestedAtRoot`，`UIView.BlocksBackKey` 與計畫的 `backKey`，`IUIBackHandler` 與 `UIViewBehaviour.OnBackRequested()`。
+- 新增 Popup 的重用（`popupCache`、`UIView.ReusesInstance`）與點遮罩關閉（`overlayClick`、`UIView.ClosesOnOverlayClick`）。`UIView` 新增 `Overlay`。
+- 新增確認框：`UIRoot.ConfirmAsync()`、`UIConfirmPopup`、`UIConfirmRequest` 與起始的 `Confirm.prefab`。
+- Validate 新增元件集、預設選取元件與 Popup 選項的檢查。`UIView`、`UIRoot` 與元件集的 Inspector 顯示新的設定。
+- View Prefab 以不同的畫面 ID 登記時，訊息改為說明畫面 ID 不符。
+- 測試在重設「只警告一次」的旗標後才檢查 UnityEvent 的備援警告。
+
 ## 0.3.0（2026-11-20）
 
 - 新增 `UIViewBehaviour`、`IUIViewHandler` 與 `UIView.Root`。頁面可接收顯示、隱藏及來源畫面的 Emit 動作，並用 `GetData<T>` 讀取導航資料。
