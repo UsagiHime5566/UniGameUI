@@ -4,9 +4,10 @@
 - 第一輪：2026-11-19，commit `020b424`（H1、H2 由 Claude 修正於 `e8062f8`）
 - 第二輪：2026-11-19，commit `0cabfec`（codex 處理第一輪待辦）
 - 第一批改進：2026-11-20，`v0.2.0`
+- 第三輪：2026-11-20，commit `058ac1a`（Claude 審核第一批）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一批的六項改進已實作，Unity 自動測試與 Windows Player 已通過。本文件保留各項目的原始說明與互動操作的待驗證清單。
+**現況：** 第一批的六項改進已實作，Claude 獨立驗證後確認符合規格，沒有發現回歸。第三輪審核另外提出六個後續項目（F1～F6），全部排進第二批的 2-1。本文件保留各項目的原始說明與互動操作的待驗證清單。
 
 原本標示「需使用者決定」的項目已在 2026-11-20 定案，排進 `ROADMAP.md` 的四批工作裡。要做哪一項、怎麼做，以 `ROADMAP.md` 為準；這份文件保留各項目的問題說明。
 
@@ -38,6 +39,66 @@
 | P3 | 頁面不會釋放 | 排在第二批（只在文件註明） |
 | U1 | `UIView` 不能繼承 | 已定案採用介面做法，排在第二批 |
 | U2 | ID 全是字串 | 已自動產生常數，已驗證存檔、重產、名稱衝突與 Player 編譯 |
+| F1 | 事件監聽丟例外會讓導航倒回，可能把玩家困在畫面上 | 已定案採用建議，排在第二批（2-1） |
+| F2 | 放在 asmdef 裡的遊戲程式引用不到 ID 常數 | 排在第二批（2-1），待處理 |
+| F3 | 元件 ID 與所屬畫面 ID 相同時會被擋下 | 排在第二批（2-1），待處理 |
+| F4 | `Failed` 記兩筆錯誤，原始例外的堆疊點不到 | 排在第二批（2-1），待處理 |
+| F5 | 測試跑完留下空資料夾 | 排在第二批（2-1），待處理 |
+| F6 | 套用計畫後會重新編譯，文件沒有提醒 | 排在第二批（2-1），待處理 |
+
+## 第三輪審核：第一批（`v0.2.0`）
+
+六項規格都已實作，逐項對照的結果見「驗證紀錄」。以下是審核時發現的後續項目。F1、F2、F3 的根源是 `ROADMAP.md` 第一批規格寫得不夠周全，不是實作錯誤。
+
+### F1. 事件監聽丟例外會讓導航倒回，可能把玩家困在畫面上
+
+使用者已在 2026-11-20 決定採用下面的建議。
+
+- **位置：** `Runtime/UIRoot.cs` 的 `ChangePageAsync`、`OpenPopupCoreAsync`、`ClosePopupCoreAsync`；`Runtime/UIView.cs` 移除了原本包住事件的 try/catch。
+- **現況：** `Showing`、`Shown`、`Hiding`、`Hidden` 任何一個監聽丟出例外，導航都會倒回原狀並回傳 `Failed`。這是照規格「事件監聽丟出例外 → `Failed`」做的。
+- **問題：** 離開畫面時的監聽一旦有 bug，玩家就離不開那個畫面。已實測：
+  - Popup 的 `Hidden` 監聽丟例外：關閉兩次都回傳 `Failed`，Popup 一直開著。
+  - 頁面的 `Hiding` 監聽丟例外：切頁兩次都回傳 `Failed`，停在原頁。
+  - 頁面的 `Shown` 監聽丟例外：進場動畫播完後又被倒回上一頁。
+- **建議：**
+  - `Showing` 丟例外：取消這次導航，留在原畫面，回傳 `Failed`。新畫面沒準備好就不該顯示，而且留在原畫面是安全的。
+  - `Shown`、`Hiding`、`Hidden` 丟例外：用 `LogException` 記錄（附上操作與 ID），導航照常完成並回傳 `Completed`。
+  - `UIRoot.ActionEmitted` 的監聽丟例外：維持回傳 `Failed`，它不涉及畫面狀態。
+- **驗收：** PlayMode 測試涵蓋上述三種情況；`Hidden` 監聽有 bug 的 Popup 仍然關得掉。
+
+### F2. 放在 asmdef 裡的遊戲程式引用不到 ID 常數
+
+- **位置：** `Editor/UIIdConstants.cs`，輸出到 `Assets/UniGameUI/Generated`。
+- **問題：** 這個資料夾沒有 asmdef，產生的類別會編進 `Assembly-CSharp`。Unity 不允許 asmdef 組件引用 `Assembly-CSharp`，所以遊戲程式只要放在自己的 asmdef 裡，就用不到這些常數。agent 建專案時常會建立 asmdef。
+- **建議：** 產生常數時，若資料夾裡沒有 asmdef，就一併建立 `UniGameUI.Generated.asmdef`（不需要任何引用）。AgentGuide 註明：遊戲程式的 asmdef 要引用它。
+- **驗收：** EditMode 測試確認 asmdef 會被建立且不會被重複覆寫；另用一個帶 asmdef 的測試腳本確認能引用常數。
+
+### F3. 元件 ID 與所屬畫面 ID 相同時會被擋下
+
+- **位置：** `Editor/UIIdConstants.cs` 的 `CollectNames`，`name == owner` 的檢查。
+- **問題：** `Elements` 底下用畫面名稱當類別名稱，而 C# 不允許成員和所在類別同名。結果像「`confirm` Popup 裡的 `confirm` 按鈕」、「`title` 頁的 `title` 文字」這種很自然的命名會變成 Validate 錯誤，整份 JSON 計畫都套不進去。這是從程式碼判讀的，沒有另外實測。
+- **建議：** 分組類別加上後綴，例如 `WorkshopUI.Elements.ConfirmView.Confirm`。`Views`、`Actions` 兩組維持現狀。
+- **驗收：** 元件 ID 與畫面 ID 相同時可以正常產生；`ROADMAP.md` 與 AgentGuide 的範例跟著更新。
+
+### F4. `Failed` 記兩筆錯誤，原始例外的堆疊點不到
+
+- **位置：** `Runtime/UIRoot.cs` 的 `Failed`。
+- **問題：** 先 `LogError` 一次，再把原始例外的文字包進一個新的 `InvalidOperationException` 用 `LogException` 記一次。Console 會出現兩筆內容重複的錯誤，而且原始例外的堆疊變成純文字，不能點擊跳到出錯的那一行。
+- **建議：** 保留一行帶上下文的 `LogError`，再對原始例外直接呼叫 `Debug.LogException(exception, this)`。
+
+### F5. 測試跑完留下空資料夾
+
+- **問題：** 套件的 EditMode 測試跑完後，專案裡會留下空的 `Assets/UniGameUI/Generated` 資料夾和對應的 `.meta`。在這個 repo 會變成未追蹤的檔案。
+- **建議：** TearDown 時，如果資料夾是測試建立的而且已經清空，就一併刪除。
+
+### F6. 套用計畫後會重新編譯，文件沒有提醒
+
+- **問題：** `UIPlan.Apply` 成功後會寫入常數檔，Editor 接著重新編譯。在開著的 Editor 裡連續執行多個步驟的 agent，下一步可能被打斷。
+- **建議：** 在 AgentGuide 的 JSON 計畫與 ID 常數段落註明：套用後要等編譯完成再繼續。
+
+### 流程上的提醒
+
+`v0.2.0` 的標籤是在審核之前打的。之後建議等審核通過再打標籤；這次的修正併入第二批（0.3.0），不另外重打 0.2.0。
 
 ## 第二輪發現的小問題
 
@@ -173,6 +234,27 @@
 略過的是只適用於有 DOTween 或無 DOTween 的案例。另以只有 DOTween DLL 的專案確認待 Setup 的驗證錯誤，並在非批次 Editor 從本機官方套件呼叫 `ImportLocalPackage()`，確認匯入後重新編譯並進入就緒狀態。
 
 實際建置並執行 Windows Player。單 Scene 與 Prefab 模式都使用生成的 ID 常數導航，成功切頁、開關 Popup 並返回。Popup 按鈕命中 raycast，底下頁面的按鈕沒有命中。兩種模式的 Player 場景都已剝除審核複本。
+
+### 第三輪：Claude 對第一批的獨立驗證
+
+以上是 codex 自己的紀錄。Claude 另外在自己的暫存專案（批次模式、沒有圖形裝置）重跑，結果一致：
+
+| 測試 | 通過 | 失敗 | 略過 |
+|---|---:|---:|---:|
+| EditMode，有 DOTween | 18 | 0 | 1 |
+| PlayMode，有 DOTween | 13 | 0 | 1 |
+| EditMode，無 DOTween | 15 | 0 | 4 |
+| PlayMode，無 DOTween | 11 | 0 | 3 |
+
+EditMode 多略過的一個是需要圖形裝置的 Scene View 案例。另外確認了以下幾點：
+
+- **DOTween 三種狀態：** 有 define 時為 `Ready`；移除 define 但保留檔案時為 `Imported`；刪除檔案後為 `Missing`。`FindLocalPackage` 找得到本機快取的套件。
+- **套用範例計畫：** 三個 View 的根節點都有子 Canvas，Validate 沒有任何問題，產生的 `WorkshopUI.cs` 內容正確。
+- **實際打包（單 Scene 模式，含 DOTween）：** 遊戲腳本用產生的常數導航，可以編譯；切頁、返回、開關 Popup 正常；打包後的 View 都有子 Canvas，審核層已剝除。
+- **導航診斷：** 在執行檔的 log 中看到預期的訊息與回傳值，例如找不到的頁面回傳 `NotFound` 並記錄 ID 與 Scene，已在該頁回傳 `Unavailable`，沒有上一頁的返回安靜地回傳 `Unavailable`。
+- **事件監聽丟例外：** 行為如 F1 所述。
+
+Prefab 模式的打包、外部磁碟安裝、互動 Editor 中的匯入，Claude 沒有重做，以 codex 的紀錄為準。
 
 ### 第二輪（commit `0cabfec`）
 

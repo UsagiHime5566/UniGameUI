@@ -36,6 +36,7 @@
 - **不要 commit `ProjectSettings/ProjectSettings.asset` 裡的 `DOTWEEN` define。** DOTween 不在這個 repo 裡，define 一旦進版控，別台電腦開專案時套件會編譯失敗。
 - 與這一輪工作無關的 `ProjectSettings` 變更不要 commit。
 - 不要 push，由使用者自己推送。
+- 交付時在 `package.json` 升版號，但不要打版本標籤。標籤等審核通過後才打。
 
 ## 交付
 

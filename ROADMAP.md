@@ -4,7 +4,7 @@
 - 目前版本：0.2.0（標籤 `v0.2.0`）
 - 相關文件：`CODEX_REVIEW.md`（審核結果與 N、P、U、M、L 各項目的原始說明）、`AGENTS.md`（每一輪的工作規則）
 
-這份文件記錄已定案的方向、四批工作的範圍，以及**第一批的詳細規格**。第二批以後只列範圍，等前一批審核完才會補上詳細規格。沒有詳細規格的批次請不要先做。
+這份文件記錄已定案的方向、四批工作的範圍，以及**第一批與第二批的詳細規格**。第三批以後只列範圍，等前一批審核完才會補上詳細規格。沒有詳細規格的批次請不要先做。
 
 ## 使用情境
 
@@ -33,23 +33,27 @@
 | 跨 Scene | 現在不做，之後做成可選功能。頁面腳本一律從自己的 View 取得 UIRoot，不做全域單例。 |
 | 自動走訪 | 要做。「送出事件」類的路由預設跳過。 |
 | 發佈 | GitHub repo，其他專案用 git URL 加 `?path=/Packages/com.chrono.unigameui` 安裝，用版本標籤鎖定。repo 尚未建立。 |
-| 版本 | 每批完成後升一個版號並打標籤。 |
+| 版本 | 每批交付時升一個版號。標籤等審核通過後才打。 |
+| 事件出錯 | 「顯示前」出錯會取消這次導航；「顯示後」、「隱藏前」、「隱藏後」出錯只記錄，導航照常完成（2026-11-20 決定，原因見 `CODEX_REVIEW.md` 的 F1）。 |
 
 ## 四批範圍
 
 | 批次 | 主題 | 版本 | 狀態 |
 |---|---|---|---|
-| 第一批 | 讓 agent 寫錯馬上知道 | 0.2.0 | 已實作，自動測試與 Windows Player 通過，互動操作待人工確認 |
-| 第二批 | 遊戲程式的標準寫法 | 0.3.0 | 只有範圍 |
+| 第一批 | 讓 agent 寫錯馬上知道 | 0.2.0 | 已實作並通過審核；互動操作待人工確認；後續項目 F1～F6 見 `CODEX_REVIEW.md` |
+| 第二批 | 遊戲程式的標準寫法 | 0.3.0 | 規格已寫，待實作 |
 | 第三批 | 元件與輸入 | 0.4.0 | 只有範圍 |
 | 第四批 | 驗收工具 | 0.5.0 | 只有範圍 |
 
 ### 第二批：遊戲程式的標準寫法
 
+詳細規格在本文件最後的「第二批規格」。範圍如下：
+
+- 第一批的後續項目 F1～F6。
 - 頁面腳本的生命週期介面：顯示前（帶資料）、顯示後、隱藏前、隱藏後，以及接收「送出事件」類的按鈕動作。`UIView` 提供取得所屬 UIRoot 的屬性。
 - 用 ID 取元件，例如 `view.Get<TMP_Text>("title")`。
 - 補齊 UIRoot 的 API：取得 View 實例、清空歷史、取代目前頁。
-- Popup 回傳結果，以及確認框的呼叫方式。
+- Popup 回傳結果。
 - 全域事件：任何畫面顯示或隱藏、任何按鈕動作觸發時通知一次。
 - AgentGuide 新增「遊戲程式」章節和頁面腳本範本，並註明頁面不會自動釋放（`CODEX_REVIEW.md` 的 P3）。
 
@@ -60,6 +64,7 @@
 - 多語系接口：計畫裡的文字和圖片可以寫鍵值並保留預設內容；切換語言時重新取值。
 - 手把與鍵盤導覽、滑鼠懸停取消選取、滑鼠點過的按鈕不留在選取狀態、返回鍵。
 - Popup 快取（P2），以及「點遮罩關閉」的選項。
+- 確認框（起始元件之一）與它的標準呼叫方式，建立在第二批的 Popup 回傳結果之上。
 
 ### 第四批：驗收工具
 
@@ -286,3 +291,230 @@ namespace UniGameUI.Generated
 - 不保留舊名稱的屬性。
 
 **驗收：** 套件內搜尋不到 `Showed`（`FormerlySerializedAs` 的字串除外）；測試通過。
+
+---
+
+# 第二批規格：遊戲程式的標準寫法
+
+完成後版本為 0.3.0。交付時升版號，但不要打標籤，等審核通過再打。共七項；2-1 會動到後面幾項的基礎，請先做。
+
+驗收的共同條件與第一批相同：既有測試全數通過、每一項補上測試、測試在有 DOTween 的環境執行、文件與 `CHANGELOG.md` 同步更新。
+
+下面的型別與方法名稱是建議。實作時若發現更好的名稱可以調整，但請在交付說明列出與規格不同的地方。
+
+## 2-1. 第一批的後續項目
+
+處理 `CODEX_REVIEW.md` 的 F1～F6，問題說明與驗收標準寫在那裡。F1 的做法已定案，完整規則如下，也適用於本批新增的介面方法與全域事件：
+
+| 出錯的地方 | 處理方式 | 回傳 |
+|---|---|---|
+| 顯示前：`Showing` 事件、`OnShowing` | 取消這次導航並還原，新畫面不顯示 | `Failed` |
+| 顯示後、隱藏前、隱藏後：對應的事件與介面方法 | 記錄例外，附上操作與畫面 ID；導航照常完成 | `Completed` |
+| 送出事件：`ActionEmitted`、`OnAction` | 記錄例外；畫面狀態不變 | `Failed` |
+| 全域事件（2-6）的訂閱者 | 記錄例外；不影響導航，其他訂閱者照常收到 | 不影響 |
+
+- 同一個階段有多個接收者時，其中一個出錯不影響其他接收者被呼叫。「顯示前」例外：第一個出錯就停止並取消。
+- 轉場動畫本身出錯（例如自訂動畫缺少元件）維持現行行為：還原並回傳 `Failed`。
+
+## 2-2. 頁面腳本的生命週期
+
+**目標：** 頁面邏輯有唯一的標準寫法，不必接沒有參數的 UnityEvent。
+
+```csharp
+public interface IUIViewHandler
+{
+    void OnShowing(UIView view, object data);
+    void OnShown(UIView view);
+    void OnHiding(UIView view);
+    void OnHidden(UIView view);
+    void OnAction(UIView view, string action);
+}
+
+[RequireComponent(typeof(UIView))]
+public abstract class UIViewBehaviour : MonoBehaviour, IUIViewHandler
+{
+    public UIView View { get; }
+    public UIRoot Root { get; }
+
+    protected virtual void OnShowing(object data) { }
+    protected virtual void OnShown() { }
+    protected virtual void OnHiding() { }
+    protected virtual void OnHidden() { }
+    protected virtual void OnAction(string action) { }
+}
+```
+
+- **標準寫法是繼承 `UIViewBehaviour`，掛在 View 的根節點。** 介面是底層機制，留給無法繼承的類別使用。`UIView` 維持 `sealed`。
+- **尋找範圍：** 只找和 `UIView` 同一個 GameObject 上的元件，不找子物件。
+- **每個階段的呼叫順序：** 介面接收者（依元件順序）→ View 自己的 UnityEvent → UIRoot 的全域事件。
+- **`OnShowing` 的時機：** 畫面啟用之後、進場轉場開始之前，和現在的 `Showing` 事件相同。
+- **返回時：** 回到上一頁會再呼叫一次 `OnShowing`，資料是該頁上次顯示時收到的那一份。
+- **`OnAction`：** 只有「送出事件」（`Emit`）類的路由會呼叫，而且只送給來源畫面的接收者。之後 `UIRoot.ActionEmitted` 照舊觸發。
+- **`UIView.Root`：** 回傳所屬的 UIRoot。由 UIRoot 準備畫面時設定；Edit Mode 下是 null。頁面腳本一律從這裡取得 UIRoot，不要用全域搜尋。
+- **資料轉型：** `UIView` 新增 `GetData<T>()` 與 `TryGetData<T>(out T)`。`GetData<T>` 在資料是 null 或型別不符時丟出例外，訊息包含畫面 ID 與期望的型別。
+
+**驗收**
+
+- PlayMode 測試：切頁、返回、開關 Popup 時，四個生命週期方法依序被呼叫，資料正確；呼叫順序符合上面的規定。
+- `Emit` 路由會呼叫來源畫面的 `OnAction`，其他種類的路由不會。
+- `View.Root` 在單 Scene 頁面、Prefab 頁面、Popup 三種情況都正確。
+- 2-1 表格裡的每一種出錯情況都有測試，包含「隱藏後出錯的 Popup 仍然關得掉」。
+
+## 2-3. 用 ID 取元件
+
+**目標：** 程式用 JSON 計畫裡的元件 ID 取得元件，不必在 Inspector 拖引用。
+
+```csharp
+// UIView
+public T Get<T>(string elementId) where T : Component;
+public bool TryGet<T>(string elementId, out T component) where T : Component;
+public GameObject GetElement(string elementId);
+```
+
+- 依 `UIElementId` 尋找，包含未啟用的物件。
+- 元件的尋找順序：先找該物件本身，沒有再找它的子物件。例如對按鈕的 ID 取 `TMP_Text`，會拿到按鈕底下的文字。
+- `Get<T>` 與 `GetElement` 找不到時丟出例外，訊息包含畫面 ID、元件 ID、要找的型別與 Scene 名稱。`TryGet<T>` 找不到時回傳 false，不記錄。
+- 第一次呼叫時建立 ID 對照表並快取。查不到或快取到的物件已被銷毀時，重新掃描一次再判定。
+- `UIElementId` 改成可以從 Add Component 選單加入（`UniGameUI/UI Element Id`），讓手動建立的物件也能登記 ID。
+
+**驗收**
+
+- PlayMode 測試：取得元件本身的元件、取得子物件的元件、找不到時的例外訊息、動態新增元件後能取得、`TryGet` 的兩種結果。
+- 單 Scene 頁面與 Popup 實例都要測。
+
+## 2-4. UIRoot 的補充 API
+
+```csharp
+public enum UIHistoryMode { Push, Replace, Clear }
+
+// UIRoot
+public UIView CurrentPage { get; }
+public UIView TopPopup { get; }
+public IReadOnlyList<UIView> Popups { get; }
+public int HistoryCount { get; }
+
+public bool TryGetView(string id, out UIView view);
+public void ClearHistory();
+public Awaitable<UINavResult> ShowPageAsync(
+    string id, object data, UIHistoryMode history, CancellationToken cancellation = default);
+```
+
+- **`TryGetView`：** 回傳目前存在的實例。頁面在建立之後就拿得到（單 Scene 模式一開始就有；Prefab 模式要顯示過一次）；Popup 只有開著的時候拿得到。
+- **`UIHistoryMode`：**
+  - `Push`：現行行為，離開的頁面進入歷史。
+  - `Replace`：離開的頁面不進歷史，返回時回到更早的那一頁。
+  - `Clear`：切頁成功後清空歷史，適合回到主選單。
+  - 歷史只在切頁成功後才變動；失敗或取消時維持原狀。
+- **路由也能指定：** `UIRoute` 新增歷史模式，只對 `ShowPage` 有意義。藍圖右欄與 JSON 計畫（`"history": "Replace"`）都要能設定，預設 `Push`。
+- **忙碌中的請求：** 維持回傳 `Busy`、不排隊。請在 AgentGuide 寫清楚。
+
+**驗收**
+
+- PlayMode 測試：三種歷史模式下 `HistoryCount` 與返回的結果；切頁失敗時歷史不變；`TryGetView` 在上述各種狀態的回傳值。
+- EditMode 測試：JSON 計畫的 `history` 欄位能設定與部分更新；藍圖儲存路由後保留該設定。
+
+## 2-5. Popup 回傳結果
+
+**目標：** 程式可以開一個 Popup，等它關閉並拿到使用者的選擇。
+
+```csharp
+public readonly struct UIPopupResult<T>
+{
+    public UINavResult Status { get; }
+    public bool HasValue { get; }
+    public T Value { get; }
+    public T GetValueOrDefault(T fallback = default);
+}
+
+// UIRoot
+public Awaitable<UIPopupResult<T>> OpenPopupForResultAsync<T>(
+    string id, object data = null, CancellationToken cancellation = default);
+
+// UIView
+public Awaitable<UINavResult> Close(object result = null);
+```
+
+- **`OpenPopupAsync` 不變：** Popup 開啟完成就結束等待。
+- **`OpenPopupForResultAsync<T>`：** 等到 Popup 完全關閉（退場轉場播完、隱藏後的通知發出）才結束等待。
+- **`Status`：**
+  - 開啟失敗：回傳開啟時的結果（`NotFound`、`Busy` 等），`HasValue` 為 false。
+  - 正常關閉：`Completed`。
+  - 等待期間 UIRoot 被停用或銷毀，或 `cancellation` 被取消：`Canceled`。取消只結束等待，不會自動關閉 Popup。
+- **`HasValue`：**
+  - 用 `Close(result)` 或帶有結果的關閉路由關閉，而且結果可以轉成 `T`：true。
+  - 用返回、不帶結果的關閉、切頁等方式關閉：false。
+  - 結果的型別和 `T` 不符：false，並用 `LogError` 指出兩個型別。
+- **`UIView.Close`：** 只對「開著而且在最上層」的 Popup 有效。其他情況（頁面、不在最上層、已關閉）回傳 `Unavailable` 並警告。
+- **路由也能帶結果：** `UIRoute` 新增一個字串結果，只對 `ClosePopup` 有意義。藍圖右欄與 JSON 計畫（`"result": "yes"`）都要能設定。這樣簡單的選擇視窗不需要任何腳本，呼叫端用 `OpenPopupForResultAsync<string>` 取得。
+- **不能留下永遠等不到的呼叫：** 所有關閉途徑、Popup 被外部銷毀、UIRoot 停用，都要讓等待結束。
+- 不是用 `OpenPopupForResultAsync` 開的 Popup，被 `Close(result)` 關閉時，結果直接丟棄，不記錄。
+
+**驗收**
+
+- PlayMode 測試涵蓋：用 `Close(result)` 取得結果、用帶結果的路由取得結果、返回關閉、切頁時被關閉、型別不符、開啟失敗、等待中停用 UIRoot、等待中取消 token、Popup 被外部銷毀。每一種都要確認等待有結束，以及 `Status` 與 `HasValue` 的值。
+- EditMode 測試：JSON 計畫的 `result` 欄位。
+
+## 2-6. 全域事件
+
+**目標：** 音效、數據埋點這類橫跨所有畫面的功能，只要在一個地方訂閱。
+
+```csharp
+// UIRoot
+public event Action<UIView> ViewShowing;
+public event Action<UIView> ViewShown;
+public event Action<UIView> ViewHiding;
+public event Action<UIView> ViewHidden;
+public event Action<UIRoute> ActionTriggered;
+public event Action<UIRoute, UINavResult> ActionCompleted;
+```
+
+- 四個畫面事件在對應階段、View 自己的 UnityEvent 之後觸發。
+- `ActionTriggered`：`TriggerAsync` 找到路由並確定可以執行時立刻觸發，在轉場開始之前。按鈕音效接這裡。找不到路由、來源不是最上層、忙碌中都不觸發。
+- `ActionCompleted`：該路由執行結束時觸發，帶著結果，包含失敗與取消。
+- 訂閱者出錯的處理見 2-1。
+- 現有的 `ActionEmitted`（UnityEvent）保留，方便在 Inspector 接線。
+
+**驗收：** PlayMode 測試確認各事件的觸發時機與參數；一個訂閱者丟出例外時，導航結果不變，其他訂閱者照常收到。
+
+## 2-7. 文件
+
+AgentGuide 新增「遊戲程式」章節，內容包括：
+
+- 一份完整的頁面腳本範本，示範繼承 `UIViewBehaviour`、使用產生的 ID 常數、用 ID 取元件、處理送出事件、開 Popup 並等待結果。下面是示意，常數名稱以 F3 修正後的實際輸出為準：
+
+```csharp
+using TMPro;
+using UniGameUI;
+using UniGameUI.Generated;
+
+public sealed class WorkshopPage : UIViewBehaviour
+{
+    protected override void OnShowing(object data)
+    {
+        View.Get<TMP_Text>(WorkshopUI.Elements.WorkshopView.Title).text = "工坊";
+    }
+
+    protected override async void OnAction(string action)
+    {
+        if (action != WorkshopUI.Actions.DeleteSave)
+            return;
+
+        var answer = await Root.OpenPopupForResultAsync<string>(WorkshopUI.Views.Confirm, "確定刪除存檔？");
+        if (answer.GetValueOrDefault() == "yes")
+            DeleteSave();
+    }
+
+    private void DeleteSave()
+    {
+    }
+}
+```
+
+- 各階段的呼叫順序，以及出錯時的處理規則（2-1 的表格）。
+- `async void` 的方法在第一個 `await` 之後丟出的例外，框架接不到，要自己處理。
+- 轉場中的請求回傳 `Busy`，不排隊。
+- 頁面不會自動釋放：單 Scene 模式的頁面隨 Scene 載入，Prefab 模式的頁面顯示過就一直保留（`CODEX_REVIEW.md` 的 P3）。
+- 遊戲程式放在 asmdef 裡時，要引用常數所在的組件（F2）。
+- 套用 JSON 計畫後要等編譯完成（F6）。
+
+**驗收：** 範本的程式碼要實際編譯過。請把它放進測試專案確認，不要只貼在文件裡。
