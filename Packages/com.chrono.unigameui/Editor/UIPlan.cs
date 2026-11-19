@@ -306,8 +306,11 @@ namespace UniGameUI.Editor
                     if (!paths.Add(path))
                         throw new ArgumentException($"Two views use '{path}'.");
                     var asset = AssetDatabase.LoadMainAssetAtPath(path);
-                    if (asset && (asset is not GameObject prefab || prefab.GetComponent<UIView>()?.Id != view.id))
+                    var existingView = asset is GameObject prefab ? prefab.GetComponent<UIView>() : null;
+                    if (asset && !existingView)
                         throw new ArgumentException($"Prefab path is already in use: {path}");
+                    if (existingView && existingView.Id != view.id)
+                        throw new ArgumentException(UIAuthoring.ViewIdMismatch(path, existingView.Id, view.id));
                 }
                 else if (!string.IsNullOrEmpty(view.prefabPath))
                 {

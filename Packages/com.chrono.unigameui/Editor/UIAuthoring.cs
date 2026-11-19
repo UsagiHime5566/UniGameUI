@@ -361,7 +361,11 @@ namespace UniGameUI.Editor
                     if (prefab && PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(entry.Review.gameObject) != path)
                         throw new InvalidOperationException($"「{entry.Id}」的審核畫面與 Prefab 本體未連結。");
 
-                    EnsureViewComponent<Canvas>(entry.Review, prefab, path, ConfigureViewCanvas);
+                    EnsureViewComponent<Canvas>(entry.Review, prefab, path, canvas =>
+                    {
+                        Undo.RecordObject(canvas, "設定子 Canvas");
+                        ConfigureViewCanvas(canvas);
+                    });
                     EnsureViewComponent<GraphicRaycaster>(entry.Review, prefab, path);
                 }
                 MarkChanged(root);
@@ -551,8 +555,10 @@ namespace UniGameUI.Editor
                 if (existingAsset != null)
                 {
                     prefab = (existingAsset as GameObject)?.GetComponent<UIView>();
-                    if (!prefab || prefab.Id != id)
+                    if (!prefab)
                         throw new InvalidOperationException($"Prefab path is already in use: {prefabPath}");
+                    if (prefab.Id != id)
+                        throw new InvalidOperationException(ViewIdMismatch(prefabPath, prefab.Id, id));
                 }
             }
             else if (!string.IsNullOrEmpty(prefabPath))
@@ -601,6 +607,13 @@ namespace UniGameUI.Editor
             return review;
         }
 
+        // View Prefab 的畫面 ID 存在 Prefab 裡。複製出來的 Prefab 仍然是原本的 ID，只能用同一個 ID 登記。
+        internal static string ViewIdMismatch(string prefabPath, string prefabId, string requestedId)
+        {
+            return $"Prefab「{prefabPath}」的畫面 ID 是「{prefabId}」，不能登記成「{requestedId}」。" +
+                "View Prefab 的畫面 ID 是固定的，請用相同的 ID 登記，或另外建立一個新的 View。";
+        }
+
         internal static string DefaultPrefabPath(UIEntryKind kind, string id)
         {
             var folder = kind == UIEntryKind.Popup ? "Popups" : "Pages";
@@ -611,9 +624,17 @@ namespace UniGameUI.Editor
         {
             var rect = CreateRect(title, frame);
             Undo.RegisterCreatedObjectUndo(rect.gameObject, "Create UI view");
-            var view = Undo.AddComponent<UIView>(rect.gameObject);
-            ConfigureViewCanvas(Undo.AddComponent<Canvas>(rect.gameObject));
-            Undo.AddComponent<GraphicRaycaster>(rect.gameObject);
+            return BuildView(rect, id, kind);
+        }
+
+        /// <summary>
+        /// 在指定的物件上組出 View 的固定結構：子 Canvas、遮罩（Popup）、Motion 與 Content。
+        /// </summary>
+        internal static UIView BuildView(RectTransform rect, string id, UIEntryKind kind)
+        {
+            var view = rect.gameObject.AddComponent<UIView>();
+            ConfigureViewCanvas(rect.gameObject.AddComponent<Canvas>());
+            rect.gameObject.AddComponent<GraphicRaycaster>();
             view.id = id;
             view.canvasGroup = rect.GetComponent<CanvasGroup>();
             if (kind == UIEntryKind.Popup)
@@ -639,7 +660,6 @@ namespace UniGameUI.Editor
 
         private static void ConfigureViewCanvas(Canvas canvas)
         {
-            Undo.RecordObject(canvas, "設定子 Canvas");
             canvas.additionalShaderChannels |= TextShaderChannels;
         }
 

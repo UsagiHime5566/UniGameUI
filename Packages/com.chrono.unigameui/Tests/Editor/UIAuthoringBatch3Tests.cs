@@ -143,6 +143,8 @@ namespace UniGameUI.Editor.Tests
             }
             Assert.That(set.Widgets.Count, Is.EqualTo(StarterKinds.Length));
             Assert.That(AssetDatabase.GetAssetPath(set.ListItem), Is.EqualTo($"{widgets}/ListItem.prefab"));
+            Assert.That(AssetDatabase.GetAssetPath(set.Confirm), Is.EqualTo($"{widgets}/Confirm.prefab"));
+            Assert.That(UIWidgets.ConfirmPrefabPath, Is.EqualTo($"{widgets}/Confirm.prefab"));
             Assert.That(set.Find("ScrollList").Prefab.GetComponent<UIList>().ItemPrefab, Is.SameAs(set.ListItem));
             Assert.That(UIList.GetInItem<TMP_Text>(set.ListItem, "label"), Is.Not.Null);
 
@@ -567,9 +569,10 @@ namespace UniGameUI.Editor.Tests
             Assert.That(set.ListItem.GetComponentInChildren<TMP_Text>().font, Is.SameAs(main));
 
             // 之後補上的起始元件直接使用目前的預設字型。
-            Assert.That(AssetDatabase.DeleteAsset($"{widgets}/Text.prefab"), Is.True);
+            Assert.That(AssetDatabase.DeleteAsset($"{widgets}/Dropdown.prefab"), Is.True);
             UIWidgets.Install();
-            Assert.That(FontOf(set, "Text"), Is.SameAs(main));
+            Assert.That(set.Find("Dropdown").Prefab.GetComponentsInChildren<TMP_Text>(true)
+                .All(text => text.font == main), Is.True);
 
             // 計畫的 defaultFontPath 走同一條路；空字串改回 TMP 的預設字型。
             SceneManager.SetActiveScene(NewScene("Batch3 Default Font"));
@@ -851,6 +854,94 @@ namespace UniGameUI.Editor.Tests
                 { ""id"": ""tip"", ""updateExisting"": true, ""overlayClick"": ""Maybe"" }, { ""id"": ""other"" }] }"));
             Assert.That(UIAuthoring.FindEntry(root, "other"), Is.Null);
             Assert.That(tip.Review.ReusesInstance || tip.Review.ClosesOnOverlayClick, Is.False);
+        }
+
+        [Test]
+        public void StarterConfirmIsAPopupPrefabBuiltFromWidgetsAndRegistersLikeAnyPopup()
+        {
+            RequireDOTween();
+            var widgets = UseIsolatedWidgets();
+            var set = UIWidgets.Install();
+            var confirm = set.Confirm;
+            Assert.That(confirm.Id, Is.EqualTo(UIRoot.DefaultConfirmPopupId));
+            Assert.That(confirm.GetComponent<UIConfirmPopup>(), Is.Not.Null);
+            Assert.That(confirm.Overlay && confirm.Motion && confirm.Content && confirm.Group, Is.True);
+            Assert.That(confirm.GetComponent<Canvas>() && confirm.GetComponent<GraphicRaycaster>(), Is.True);
+            Assert.That((confirm.ReusesInstance, confirm.BlocksBackKey, confirm.ClosesOnOverlayClick),
+                Is.EqualTo((true, false, false)));
+            var elements = confirm.GetComponentsInChildren<UIElementId>(true).ToDictionary(element => element.Id);
+            Assert.That(elements.Keys, Is.EquivalentTo(new[] { "title", "message", "confirm", "cancel" }));
+            foreach (var (id, kind) in new[]
+                { ("title", "Text"), ("message", "Text"), ("confirm", "Button"), ("cancel", "Button") })
+            {
+                Assert.That(elements[id].Kind, Is.EqualTo(kind), id);
+                Assert.That(PrefabUtility.GetCorrespondingObjectFromSource(elements[id].gameObject),
+                    Is.SameAs(set.Find(kind).Prefab), id);
+            }
+            Assert.That(confirm.DefaultSelected, Is.SameAs(elements["cancel"].GetComponent<Button>()));
+            var confirmLabel = elements["confirm"].GetComponentInChildren<TMP_Text>(true);
+            var cancelLabel = elements["cancel"].GetComponentInChildren<TMP_Text>(true);
+            Assert.That((confirmLabel.text, confirmLabel.GetComponent<UILocalizedText>().Key),
+                Is.EqualTo(("確定", "ui.confirm")));
+            Assert.That((cancelLabel.text, cancelLabel.GetComponent<UILocalizedText>().Key),
+                Is.EqualTo(("取消", "ui.cancel")));
+            Assert.That(UIRoot.StarterConfirmPrefabPath, Is.EqualTo(UIWidgets.DefaultFolder + "/Confirm.prefab"));
+
+            // 改按鈕元件的 Prefab，確認框裡的按鈕跟著變。
+            EditPrefab($"{widgets}/Button.prefab", contents => contents.GetComponent<Image>().color = Color.magenta);
+            Assert.That(elements["confirm"].GetComponent<Image>().color, Is.EqualTo(Color.magenta));
+
+            // 和其他 Popup 一樣寫在計畫裡，指向起始 Prefab；多個 Scene 可以登記同一個。
+            var plan = $@"{{ ""views"": [
+                {{ ""id"": ""home"", ""elements"": [
+                    {{ ""id"": ""quit"", ""kind"": ""Button"", ""text"": ""Quit"", ""action"": ""quit"" }}] }},
+                {{ ""id"": ""confirm"", ""kind"": ""Popup"", ""prefabPath"": ""{UIWidgets.ConfirmPrefabPath}"" }}
+            ], ""routes"": [{{ ""source"": ""home"", ""action"": ""quit"", ""kind"": ""Emit"" }}] }}";
+            var firstScene = NewScene("Batch3 Confirm A");
+            SceneManager.SetActiveScene(firstScene);
+            var first = UIPlan.Apply(plan);
+            var entry = UIAuthoring.FindEntry(first, "confirm");
+            Assert.That(entry.Kind, Is.EqualTo(UIEntryKind.Popup));
+            Assert.That(AssetDatabase.GetAssetPath(entry.Prefab), Is.EqualTo(UIWidgets.ConfirmPrefabPath));
+            Assert.That(PrefabUtility.GetCorrespondingObjectFromSource(entry.Review.gameObject),
+                Is.SameAs(entry.Prefab.gameObject));
+            Assert.That(entry.Review.ReusesInstance, Is.True);
+            Assert.That(UIAuthoring.HasReviewOverrides(entry), Is.False);
+            Assert.That(FunctionalErrors(first), Is.Empty);
+            Assert.That(File.ReadAllText(UIIdConstants.Generate(first)),
+                Does.Contain("public static class ConfirmView").And.Contain("public const string Cancel = \"cancel\";")
+                    .And.Contain("public const string Message = \"message\";"));
+
+            Assert.That(UnityEditor.SceneManagement.EditorSceneManager.SaveScene(firstScene), Is.True);
+            var secondScene = NewScene("Batch3 Confirm B");
+            UnityEditor.SceneManagement.EditorSceneManager.CloseScene(firstScene, true);
+            SceneManager.SetActiveScene(secondScene);
+            var second = UIPlan.Apply(plan);
+            Assert.That(UIAuthoring.FindEntry(second, "confirm").Prefab, Is.SameAs(UIWidgets.Find().Confirm));
+            Assert.That(FunctionalErrors(second), Is.Empty);
+
+            // View Prefab 的畫面 ID 是固定的，不能用別的 ID 登記同一個檔案。
+            var otherId = Assert.Throws<ArgumentException>(() => UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""ask"", ""kind"": ""Popup"", ""prefabPath"": ""{UIWidgets.ConfirmPrefabPath}"" }}] }}"));
+            Assert.That(otherId.Message, Does.Contain("confirm").And.Contain("ask").And.Contain("畫面 ID"));
+            Assert.That(UIAuthoring.FindEntry(second, "ask"), Is.Null);
+            Assert.That(Assert.Throws<InvalidOperationException>(() =>
+                UIAuthoring.CreatePopup(second, "ask", "Ask", UIWidgets.ConfirmPrefabPath)).Message,
+                Does.Contain("畫面 ID"));
+
+            // 要有第二種樣式的確認框：建立一個新的 Popup，放進四個同名的元件，根節點掛上 UIConfirmPopup。
+            var styled = UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""quitConfirm"", ""kind"": ""Popup"",
+                ""prefabPath"": ""{folder}/QuitConfirm.prefab"", ""defaultSelected"": ""cancel"",
+                ""popupCache"": ""Reuse"", ""elements"": [
+                    {{ ""id"": ""title"", ""text"": ""Title"" }},
+                    {{ ""id"": ""message"", ""text"": ""Message"" }},
+                    {{ ""id"": ""confirm"", ""kind"": ""Button"", ""text"": ""Quit"" }},
+                    {{ ""id"": ""cancel"", ""kind"": ""Button"", ""text"": ""Stay"" }}] }}] }}");
+            var styledEntry = UIAuthoring.FindEntry(styled, "quitConfirm");
+            Undo.AddComponent<UIConfirmPopup>(styledEntry.Review.gameObject);
+            UIAuthoring.ApplyReviewOverrides(styled, "quitConfirm");
+            Assert.That(styledEntry.Prefab.GetComponent<UIConfirmPopup>(), Is.Not.Null);
+            Assert.That(FunctionalErrors(styled), Is.Empty);
         }
 
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)

@@ -16,6 +16,7 @@ namespace UniGameUI.Editor
         public const string DefaultFolder = "Assets/UniGameUI/Widgets";
         private const string SetFileName = "UIWidgetSet.asset";
         private const string ListItemName = "ListItem";
+        private const string ConfirmName = "Confirm";
 
         // 測試用：把安裝位置與搜尋範圍限制在指定資料夾，避免動到專案自己的元件集。
         internal static string FolderOverride;
@@ -28,6 +29,11 @@ namespace UniGameUI.Editor
         };
 
         internal static string Folder => FolderOverride ?? DefaultFolder;
+
+        /// <summary>
+        /// 起始確認框 Prefab 的安裝位置。在計畫的 views 用這個路徑登記確認框。
+        /// </summary>
+        public static string ConfirmPrefabPath => $"{Folder}/{ConfirmName}.prefab";
 
         /// <summary>
         /// 取得專案的元件集。找不到時回傳 null。專案裡有多個時回傳路徑排序最前面的那一個，Validate 會回報錯誤。
@@ -105,6 +111,15 @@ namespace UniGameUI.Editor
                     set.widgets.Add(new UIWidgetEntry { name = name, kind = kind, prefab = prefab });
                 else
                     entry.prefab = prefab;
+            }
+            if (!set.confirm)
+            {
+                // 確認框用到 Text 與 Button 兩個元件，所以放在它們之後。
+                var path = ConfirmPrefabPath;
+                var prefab = LoadOrBuild(path, created, () => UIStarterWidgets.BuildConfirm(path, set));
+                set.confirm = prefab.GetComponent<UIView>();
+                if (!set.confirm)
+                    throw new InvalidOperationException($"「{path}」不是確認框的 View Prefab，無法登記到元件集。");
             }
 
             EditorUtility.SetDirty(set);
@@ -241,7 +256,7 @@ namespace UniGameUI.Editor
 
         private static bool IsComplete(UIWidgetSet set)
         {
-            return set.listItem && BuiltIn.All(kind => set.Find(kind.ToString())?.prefab);
+            return set.listItem && set.confirm && BuiltIn.All(kind => set.Find(kind.ToString())?.prefab);
         }
 
         private static bool IsNameCharacter(char character)

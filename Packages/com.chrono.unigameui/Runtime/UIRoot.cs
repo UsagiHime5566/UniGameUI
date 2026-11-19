@@ -17,6 +17,14 @@ namespace UniGameUI
     [AddComponentMenu("UniGameUI/UI Root")]
     public sealed partial class UIRoot : MonoBehaviour
     {
+        /// <summary>
+        /// <see cref="ConfirmAsync"/> 預設開啟的 Popup ID，也是起始確認框 Prefab 的畫面 ID。
+        /// </summary>
+        public const string DefaultConfirmPopupId = "confirm";
+
+        // 起始確認框的安裝位置，只用來組出登記用的提示。
+        internal const string StarterConfirmPrefabPath = "Assets/UniGameUI/Widgets/Confirm.prefab";
+
         [SerializeField] internal UIAuthoringMode mode;
         [SerializeField] internal Vector2 referenceResolution = new Vector2(1920, 1080);
         [SerializeField, Min(1)] internal int reviewColumns = 3;
@@ -174,11 +182,44 @@ namespace UniGameUI
             return RunAsync(request, token => OpenPopupCoreAsync(id, data, token, request), cancellation);
         }
 
-        public async Awaitable<UIPopupResult<T>> OpenPopupForResultAsync<T>(
+        public Awaitable<UIPopupResult<T>> OpenPopupForResultAsync<T>(
             string id, object data = null, CancellationToken cancellation = default)
         {
+            return OpenPopupForResultCoreAsync<T>(id, data, cancellation, $"OpenPopupForResult '{id}'", null);
+        }
+
+        /// <summary>
+        /// 開啟確認框並等待玩家的選擇。只有按下確定時回傳 true；取消、返回鍵、等待被取消，
+        /// 或確認框沒有顯示出來時都回傳 false。
+        /// </summary>
+        public async Awaitable<bool> ConfirmAsync(
+            string message, string confirmText = null, string cancelText = null, string title = null,
+            string popupId = DefaultConfirmPopupId, CancellationToken cancellation = default)
+        {
+            var request = $"Confirm '{popupId}'";
+            var opened = UINavResult.Completed;
+            var result = await OpenPopupForResultCoreAsync<bool>(popupId, new UIConfirmRequest
+            {
+                Message = message,
+                Title = title,
+                ConfirmText = confirmText,
+                CancelText = cancelText
+            }, cancellation, request, status => opened = status);
+            if (opened == UINavResult.Completed)
+                return result.HasValue && result.Value;
+
+            var hint = opened == UINavResult.NotFound
+                ? "請在計畫的 views 登記確認框，例如：" +
+                  $"{{ \"id\": \"{popupId}\", \"kind\": \"Popup\", \"prefabPath\": \"{StarterConfirmPrefabPath}\" }}"
+                : "";
+            Debug.LogWarning(Diagnostic(request, $"確認框沒有顯示出來（{opened}），當成取消。{hint}"), this);
+            return false;
+        }
+
+        private async Awaitable<UIPopupResult<T>> OpenPopupForResultCoreAsync<T>(
+            string id, object data, CancellationToken cancellation, string request, Action<UINavResult> opened)
+        {
             await Awaitable.MainThreadAsync();
-            var request = $"OpenPopupForResult '{id}'";
             var rootLifetime = lifetime?.Token ?? default;
             UIView popup = null;
             AwaitableCompletionSource<object> resultSource = null;
@@ -188,6 +229,7 @@ namespace UniGameUI
                 resultSource = new AwaitableCompletionSource<object>();
                 popupResults.Add(popup, resultSource);
             }), cancellation);
+            opened?.Invoke(status);
             if (status != UINavResult.Completed)
                 return new UIPopupResult<T>(status);
             if (resultSource == null)

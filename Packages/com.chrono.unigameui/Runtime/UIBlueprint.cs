@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 
 [assembly: InternalsVisibleTo("UniGameUI.Editor")]
+[assembly: InternalsVisibleTo("UniGameUI.Editor.Tests")]
 [assembly: InternalsVisibleTo("UniGameUI.Runtime.Tests")]
 
 namespace UniGameUI

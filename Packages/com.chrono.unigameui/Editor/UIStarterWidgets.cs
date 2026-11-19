@@ -42,6 +42,11 @@ namespace UniGameUI.Editor
             return Save(path, scene => CreateListItem(scene, set));
         }
 
+        internal static GameObject BuildConfirm(string path, UIWidgetSet set)
+        {
+            return Save(path, scene => CreateConfirm(scene, set));
+        }
+
         /// <summary>
         /// 在預覽 Scene 裡組出物件再存成 Prefab，過程不會動到使用者開著的 Scene。
         /// </summary>
@@ -364,6 +369,83 @@ namespace UniGameUI.Editor
             Localized(Label(label, "Item", 28, Color.white, TextAlignmentOptions.Left, set));
             label.gameObject.AddComponent<UIElementId>().id = "label";
             return root.gameObject;
+        }
+
+        // 確認框是一個 Popup 的 View Prefab，裡面的四個元件都是元件 Prefab 的實例。
+        private static GameObject CreateConfirm(Scene scene, UIWidgetSet set)
+        {
+            var text = set.Find(nameof(UIWidgetKind.Text))?.Prefab;
+            var button = set.Find(nameof(UIWidgetKind.Button))?.Prefab;
+            if (!text || !button)
+                throw new InvalidOperationException("確認框需要元件集裡的 Text 與 Button。");
+
+            var root = Root(scene, "Confirm", Vector2.zero);
+            var view = UIAuthoring.BuildView(root, UIRoot.DefaultConfirmPopupId, UIEntryKind.Popup);
+            // 內容用固定大小，不隨參考解析度的比例縮放。
+            view.Motion.anchorMin = view.Motion.anchorMax = new Vector2(0.5f, 0.5f);
+            view.Motion.sizeDelta = new Vector2(720, 400);
+            Graphic(view.Content, "Background.psd", new Color(0.10f, 0.13f, 0.18f, 1f), false);
+
+            var title = Element(text, view.Content, UIConfirmPopup.TitleId, UIWidgetKind.Text);
+            title.anchorMin = new Vector2(0f, 1f);
+            title.anchorMax = new Vector2(1f, 1f);
+            title.pivot = new Vector2(0.5f, 1f);
+            title.anchoredPosition = new Vector2(0, -32);
+            title.sizeDelta = new Vector2(-64, 60);
+            SetText(title, "Title", null);
+
+            var message = Element(text, view.Content, UIConfirmPopup.MessageId, UIWidgetKind.Text);
+            message.anchorMin = Vector2.zero;
+            message.anchorMax = Vector2.one;
+            message.offsetMin = new Vector2(40, 140);
+            message.offsetMax = new Vector2(-40, -110);
+            SetText(message, "Message", null);
+
+            var confirm = Element(button, view.Content, UIConfirmPopup.ConfirmId, UIWidgetKind.Button);
+            PlaceButton(confirm, 140);
+            SetText(confirm, "確定", "ui.confirm");
+            var cancel = Element(button, view.Content, UIConfirmPopup.CancelId, UIWidgetKind.Button);
+            PlaceButton(cancel, -140);
+            SetText(cancel, "取消", "ui.cancel");
+
+            // 預設選取取消，避免連按確定鍵時誤觸。確認框很常開，所以重用同一個實例。
+            view.defaultSelected = cancel.GetComponent<Button>();
+            view.reusesInstance = true;
+            root.gameObject.AddComponent<UIConfirmPopup>();
+            return root.gameObject;
+        }
+
+        private static RectTransform Element(GameObject prefab, Transform parent, string id, UIWidgetKind kind)
+        {
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+            instance.name = id;
+            var element = instance.AddComponent<UIElementId>();
+            element.id = id;
+            element.kind = kind.ToString();
+            return (RectTransform)instance.transform;
+        }
+
+        private static void PlaceButton(RectTransform rect, float x)
+        {
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(x, 76);
+            rect.sizeDelta = new Vector2(240, 72);
+        }
+
+        // 改動巢狀 Prefab 實例的內容時要明確記成覆寫，存成 Prefab 才會保留。
+        private static void SetText(RectTransform element, string text, string key)
+        {
+            var label = element.GetComponentInChildren<TMP_Text>(true);
+            label.text = text;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(label);
+            if (key == null)
+                return;
+            var localized = label.GetComponent<UILocalizedText>();
+            if (!localized)
+                localized = label.gameObject.AddComponent<UILocalizedText>();
+            localized.key = key;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(localized);
         }
 
         internal static RectTransform Root(Scene scene, string name, Vector2 size)
