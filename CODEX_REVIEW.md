@@ -1,137 +1,203 @@
 # UniGameUI 審核結果（給 codex）
 
-- 審核日期：2026-11-19
 - 審核者：Claude
-- 範圍：commit `020b424` 的 `Packages/com.chrono.unigameui`
-- 環境：Unity 6000.3.19f1、uGUI 2.0；驗證環境沒有安裝 DOTween
+- 第一輪：2026-11-19，commit `020b424`（H1、H2 由 Claude 修正於 `e8062f8`）
+- 第二輪：2026-11-19，commit `0cabfec`（codex 處理第一輪待辦）
+- 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-H1、H2 已由 Claude 修正，尚未 commit。請在目前工作區的版本上繼續，不要回退這兩處修改。下方「待處理」依優先序排列。標示「需使用者決定」的項目牽涉 API 設計，動手前先跟使用者確認方向。
+**現況：** 第一輪的待辦已全部處理並通過驗證，沒有發現回歸。這份文件現在列的是第二輪發現的小問題（N1～N5），以及新增的效能與擴充性待辦（P1～P3、U1、U2）。
 
-## 已確認的 Unity 行為
+原本標示「需使用者決定」的項目已在 2026-11-20 定案，排進 `ROADMAP.md` 的四批工作裡。要做哪一項、怎麼做，以 `ROADMAP.md` 為準；這份文件保留各項目的問題說明。
 
-以下在 Unity 6000.3.19f1 實測過，後續修改請以此為準：
+處理完任何項目後，請更新下方的狀態表。
 
-- `JsonUtility.FromJson` 遇到缺漏欄位時：
-  - 字串維持 `null`。
-  - 陣列維持 `null`。
-  - **巢狀的 `[Serializable]` 類別不會是 `null`**，而是用預設建構子建立實例，欄位初始值會執行。
-- Edit Mode 中，`GetComponent<T>()` 對不存在的元件回傳真正的 `null`，所以 `GetComponent<T>() ?? AddComponent<T>()` 在 Edit Mode 正常。
-- 執行期已確認可用：
-  - 套用 AgentGuide 的範例計畫（含 TMP Essential Resources 自動安裝）。
-  - PlayMode 的起始頁、開啟和關閉 Popup、轉場中阻擋重複請求。
+## 狀態表
 
-## 已修正
+| 項目 | 內容 | 狀態 |
+|---|---|---|
+| H1 | `updateExisting` 蓋掉人工調整 | 已修正、已驗證 |
+| H2 | 沒有 DOTween 時導航失敗 | 已修正、已驗證 |
+| M1 | 藍圖無法改路由名稱 | 已修正、已驗證 |
+| M2 | Prefab 覆寫未套用時進 Play 沒提示 | 已修正；邏輯已驗證，對話框本身未驗證 |
+| M3 | 審核複本被打包進 build | 已修正、已用實際打包驗證 |
+| M4 | `UINavResult.Unavailable` 包太多情況 | 已定案，排在第一批（1-3） |
+| M5 | 遊戲端 API 不足 | 已定案，排在第二批 |
+| L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵排在第三批；Overlay 以外的模式與 Safe Area 不做 |
+| L2 | 藍圖視窗不跟隨 Scene 切換 | 已修正、已驗證 |
+| L3 | 切頁只能依序播放 | 已修正（新增 `Concurrent` 模式）、已驗證 |
+| L4 | 沒有縮放預設動畫 | 已修正（新增 `Zoom`）、已驗證 |
+| L5 | TMP 資源匯入只有自製解析 | 已修正；互動模式的新路徑未驗證 |
+| L6 | 對 Unity 物件用 `??` | 大致修正，剩一處（見 N5） |
+| L7 | 沒有測試；`Showed` 命名 | 測試已補；改名排在第一批（1-6） |
+| DOTween 疑慮 | 轉場中停用 UIRoot 可能引發 Unity 錯誤 | 已排除（見驗證紀錄） |
+| N1～N5 | 第二輪發現的小問題 | 排在第一批（1-1），待處理 |
+| P1 | 所有畫面共用一個 Canvas | 排在第一批（1-5），待處理 |
+| P2 | Popup 每次開啟都重新建立 | 排在第三批 |
+| P3 | 頁面不會釋放 | 排在第二批（只在文件註明） |
+| U1 | `UIView` 不能繼承 | 已定案採用介面做法，排在第二批 |
+| U2 | ID 全是字串 | 已定案自動產生常數，排在第一批（1-4） |
 
-### H1. `updateExisting` 會把人工調整蓋回預設值
+## 第二輪發現的小問題
 
-**原因：** 依上面的 JsonUtility 行為，`ElementSpec.rect`、`ViewSpec.enter`／`exit` 永遠不是 `null`。所以：
+### N1. 藍圖拖線會用到過期的路由選取
 
-- `if (created || spec.rect != null)` 永遠成立。
-- `if (animation == null) return;` 永遠不成立。
+- **位置：** `Editor/UIBlueprintWindow.cs` 的 `RegisterWireDrag`，`wireOriginalAction = selectedAction`。
+- **問題：** `selectedAction` 在所選路由被 Undo 移除後不會清掉。這時從同一個節點拖線，會呼叫 `UpdateRoute` 去更新一條已不存在的路由，跳出「Unknown route」對話框，線也接不上。
+- **重現：** 選節點 A，儲存一條新路由，按 Ctrl+Z，再從 A 的輸出端拖到另一個節點。
+- **建議：** 拖線開始時確認該路由還在，不在就當成新增（`wireOriginalAction = null`）；或在 `Rebuild` 時清掉已失效的 `selectedAction`。
+- **驗收：** 上述步驟會正常建立新路由。
 
-**實測：** 只想改背景與按鈕文字的計畫，把進場動畫從 Slide/0.4 重設成 None/0.25，按鈕從 (111,222)、400×90 重設成 (0,0)、240×72。
+### N2. 路由改名後，Prefab 本體的按鈕仍是舊名稱，Validate 卻沒有報錯
 
-**修正內容：** 檔案為 `Editor/UIPlan.cs`。
+- **位置：** `Editor/UIValidation.cs`，按鈕綁定只檢查 `entry.Review`。
+- **問題：** Popup 與 Prefab 模式的頁面，執行期用的是 `entry.Prefab`。`UpdateRoute` 改名後，新名稱只寫在審核實例的覆寫上；覆寫套用前，Prefab 本體的按鈕對不到任何路由，執行時按了沒反應。目前只有泛用的「有待套用覆寫」警告，而且在批次或 agent 流程中不會有進 Play 前的對話框。
+- **建議：** 對使用 Prefab 的 entry，額外檢查 `entry.Prefab` 底下的 `UIButtonAction`。找不到對應路由時列為 Error，訊息指明要先套用覆寫。
+- **驗收：** 改名後不套用，`UIValidation.Check` 會回報 Error；套用後消失。請補一個 EditMode 測試。
 
-- `AnimationSpec` 的數值欄位預設改為 `NaN`，`RectSpec` 的三個 `Vector2` 預設改為 `(NaN, NaN)`。兩者都加上 `IsEmpty` 判斷。
-- 版面更新改為逐欄位合併：沒指定的 anchor、position、size 維持元件目前的值；新建元件仍從預設值開始（置中、(0,0)、240×72）。
-- 動畫更新改為逐欄位合併：沒指定的欄位維持 View 目前的轉場設定；整個 spec 都沒給就跳過。
-- Preflight 的尺寸檢查改用 `IsNonPositive`，未指定（NaN）不算錯。
-- AgentGuide 補上「省略的欄位維持目前的值」的說明與範例。
+### N3. `UIRoot` Inspector 的「切頁動畫」欄位
 
-### H2. 沒有 DOTween 時，有動畫的轉場會讓導航整個失敗
+- **位置：** `Editor/UIInspectors.cs`。
+- **問題：** Undo 後欄位不會更新；在 Play Mode 改它會讓 `CheckRoot` 丟出例外。
+- **建議：** 改用綁定 `pageTransitionMode` 的 `PropertyField`，或在 Play Mode 停用該欄位並監聽 Undo。
 
-**原因：** `UITransition.PlayAsync` 在 `#else` 分支丟出 `InvalidOperationException`。`UIRoot.RunAsync` 接住後回傳 `Unavailable`，並還原切頁。起始頁若設了 Fade，進 Play 就是黑畫面。
+### N4. 測試在其他專案看不到
 
-**修正內容：** `#else` 分支改為瞬間切換，並用 `Debug.LogWarning` 警告一次（`Runtime/UITransition.cs`）。
+- **問題：** 套件的測試只有在「嵌入專案」時會自動出現在 Test Runner。之後用 git URL 或 disk 安裝到別的專案時，要在該專案 `manifest.json` 加 `"testables": ["com.chrono.unigameui"]` 才看得到。
+- **建議：** 在 README 的「回歸測試」補上這段說明。
+- **附註：** 測試 asmdef 用的是舊式的 `"optionalUnityReferences": ["TestAssemblies"]`，在 6000.3.19f1 實測可用。若要跟上目前做法，可改成明確引用 `UnityEngine.TestRunner`、`UnityEditor.TestRunner`、`nunit.framework.dll`，並加上 `UNITY_INCLUDE_TESTS`。
 
-- 同步更新了 `UIValidation` 的警告文字、`UIViewInspector` 的 HelpBox、README 與 AgentGuide。
+### N5. 零碎項目
 
-## 待處理
+- `Editor/UIAuthoring.cs` 的 `FocusReview` 還留著 `SceneView.lastActiveSceneView ?? EditorWindow.GetWindow<SceneView>()`，請改成明確的 null 判斷（L6 的遺漏）。
+- `UIReviewBuildProcessor` 只在 Player build 時剝除。打包成 AssetBundle 或 Addressables 的 Scene 不會被剝除；執行期仍可正常運作，但請在 AgentGuide 註明。
+- `UIReviewPlayMode` 的對話框寫「下列頁面」，實際上也包含 Popup，文字可改成「下列畫面」。
 
-### M1. 藍圖沒辦法改路由名稱，改名會多一條路由
+## 新增待辦：效能
 
-- **位置：** `Editor/UIBlueprintWindow.cs` 的「儲存路由」（約 388–393 行）。
-- **問題：** 選取既有路由後修改「動作」欄再儲存，`UIAuthoring.Connect` 會用新的 `(source, action)` 建立第二條路由。舊路由還在，按鈕上的 `UIButtonAction` 也還綁著舊名稱。
+以下三項來自讀程式碼的判斷，沒有用 Profiler 量測。
+
+### P1. 所有畫面共用一個 Canvas
+
+- **位置：** `Editor/UIAuthoring.cs` 的 `CreateView`；`Runtime/UIRoot.cs` 的 `CreateLayer`。
+- **問題：** View 根節點只有 `RectTransform`、`UIView`、`CanvasGroup`，全部掛在 UIRoot 的同一個 Canvas 下。uGUI 只要 Canvas 內有元素變動，整個 Canvas 都要重新合批。影響包括：
+  - Popup 播放動畫時，底下的頁面每一幀跟著重算。
+  - `Concurrent` 模式下兩個頁面同時動，成本加倍。
+  - 頁面上任何會動的元素（計時、數值）都會拖累同一 Canvas 的其他畫面。
 - **建議：**
-  - 記住目前選取路由的原始 action。名稱有變時，在同一個 Undo 群組裡移除舊路由、建立新路由。
-  - 同步更新該 View 底下 `action` 等於舊名稱的 `UIButtonAction`，記得用 `UIAuthoring.RecordOverride`。
-  - 新名稱若已被同一來源使用，要擋下並提示。
-- **驗收：** 改名後只剩一條路由；按鈕綁定跟著改；Validate 沒有錯誤；一次 Undo 可以完整還原。
+  - `CreateView` 在 View 根節點加上 `Canvas` 與 `GraphicRaycaster`（巢狀 Canvas 需要自己的 Raycaster 才收得到點擊）。
+  - 既有工作區要能補上：`UIValidation` 對缺少子 Canvas 的 View 給警告，並提供一鍵修正；使用 Prefab 的 View 要記得處理覆寫。
+- **驗收：**
+  - 新建與修正後的 View 根節點都有 `Canvas` 和 `GraphicRaycaster`。
+  - 補一個 PlayMode 測試，確認子 Canvas 下的按鈕仍能透過 EventSystem 的 raycast 點到，而且被蓋住的頁面收不到點擊。
+  - 既有測試全數通過。
 
-### M2. Popup（或 Prefab 模式頁面）在 Scene 的修改沒套用前，Play 看不到
+### P2. Popup 每次開啟都重新建立
 
-- **問題：** 執行期一律從 `entry.Prefab` 建立實例，Scene 裡審核用實例的覆寫不會生效。目前只有手動按 Validate 才會看到警告。
-- **建議：** 用 `EditorApplication.playModeStateChanged` 監聽 `ExitingEditMode`，只要有任何 entry 的 `UIAuthoring.HasReviewOverrides` 為真，就跳對話框，提供「套用並進入」、「直接進入」、「取消」三個選項。
-- **驗收：** 有未套用的覆寫時進 Play 會先提示；選擇套用後，Popup 的外觀和 Scene 一致。
+- **位置：** `Runtime/UIRoot.cs` 的 `OpenPopupCoreAsync`（`Instantiate`）與 `ClosePopupCoreAsync`（`Destroy`）。
+- **問題：** 常開的 Popup（確認框、提示）每次都有建立成本和記憶體回收，手機上可能出現小頓挫。
+- **建議：** 在 `UIEntry` 加一個選項（例如 `keepInstance`，預設關閉）。開啟時，關閉的 Popup 只停用、不銷毀，下次開啟重複使用同一個實例。藍圖右欄與 JSON 計畫都要能設定。
+- **驗收：** PlayMode 測試：選項開啟時，開、關、再開拿到同一個實例；選項關閉時維持現行行為。
 
-### M3. 審核用的複本會被打包進 build
+### P3. 頁面不會釋放（低優先）
 
-- **位置：** `Runtime/UIRoot.cs:65` 只把 `reviewLayer` 停用。
-- **問題：** 實測確認 Scene 會保留每個 Popup 的審核實例；Prefab 模式下連頁面也是。這些在 build 裡會跟著 Scene 一起反序列化。再加上 `entry.prefab` 是直接引用，載入 Scene 時所有 Popup Prefab 都會載入。
-- **建議：**
-  - 加一個 Editor 端的 `IProcessSceneWithReport`：build 時保留 SingleScene 模式的頁面（必要時先搬到 Pages 圖層），刪除其餘審核框與審核實例。
-  - 或在 `UIRoot.Awake` 搬完頁面後 `Destroy(reviewLayer.gameObject)`。這招只能避免執行期常駐，無法避免載入，所以前者較好。
-- **驗收：** build 出的 Scene 不含 Popup 審核實例；SingleScene 模式的頁面仍正常。
+- **問題：** 單 Scene 模式的頁面隨 Scene 全部載入；Prefab 模式的頁面開過就一直留在 `pages` 裡。另外 `entry.prefab` 是直接引用，所有 Popup Prefab 會跟著 Scene 一起載入。
+- **建議：** 中小型專案可以接受，先在 AgentGuide 寫明這個特性即可。之後若有需要，再考慮釋放不在歷史裡的 Prefab 模式頁面。
+
+## 已定案的設計項目
+
+以下各項的方向已經決定，結論與排程見 `ROADMAP.md`。這裡保留當初的問題說明與考慮過的做法。
+
+### U1. `UIView` 是 `sealed`，頁面腳本沒有好用的生命週期
+
+- **問題：** 不能寫 `class SettingsPage : UIView`。現在只能另外掛元件、接沒有參數的 UnityEvent，再自己從 `view.Data` 轉型。
+- **可能做法：**
+  - A：解除 `sealed`，加上 `OnShowing(object data)` 等虛擬方法。
+  - B：`UIView` 維持不變，新增介面（例如 `IUIViewHandler`），`UIView` 在顯示和隱藏時呼叫同物件上實作該介面的元件。
+- **決定：** 採用 B。Scene 與 Prefab 裡的 `UIView` 元件型別不必替換，編輯工具不受影響。
+
+### U2. ID 全是字串
+
+- **問題：** View ID、action 名稱打錯字要到執行時才知道。
+- **可能做法：** 由工作區自動產生常數類別（例如 `UIIds.Workshop`、`UIActions.OpenArchive`），在儲存或 Validate 時更新。
 
 ### M4. `UINavResult.Unavailable` 包了太多情況
 
-- **位置：** `Runtime/UIRoot.cs`，`RunAsync`（約 183 行）與 `TriggerAsync`（約 155 行）。
-- **問題：** 找不到 ID、已經在該頁、route 不存在、程式丟出例外，回傳的都是 `Unavailable`。遊戲端分不出是設定錯誤還是程式壞了。
-- **建議：** 至少把例外拆成 `Failed`，找不到目標拆成 `NotFound`。這會改到公開 enum，請一併更新 AgentGuide。**需使用者決定**命名與要拆到多細。
+- **位置：** `Runtime/UIRoot.cs` 的 `RunAsync` 與 `TriggerAsync`。
+- **問題：** 找不到 ID、已經在該頁、route 不存在、程式丟出例外，回傳的都是 `Unavailable`。
+- **可能做法：** 至少把例外拆成 `Failed`，找不到目標拆成 `NotFound`。這會改到公開 enum。
 
-### M5. 遊戲端 API 不足（需使用者決定）
+### M5. 遊戲端 API 不足
 
-以下是常見需求，目前做不到，或要繞路才能做到：
+- 拿不到 View 實例（`TryGetView`、`CurrentPage`、`TopPopup`）。
+- Popup 沒辦法回傳結果，例如確認框的是或否。
+- 沒有清空歷史或「取代目前頁」的方式，`history` 會無限增長。
+- 轉場中的請求一律回 `Busy`，不排隊。
 
-- 拿不到 View 實例。建議提供 `TryGetView(id, out UIView)` 或 `CurrentPage`／`TopPopup` 屬性。
-- Popup 沒辦法回傳結果，例如確認框的是或否。可以考慮 `OpenPopupAsync<TResult>` 搭配 `UIView.Close(result)`，或另開一個等待關閉的 API。
-- 沒有清空歷史或「取代目前頁」的方式。`history` 會無限增長，例如遊戲結束回主選單時應該清空。
-- 轉場中的請求一律回 `Busy`，不排隊。這點至少要在文件寫清楚，或提供排隊選項。
+### L1. 畫面設定與輸入
 
-### 低優先
+- `UIRoot.Awake` 強制使用 `ScreenSpaceOverlay`。
+- 沒有 Safe Area 支援。
+- 沒有 Esc／Android 返回鍵對應 `BackAsync`。
 
-- **L1（需使用者決定）：**
-  - `UIRoot.Awake` 強制使用 `ScreenSpaceOverlay`，不支援 Camera 模式（例如要在 UI 上疊粒子或後處理）。
-  - 沒有 Safe Area 支援。
-  - 沒有 Esc／Android 返回鍵對應 `BackAsync`。
-- **L2：** 藍圖視窗只在 Undo 與 Play Mode 切換時重建。切換或關閉 Scene 後仍指向舊的 `workspace`，建議監聽 `EditorSceneManager.activeSceneChangedInEditMode`、`sceneOpened`、`sceneClosed`。
-- **L3：** 切頁是先播完舊頁退場，再播新頁進場，總時間是兩段相加。舊頁的 `Hidden` 要等新頁進場播完才觸發。如果要支援同時播放或交叉淡化，需要調整 `ChangePageAsync` 的還原邏輯。
-- **L4：** `UIViewPose` 有記錄 `Scale`，但沒有任何預設動畫用到。建議加一個 `Zoom`／`Pop` 預設，這是 Popup 最常用的效果。
-- **L5：** `UITmpResources` 自己解析 `.unitypackage`（tar.gz），實測可用但比較脆弱。在互動 Editor 中可以優先使用 TMP 自帶的匯入 API，CLI 模式才走自製解析。
-- **L6：** `GetComponent<T>() ?? ...` 在 Edit Mode 正常，但對 `UnityEngine.Object` 用 `??` 會被 Rider 警告，Play Mode 下語意也不保證。建議改用 `TryGetComponent`。
-- **L7：**
-  - `Showed` 文法上應為 `Shown`。這是公開 API，改名前請先確認。
-  - 套件沒有附自動化測試。建議至少加上 `UIPlan` 部分更新的 EditMode 測試，以及導航狀態機的 PlayMode 測試。
+### L7. `Showed` 改名為 `Shown`
 
-## 未驗證（需安裝 DOTween）
+- 這是公開 API，會影響已接好的 UnityEvent。
 
-- DOTween 動畫的播放、取消與 `UIViewPose` 還原。
-- **疑慮：** UIRoot 在轉場中被停用時，`OnDisable` 會 `Cancel`，`AwaitableCompletionSource` 的接續可能同步執行。接下來 `ChangePageAsync` 的 catch 會在父物件停用的過程中呼叫子物件的 `SetActive`，可能觸發 Unity 的 “GameObject is already being activated or deactivated” 錯誤。請在裝了 DOTween 的環境寫 PlayMode 測試確認。
+## 已確認的 Unity 行為
+
+以下都在 Unity 6000.3.19f1 實測過：
+
+- `JsonUtility.FromJson` 遇到缺漏欄位時，字串與陣列維持 `null`，但巢狀的 `[Serializable]` 類別會用預設建構子建立實例。
+- `Vector2` 只給一個分量時，另一個分量維持欄位初始值（所以 NaN 哨兵可用）。
+- Edit Mode 中，`GetComponent<T>()` 對不存在的元件回傳真正的 `null`。
+- 匯入 DOTween 的 `.unitypackage` 後，`DOTWEEN` define 會自動加到所有平台。
+- 轉場中停用 UIRoot：取消會正常還原，不會出現 “GameObject is already being activated or deactivated” 錯誤。
+- `IProcessSceneWithReport` 的剝除只作用在 build 用的 Scene 複本，磁碟上的 Scene 檔不變。
+
+## 驗證紀錄
+
+### 第二輪（commit `0cabfec`）
+
+| 測試 | 沒有 DOTween | 有 DOTween |
+|---|---|---|
+| EditMode（套件自帶 6 個） | 6 通過 | 6 通過 |
+| PlayMode（套件自帶 4 個） | 2 通過、2 略過 | 3 通過、1 略過 |
+
+略過的案例是依環境切換的：兩個動畫案例只在有 DOTween 時執行，一個「無 DOTween 也能導航」的案例只在沒有 DOTween 時執行。
+
+另外實際打包了一個 Windows 執行檔（含 DOTween、`Concurrent` 模式，轉場用到 Fade、Slide、Zoom），以 `-batchmode -nographics` 執行並自動點按鈕：
+
+- Editor 的 Scene 有 3 個 `UIView`（2 頁加 1 個 Popup 審核實例）；打包後剩 2 個，UIRoot 底下沒有 `UI Review`。
+- 起始頁、切到設定頁、返回、開啟 Popup、關閉 Popup 全部正常，log 沒有例外。
+
+### 第一輪（H1、H2 修正後）
+
+- 只改背景與文字的 `updateExisting` 計畫：動畫與版面保留。
+- 只給 `"enter": { "duration": 0.9 }` 與 `"rect": { "size": { "x": 500 } }`：只有這兩個值改變。
+- 沒有 DOTween 時，設了 Slide 和 Fade 的畫面可以正常導航，只警告一次。
+
+### 驗證方法
+
+在暫存區建一個最小專案，`Packages/manifest.json` 放 ugui 2.0.0、test-framework 1.6.0，以及 jsonserialize、uielements、ui、imgui、audio、physics、physics2d 模組（後三個是 DOTween 的模組腳本需要的），把套件複製到 `Packages/` 後執行：
+
+1. `-runTests -testPlatform EditMode` 與 `-runTests -testPlatform PlayMode`。
+2. 用 `-importPackage` 匯入本機 Asset Store 快取裡的 DOTween，再跑一次 PlayMode。
+3. 用 `-executeMethod` 呼叫 `BuildPipeline.BuildPlayer`，再執行產出的執行檔。
+
+使用者的 Editor 開著專案時，CLI 拿不到專案鎖，所以一律在副本上驗證。
+
+## 未驗證
+
+以下只能在互動的 Editor 裡操作，批次模式測不到：
+
+- M2 進 Play 前的三選一對話框（「套用並進入」、「直接進入」、「取消」）。
+- L5 的 `UITmpResources.ImportWithEditorAsync`（互動模式的 TMP 資源匯入）。
+- 藍圖視窗的滑鼠操作（拖節點、拖線、右欄編輯）。
+
+另外沒有測過打包成 AssetBundle 或 Addressables 的 Scene。
 
 ## 其他注意
 
-- 工作區有兩個未 commit 的 `ProjectSettings` 變更，不是這個框架產生的，應該是其他 Unity 套件在 Editor 開啟時寫入的。commit 框架時不要混進去。
+- 工作區有兩個未 commit 的 `ProjectSettings` 變更，不是這個框架產生的，commit 時不要混進去。
   - 新增了 `APP_UI_EDITOR_ONLY` define。
   - `EditorBuildSettings` 多了 `com.unity.dt.app-ui` 設定物件。
-
-## 驗證紀錄（H1、H2 修正後）
-
-在暫存的 Unity 6000.3.19f1 專案中嵌入修改後的套件（沒有 DOTween）。編譯沒有錯誤。
-
-| 測試 | 結果 |
-|---|---|
-| 全新套用 AgentGuide 範例計畫 | 成功，2 個 View、2 條路由 |
-| 先人工設定進場 Slide/0.4/Left/OutBack/300、按鈕 (111,222)、400×90，再套用只改背景與文字的 `updateExisting` 計畫 | 動畫與版面都保留，背景與文字已更新 |
-| 只給 `"enter": { "duration": 0.9 }` 與 `"rect": { "size": { "x": 500 } }` | 只有 duration 變成 0.9、寬度變成 500，高度維持 90，其他不變 |
-| 新增未指定 `rect` 的元件 | 置中、(0,0)、240×72，與修正前相同 |
-| PlayMode：起始頁設 Slide、Popup 退場設 Fade，無 DOTween | 起始頁正常顯示，Popup 能開能關，只警告一次 |
-
-注意：`Vector2` 只給一個分量（例如只給 `x`）時，JsonUtility 會讓另一個分量維持 NaN，由合併邏輯保留目前的值。這也是實測確認的。
-
-驗證方法：在暫存區建一個最小專案，`Packages/manifest.json` 只放 ugui 2.0.0、test-framework 1.6.0，以及 jsonserialize、uielements、ui、imgui 模組；把套件複製到 `Packages/` 後依序執行：
-
-1. 用 `-batchmode -nographics -executeMethod <探測方法> -quit` 跑 Editor 端檢查。
-2. 用 `-runTests -testPlatform PlayMode` 跑導航測試。
-
-使用者的 Editor 開著專案時，CLI 拿不到專案鎖，所以一律在副本上驗證。
