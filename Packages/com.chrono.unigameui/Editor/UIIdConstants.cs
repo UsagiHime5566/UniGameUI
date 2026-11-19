@@ -101,7 +101,7 @@ namespace UniGameUI.Editor
             var elementGroups = CollectNames(entries.Keys, "Elements", issues, "View");
             var elements = entries.Values.ToDictionary(entry => entry.Id, entry =>
             {
-                var ids = entry.Review ? entry.Review.GetComponentsInChildren<UIElementId>(true).Select(element => element.Id)
+                var ids = entry.Review ? UIPlan.ElementsOf(entry.Review).Select(element => element.Id)
                     : Enumerable.Empty<string>();
                 return CollectNames(ids, PascalCase(entry.Id) + "View", issues);
             });

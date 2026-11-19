@@ -97,7 +97,7 @@ namespace UniGameUI.Editor
                 if (!entry.Review)
                     continue;
                 var elementIds = new HashSet<string>();
-                foreach (var element in entry.Review.GetComponentsInChildren<UIElementId>(true))
+                foreach (var element in UIPlan.ElementsOf(entry.Review))
                 {
                     if (string.IsNullOrEmpty(element.Id) || !elementIds.Add(element.Id))
                         issues.Add(Error($"{entry.Id}: duplicate or empty element ID on {element.name}."));

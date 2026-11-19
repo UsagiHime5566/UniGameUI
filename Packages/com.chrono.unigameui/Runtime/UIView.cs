@@ -99,7 +99,9 @@ namespace UniGameUI
             elements.Clear();
             foreach (var element in GetComponentsInChildren<UIElementId>(true))
             {
-                if (element && !string.IsNullOrWhiteSpace(element.Id))
+                // 清單項目裡的 ID 只在該項目內有意義，用 UIList.GetInItem 取得。
+                if (element && !string.IsNullOrWhiteSpace(element.Id) &&
+                    !UIList.IsInsideListItem(element.transform, transform))
                     elements.TryAdd(element.Id, element);
             }
             return TryFindCached(elementId, find, out match);

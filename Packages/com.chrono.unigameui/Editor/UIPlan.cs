@@ -228,8 +228,16 @@ namespace UniGameUI.Editor
 
         public static GameObject FindElement(UIView view, string id)
         {
+            return ElementsOf(view).FirstOrDefault(element => element.Id == id)?.gameObject;
+        }
+
+        /// <summary>
+        /// View 自己的元件 ID。清單項目裡的 ID 只在該項目內有意義，不算在內。
+        /// </summary>
+        internal static IEnumerable<UIElementId> ElementsOf(UIView view)
+        {
             return view.GetComponentsInChildren<UIElementId>(true)
-                .FirstOrDefault(element => element.Id == id)?.gameObject;
+                .Where(element => !UIList.IsInsideListItem(element.transform, view.transform));
         }
 
         private static Scene FindScene(Plan plan, Scene originalActiveScene, out bool created)

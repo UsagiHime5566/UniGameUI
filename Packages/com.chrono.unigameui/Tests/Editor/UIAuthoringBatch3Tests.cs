@@ -588,6 +588,45 @@ namespace UniGameUI.Editor.Tests
             Assert.Throws<ArgumentException>(() => UIWidgets.SetDefaultFont($"{widgets}/Button.prefab"));
         }
 
+        [Test]
+        public void ListItemsKeepTheirIdsOutOfTheViewAndThePlanCanReplaceTheItemPrefab()
+        {
+            RequireDOTween();
+            var scene = NewScene("Batch3 List Items");
+            SceneManager.SetActiveScene(scene);
+            var set = UIWidgets.Install();
+            var rowPath = $"{folder}/Row.prefab";
+            Assert.That(AssetDatabase.CopyAsset(AssetDatabase.GetAssetPath(set.ListItem), rowPath), Is.True);
+
+            var root = UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""shop"", ""elements"": [
+                {{ ""id"": ""goods"", ""kind"": ""ScrollList"", ""itemPrefabPath"": ""{rowPath}"" }},
+                {{ ""id"": ""stock"", ""kind"": ""ScrollList"" }},
+                {{ ""id"": ""title"", ""text"": ""Shop"" }}
+            ] }}] }}");
+            set = UIWidgets.Find();
+            var view = UIAuthoring.FindEntry(root, "shop").Review;
+            var goods = UIPlan.FindElement(view, "goods").GetComponent<UIList>();
+            Assert.That(goods.ItemPrefab, Is.SameAs(AssetDatabase.LoadAssetAtPath<GameObject>(rowPath)));
+            Assert.That(UIPlan.FindElement(view, "stock").GetComponent<UIList>().ItemPrefab, Is.SameAs(set.ListItem));
+
+            // 手動放進清單內容的項目帶有自己的元件 ID，不算在 View 的元件裡。
+            var item = (GameObject)PrefabUtility.InstantiatePrefab(set.ListItem, goods.Content);
+            Assert.That(item.GetComponentInChildren<UIElementId>().Id, Is.EqualTo("label"));
+            Assert.That(UIPlan.FindElement(view, "label"), Is.Null);
+            Assert.That(UIPlan.ElementsOf(view).Select(element => element.Id),
+                Is.EquivalentTo(new[] { "goods", "stock", "title" }));
+            Assert.That(FunctionalErrors(root), Is.Empty);
+            var constants = File.ReadAllText(UIIdConstants.Generate(root));
+            Assert.That(constants, Does.Contain("public const string Goods = \"goods\";")
+                .And.Not.Contain("\"label\""));
+
+            // 清單外面可以有同名的元件，兩者互不相干。
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""shop"", ""elements"": [
+                { ""id"": ""label"", ""text"": ""Outside"" }] }] }");
+            Assert.That(UIPlan.FindElement(view, "label").transform.parent, Is.EqualTo(view.Content));
+            Assert.That(FunctionalErrors(root), Is.Empty);
+        }
+
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)
         {
             return set.Find(widget).Prefab.GetComponentInChildren<TMP_Text>(true).font;
