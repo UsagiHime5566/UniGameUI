@@ -112,9 +112,10 @@ namespace UniGameUI.Editor
             MarkChanged(root);
         }
 
-        public static void Connect(UIRoot root, string source, string action, UIRouteKind kind, string target = null)
+        public static void Connect(UIRoot root, string source, string action, UIRouteKind kind, string target = null,
+            UIHistoryMode history = UIHistoryMode.Push, string result = null)
         {
-            ValidateRoute(root, source, action, kind, target);
+            ValidateRoute(root, source, action, kind, target, history);
             Undo.RecordObject(root, "Connect UI route");
             var route = root.routes.Find(item => item.Source == source && item.Action == action);
             if (route == null)
@@ -122,15 +123,14 @@ namespace UniGameUI.Editor
                 route = new UIRoute { source = source, action = action };
                 root.routes.Add(route);
             }
-            route.kind = kind;
-            route.target = UIRoute.TargetsEntry(kind) ? target : "";
+            SetRouteOptions(route, kind, target, history, result);
             MarkChanged(root);
         }
 
         public static void UpdateRoute(UIRoot root, string source, string originalAction, string action,
-            UIRouteKind kind, string target = null)
+            UIRouteKind kind, string target = null, UIHistoryMode history = UIHistoryMode.Push, string result = null)
         {
-            var entry = ValidateRoute(root, source, action, kind, target);
+            var entry = ValidateRoute(root, source, action, kind, target, history);
             var route = root.routes.Find(item => item.Source == source && item.Action == originalAction) ??
                 throw new ArgumentException($"Unknown route '{source}/{originalAction}'.");
             if (root.routes.Exists(item => item != route && item.Source == source && item.Action == action))
@@ -149,8 +149,7 @@ namespace UniGameUI.Editor
             Undo.SetCurrentGroupName("Update UI route");
             Undo.RecordObjects(changed.ToArray(), "Update UI route");
             route.action = action;
-            route.kind = kind;
-            route.target = UIRoute.TargetsEntry(kind) ? target : "";
+            SetRouteOptions(route, kind, target, history, result);
             foreach (var binding in changed.OfType<UIButtonAction>())
             {
                 binding.action = action;
@@ -160,11 +159,23 @@ namespace UniGameUI.Editor
             Undo.CollapseUndoOperations(group);
         }
 
-        private static UIEntry ValidateRoute(UIRoot root, string source, string action, UIRouteKind kind, string target)
+        private static void SetRouteOptions(UIRoute route, UIRouteKind kind, string target,
+            UIHistoryMode history, string result)
+        {
+            route.kind = kind;
+            route.target = UIRoute.TargetsEntry(kind) ? target : "";
+            route.history = kind == UIRouteKind.ShowPage ? history : UIHistoryMode.Push;
+            route.result = kind == UIRouteKind.ClosePopup ? result ?? "" : "";
+        }
+
+        private static UIEntry ValidateRoute(UIRoot root, string source, string action,
+            UIRouteKind kind, string target, UIHistoryMode history)
         {
             CheckRoot(root);
             var entry = FindEntry(root, source) ?? throw new ArgumentException($"Unknown source '{source}'.");
             CheckId(action);
+            if (kind == UIRouteKind.ShowPage && !Enum.IsDefined(typeof(UIHistoryMode), history))
+                throw new ArgumentException($"不支援頁面歷史模式「{history}」。", nameof(history));
             if (UIRoute.TargetsEntry(kind))
             {
                 var expected = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;

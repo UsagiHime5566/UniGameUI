@@ -97,6 +97,8 @@ namespace UniGameUI.Editor
             public string action;
             public string kind;
             public string target;
+            public string history;
+            public string result;
             public bool replace;
         }
 
@@ -183,11 +185,13 @@ namespace UniGameUI.Editor
                     ApplyView(root, view, createdPrefabs);
                 foreach (var route in plan.routes ?? Array.Empty<RouteSpec>())
                 {
-                    if (!route.replace && root.Routes.Any(existing =>
-                        existing.Source == route.source && existing.Action == route.action))
+                    var existing = FindRoute(root, route);
+                    if (!route.replace && existing != null)
                         continue;
+                    var kind = Parse(route.kind, existing?.Kind ?? UIRouteKind.ShowPage);
                     UIAuthoring.Connect(root, route.source, route.action,
-                        Parse(route.kind, UIRouteKind.ShowPage), route.target);
+                        kind, route.target ?? existing?.Target, ParseHistory(route, kind, existing),
+                        route.result ?? existing?.Result);
                 }
                 if (plan.startPage != null)
                     UIAuthoring.SetStartPage(root, plan.startPage);
@@ -316,15 +320,31 @@ namespace UniGameUI.Editor
             foreach (var route in plan.routes ?? Array.Empty<RouteSpec>())
             {
                 UIAuthoring.CheckId(route.action);
-                var kind = Parse(route.kind, UIRouteKind.ShowPage);
+                var existing = FindRoute(root, route);
+                var kind = Parse(route.kind, existing?.Kind ?? UIRouteKind.ShowPage);
+                var targetId = route.target ?? existing?.Target;
                 if (string.IsNullOrEmpty(route.source) || !kinds.ContainsKey(route.source) ||
                     !routeKeys.Add((route.source, route.action)))
                     throw new ArgumentException($"Missing source or duplicate route '{route.source}/{route.action}'.");
                 if (UIRoute.TargetsEntry(kind) &&
-                    (string.IsNullOrEmpty(route.target) || !kinds.TryGetValue(route.target, out var target) ||
+                    (string.IsNullOrEmpty(targetId) || !kinds.TryGetValue(targetId, out var target) ||
                      target != (kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup)))
-                    throw new ArgumentException($"{route.source}/{route.action}: invalid target '{route.target}'.");
+                    throw new ArgumentException($"{route.source}/{route.action}: invalid target '{targetId}'.");
+                ParseHistory(route, kind, existing);
             }
+        }
+
+        private static UIRoute FindRoute(UIRoot root, RouteSpec route)
+        {
+            return root ? root.Routes.FirstOrDefault(existing =>
+                existing.Source == route.source && existing.Action == route.action) : null;
+        }
+
+        private static UIHistoryMode ParseHistory(RouteSpec route, UIRouteKind kind, UIRoute existing)
+        {
+            return kind == UIRouteKind.ShowPage
+                ? Parse(route.history, existing?.History ?? UIHistoryMode.Push)
+                : UIHistoryMode.Push;
         }
 
         private static bool NeedsText(Plan plan)

@@ -3,7 +3,7 @@ using UnityEngine;
 namespace UniGameUI
 {
     [DisallowMultipleComponent]
-    [AddComponentMenu("")]
+    [AddComponentMenu("UniGameUI/UI Element Id")]
     public sealed class UIElementId : MonoBehaviour
     {
         [SerializeField] internal string id;

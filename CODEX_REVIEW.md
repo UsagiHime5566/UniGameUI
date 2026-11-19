@@ -7,7 +7,7 @@
 - 第三輪：2026-11-20，commit `058ac1a`（Claude 審核第一批）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一批的六項改進已實作，Claude 獨立驗證後確認符合規格，沒有發現回歸。第三輪審核另外提出六個後續項目（F1～F6），全部排進第二批的 2-1。本文件保留各項目的原始說明與互動操作的待驗證清單。
+**現況：** 第一批已通過獨立審核。第二批 0.3.0 與 F1～F6 已實作並通過自動測試，等待審核與互動操作確認。本文件保留各項目的原始說明與待確認項目。
 
 原本標示「需使用者決定」的項目已在 2026-11-20 定案，排進 `ROADMAP.md` 的四批工作裡。要做哪一項、怎麼做，以 `ROADMAP.md` 為準；這份文件保留各項目的問題說明。
 
@@ -23,7 +23,7 @@
 | M2 | Prefab 覆寫未套用時進 Play 沒提示 | 已修正；邏輯已驗證，對話框本身未驗證 |
 | M3 | 審核複本被打包進 build | 已修正、已用實際打包驗證 |
 | M4 | `UINavResult.Unavailable` 包太多情況 | 已修正，PlayMode 已驗證回傳值與 Console 診斷 |
-| M5 | 遊戲端 API 不足 | 已定案，排在第二批 |
+| M5 | 遊戲端 API 不足 | 已補 View 查詢、歷史、Popup 結果及全域事件，PlayMode 已驗證 |
 | L1 | 強制 Overlay、無 Safe Area、無返回鍵 | 返回鍵排在第三批；Overlay 以外的模式與 Safe Area 不做 |
 | L2 | 藍圖視窗不跟隨 Scene 切換 | 已修正、已驗證 |
 | L3 | 切頁只能依序播放 | 已修正（新增 `Concurrent` 模式）、已驗證 |
@@ -36,15 +36,15 @@
 | N1～N5 | 第二輪發現的小問題 | 已修正，外部安裝及自動測試通過，實際拖線與 Inspector 操作待人工確認 |
 | P1 | 所有畫面共用一個 Canvas | 已新增子 Canvas 與修復工具，已驗證 Prefab 覆寫、raycast 與 Windows Player |
 | P2 | Popup 每次開啟都重新建立 | 排在第三批 |
-| P3 | 頁面不會釋放 | 排在第二批（只在文件註明） |
-| U1 | `UIView` 不能繼承 | 已定案採用介面做法，排在第二批 |
+| P3 | 頁面不會釋放 | AgentGuide 已註明單 Scene 與 Prefab 頁面的保留方式 |
+| U1 | `UIView` 不能繼承 | 已新增 `IUIViewHandler` 與 `UIViewBehaviour`，PlayMode 與 Windows Player 已驗證 |
 | U2 | ID 全是字串 | 已自動產生常數，已驗證存檔、重產、名稱衝突與 Player 編譯 |
-| F1 | 事件監聽丟例外會讓導航倒回，可能把玩家困在畫面上 | 已定案採用建議，排在第二批（2-1） |
-| F2 | 放在 asmdef 裡的遊戲程式引用不到 ID 常數 | 排在第二批（2-1），待處理 |
-| F3 | 元件 ID 與所屬畫面 ID 相同時會被擋下 | 排在第二批（2-1），待處理 |
-| F4 | `Failed` 記兩筆錯誤，原始例外的堆疊點不到 | 排在第二批（2-1），待處理 |
-| F5 | 測試跑完留下空資料夾 | 排在第二批（2-1），待處理 |
-| F6 | 套用計畫後會重新編譯，文件沒有提醒 | 排在第二批（2-1），待處理 |
+| F1 | 事件監聽丟例外會讓導航倒回，可能把玩家困在畫面上 | 已按階段修正，PlayMode 已驗證；Popup 隱藏後的接收者出錯仍可關閉 |
+| F2 | 放在 asmdef 裡的遊戲程式引用不到 ID 常數 | 已產生獨立 asmdef，重跑保留現有檔案，已用獨立遊戲組件編譯 |
+| F3 | 元件 ID 與所屬畫面 ID 相同時會被擋下 | 已改用 `View` 後綴，已驗證相同 ID 能生成、編譯並在 Player 查找 |
+| F4 | `Failed` 記兩筆錯誤，原始例外的堆疊點不到 | 已直接記錄原始例外，PlayMode 與 Windows Player 都取得原始方法堆疊 |
+| F5 | 測試跑完留下空資料夾 | 已清理測試建立的空生成目錄與 .meta，已檢查隔離副本 |
+| F6 | 套用計畫後會重新編譯，文件沒有提醒 | AgentGuide 的 JSON 與常數段落已補編譯時機，範本依此流程通過編譯 |
 
 ## 第三輪審核：第一批（`v0.2.0`）
 
@@ -219,6 +219,21 @@
 
 ## 驗證紀錄
 
+### 第二批改進（0.3.0）
+
+使用 Unity 6000.3.19f1 的隔離副本。EditMode 啟用圖形裝置，PlayMode 使用批次模式。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 22 | 0 | 0 |
+| 有 DOTween | PlayMode | 27 | 0 | 1 |
+| 無 DOTween | EditMode | 17 | 0 | 5 |
+| 無 DOTween | PlayMode | 25 | 0 | 3 |
+
+- 有 DOTween 時略過只供無 DOTween 環境執行的瞬間切換案例。無 DOTween 時略過需要 DOTween 的 JSON 套用或動畫案例。
+- EditMode 驗證藍圖右欄的儲存回呼及 Scene 重新載入皆保留歷史與關閉結果。測試結束後，在套用消費端計畫之前確認生成目錄及其 .meta 已清除。
+- 用 CLI 套用 Workshop 計畫，將 AgentGuide 的 `WorkshopPage` 原文放進獨立 asmdef，引用實際生成的 `UniGameUI.Generated`。Windows 64 位元 Player 使用 Mono 與 High Managed Stripping，建置成功。執行驗證頁面腳本更新文字、Emit 開啟 Popup Prefab、關閉路由回傳 `yes`，以及持久 UnityEvent 的原始例外堆疊和後續監聽。Player 結束碼為 0。
+
 ### 第一批改進（`v0.2.0`）
 
 使用 Unity 6000.3.19f1 的隔離專案。EditMode 使用可用圖形裝置驗證 Scene View，PlayMode 以批次模式執行。
@@ -287,6 +302,8 @@ Prefab 模式的打包、外部磁碟安裝、互動 Editor 中的匯入，Claud
 使用者的 Editor 開著專案時，CLI 拿不到專案鎖，所以一律在副本上驗證。
 
 ## 未驗證
+
+第二批的藍圖儲存邏輯已由測試覆蓋。互動 Editor 待人工確認右欄「返回歷史」選單、「關閉結果」輸入框及拖線操作，以及 Add Component 中的 `UniGameUI/UI Element Id`。IL2CPP Player 未執行。
 
 第一批仍需在互動 Editor 人工確認以下操作。
 

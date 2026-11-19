@@ -83,16 +83,18 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 - `views[].id`、`elements[].id` 和 `action` 使用 ASCII 字母、數字、底線或連字號。ID 是定位與接線用的鍵。Hierarchy 物件名稱可以調整。
 - `mode` 可用 `SingleScene` 或 `Prefab`。只有確定需要新 Scene 時才給 `createScene: true`。新工作區預設參考解析度 1920×1080、每排 3 格。
 - `startPage` 是可選的頁面 ID，指定空字串可清除起始頁。路由種類有 `ShowPage`、`OpenPopup`、`Back`、`ClosePopup`、`Emit`。前兩種需要 `target`。同一來源頁的一個 `action` 對應一條路由。
+- `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。
 - `pageTransitionMode` 可用 `Sequential` 或 `Concurrent`。新工作區預設依序播放。要讓切頁的進場和退場重疊，設定 `Concurrent` 或在 `UIRoot` Inspector 修改「切頁動畫」。
 - 元件支援 `Text`、`Button`、`Image`。矩形座標是 Unity RectTransform 的 anchor 與參考解析度下的座標，Y 向上。可指定 `fontSize`、`fontPath`（TMP Font Asset）、`textColor`、`color`、`spritePath`。首次建立文字時，工具會安裝 uGUI 附帶的 TMP Essential Resources。若專案曾匯入部分資源，先透過 **Window → TextMeshPro → Import TMP Essential Resources** 完成安裝。使用中文或其他語系時，交付前確認字型涵蓋所需字符。
 - `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Zoom` 或 `Custom`。例如 `"enter": { "preset": "Zoom", "duration": 0.2, "zoomScale": 0.8, "ease": "OutBack" }`。Zoom 倍率相對於原本的 Motion 尺寸，預設為 0.85。Slide 可設定方向 `Left`、`Right`、`Up`、`Down` 和 `distance`，RotateFade 可設定 `angle`。Ease 有 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
-- 既有頁面可直接新增其他 ID 的元件。要修改既有元件時，指定該元件 ID、原 `kind`、`updateExisting: true` 與要寫入的欄位。若要更新既有 View 的背景或動畫，在 View 設 `updateExisting: true`。要改既有路由在線上加 `replace: true`。平常省略這些選項，重跑可保留人工編修。
+- 既有頁面可直接新增其他 ID 的元件。要修改既有元件時，指定該元件 ID、原 `kind`、`updateExisting: true` 與要寫入的欄位。若要更新既有 View 的背景或動畫，在 View 設 `updateExisting: true`。更新既有路由時，指定原 `source`、`action`、`replace: true` 和要改的欄位。平常省略這些選項，重跑可保留人工編修。
 - 更新時只寫入有提供的欄位。`rect` 的 `anchor`、`position`、`size` 與 `enter`／`exit` 的各欄位若省略，維持目前的值；例如只給 `"rect": { "size": { "x": 320, "y": 80 } }` 不會移動元件，只給 `"enter": { "duration": 0.4 }` 不會改動畫種類。
 - 新建立的 Prefab 會存入本次生成的內容。既有 Prefab 的調整會出現在 Scene 預覽並標示待套用，由使用者用 **套用到 Prefab** 審核後提交。先從藍圖查看待套用狀態。
+- 成功套用計畫後，新增或改寫常數會觸發 Editor 重新編譯。等編譯和組件重載完成，再執行下一個 Editor 步驟或進入 Play Mode。
 
 ## ID 常數
 
-遊戲程式一律使用產生的常數。場景存檔、成功套用 JSON 或在藍圖按 **Validate** 時，工具會產生或更新 `Assets/UniGameUI/Generated/<場景名稱>UI.cs`。首次使用未命名的場景時，先存成 Scene 資產。也可選 **Tools → UniGameUI → Generate ID Constants**，或呼叫 `UIIdConstants.Generate(root)`。
+遊戲程式一律使用產生的常數。場景存檔、成功套用 JSON 或在藍圖按 **Validate** 時，工具會產生或更新 `Assets/UniGameUI/Generated/<場景名稱>UI.cs`。首次使用未命名的場景時，先存成 Scene 資產。也可選 **Tools → UniGameUI → Generate ID Constants**，或呼叫 `UIIdConstants.Generate(root)`。等 Editor 編譯和組件重載完成再引用新的常數。
 
 ```csharp
 using UniGameUI.Generated;
@@ -100,29 +102,103 @@ using UniGameUI.Generated;
 var result = await root.TriggerAsync(WorkshopUI.Views.Workshop, WorkshopUI.Actions.OpenArchive);
 ```
 
-`Views` 含頁面與 Popup ID，`Actions` 含路由與按鈕使用的動作，`Elements` 依畫面分組，例如 `WorkshopUI.Elements.Workshop.OpenArchive`。避免轉成相同 PascalCase 名稱的 ID 或工作區 Scene 名稱。程式呼叫 `UIValidation.Check(root)` 只讀取目前配置，名稱衝突會報錯，檔案不在或過期會警告。
+`Views` 含頁面與 Popup ID，`Actions` 含路由與按鈕使用的動作，`Elements` 按畫面分組並加上 `View` 後綴，例如 `WorkshopUI.Elements.WorkshopView.OpenArchive`。畫面和其元件可以使用相同的 ID，例如 `WorkshopUI.Elements.ConfirmView.Confirm`。同一組內的 ID 或工作區 Scene 名稱仍須避免轉成相同的 PascalCase 名稱。`UIValidation.Check(root)` 會回報名稱衝突並提示常數過期。
 
-## 公開 C# API
+工具會在生成目錄沒有 asmdef 時建立 `UniGameUI.Generated.asmdef`。遊戲程式若有自己的 asmdef，請在它的 references 加入 `UniGameUI.Generated`。若生成目錄已有自訂 asmdef，請引用該組件。
+
+## Editor C# API
 
 - `UIAuthoring.FindWorkspace(scene)`、`CreateWorkspace(scene, mode)`、`ConfigureReview(root, resolution, columns)`。
 - `UIAuthoring.CreatePage(root, id, title, prefabPath)`、`CreatePopup(root, id, title, prefabPath)` 回傳 Scene 中的 `UIView`。將自訂 uGUI 階層加到 `view.Content`。保留外框的排列用途；`view.Motion` 是預設動畫作用的位置。
-- `UIAuthoring.FindEntry(root, id)`、`UIPlan.FindElement(view, id)`、`BindButton(button, action)`、`Connect(root, source, action, kind, target)`、`Disconnect(root, source, action)`、`SetStartPage(root, id)`。
-- `UIAuthoring.UpdateRoute(root, source, originalAction, action, kind, target)` 用於更新既有路由。改名時一併更新來源 View 的按鈕綁定，並合併為一次 Undo。若來源是 Prefab 審核實例，將覆寫套用後 Prefab 才會使用新動作名稱。
+- `UIAuthoring.FindEntry(root, id)`、`UIPlan.FindElement(view, id)`、`BindButton(button, action)`、`Connect(root, source, action, kind, target, history, result)`、`Disconnect(root, source, action)`、`SetStartPage(root, id)`。`history`、`result` 是可選參數。
+- `UIAuthoring.UpdateRoute(root, source, originalAction, action, kind, target, history, result)` 用於更新既有路由。改名時一併更新來源 View 的按鈕綁定，並合併為一次 Undo。若來源是 Prefab 審核實例，將覆寫套用後 Prefab 才會使用新動作名稱。
 - `UIAuthoring.SetTransition(view, entering, preset, duration, direction, ease, distance, angle, zoomScale)` 和 `SetPageTransitionMode(root, mode)`。
 - `UIAuthoring.ArrangeReview(root)`、`FocusReview(root, id)`、`PreviewPopupOnPage(root, popupId, pageId)`、`HasReviewOverrides(entry)`、`ApplyReviewOverrides(root, id)`。最後一項適合提交本次新建立的 Prefab。既有實例的覆寫先交給使用者審核。
 - `UIValidation.Check(root)` 回傳結構化錯誤與警告。對於自訂子階層，用 Unity Editor 的 Undo 和序列化 API 儲存變更。
 
-## Play 與事件
+## 遊戲程式
 
-用藍圖與實際按鈕試走每條新增的互動。首頁切到下一頁後，返回會取回前一頁的實例與 UI 狀態。若有 Popup，先關頂層。轉場中收到的導覽請求會回報 `Busy`。
+### 頁面腳本
 
-遊戲程式可呼叫 `await root.ShowPageAsync(id, data)`、`await root.OpenPopupAsync(id, data)`、`await root.ClosePopupAsync()` 或 `await root.BackAsync()`。每個回傳的 Unity `Awaitable` 只等待一次。資料可在 `UIView.Showing` 觸發後透過 `view.Data` 取得。
+繼承 `UIViewBehaviour`，把腳本掛在 `UIView` 的同一個 GameObject 上。已有基底類別的腳本可以實作 `IUIViewHandler`。使用 `View.Root` 取得所屬工作區，工作區準備畫面後才會設定此屬性，Edit Mode 下為 null。需要讀取顯示資料時用 `View.GetData<T>()`，它在資料為 null 或型別不符時會指出畫面和期望的型別。資料可省略時用 `View.TryGetData<T>(out var data)`。
+
+下列範本對應 `Workshop.unity` 的 `workshop` 頁、`title` 文字元件、`deleteSave` Emit 路由和 `confirm` Popup。確認按鈕的 ClosePopup 路由回傳 `"yes"`。使用 asmdef 時，讓此腳本所在的組件引用 `UniGameUI.Runtime`、`UniGameUI.Generated`、`Unity.TextMeshPro`。
+
+```csharp
+using System;
+using TMPro;
+using UniGameUI;
+using UniGameUI.Generated;
+using UnityEngine;
+
+public sealed class WorkshopPage : UIViewBehaviour
+{
+    protected override void OnShowing(object data)
+    {
+        View.Get<TMP_Text>(WorkshopUI.Elements.WorkshopView.Title).text = "工坊";
+    }
+
+    protected override async void OnAction(string action)
+    {
+        if (action != WorkshopUI.Actions.DeleteSave)
+            return;
+
+        try
+        {
+            var answer = await Root.OpenPopupForResultAsync<string>(
+                WorkshopUI.Views.Confirm, "確定刪除存檔？");
+            if (answer.GetValueOrDefault() == "yes")
+                DeleteSave();
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception, this);
+        }
+    }
+
+    private void DeleteSave()
+    {
+        // 在這裡呼叫專案的存檔服務。
+        Debug.Log("收到刪除存檔的確認。", this);
+    }
+}
+```
+
+`View.Get<T>(id)` 先找登記 ID 的物件，再找它底下的子物件，包含未啟用的物件。`View.GetElement(id)` 取得登記物件本身。`Get` 和 `GetElement` 查找失敗時會指出畫面、元件、型別和場景。`View.TryGet<T>(id, out var component)` 查找失敗時安靜回傳 false。手動加入的元件可從 **Add Component → UniGameUI → UI Element Id** 登記。
+
+### 導航、返回與 Popup
+
+遊戲程式可呼叫 `await root.ShowPageAsync(id, data)`、`await root.OpenPopupAsync(id, data)`、`await root.ClosePopupAsync()` 或 `await root.BackAsync()`。每個 Unity `Awaitable` 只等待一次。轉場中收到的導航請求會立即回傳 `Busy`，不排隊。
+
+`root.ShowPageAsync(id, data, history)` 的 `Push` 會把離開的頁面加入歷史，`Replace` 會略過離開的頁面，`Clear` 會在切頁成功後清空歷史。失敗或取消時保留原歷史。`HistoryCount` 可查深度，`ClearHistory()` 可直接清空。返回會先關最上層的 Popup。返回上一頁會重用頁面實例與上次顯示時的資料。
+
+`CurrentPage`、`TopPopup`、`Popups` 可查目前畫面。`TryGetView(id, out var view)` 取得已存在的實例。單 Scene 頁面隨 Scene 載入，Prefab 頁面在首次顯示時建立，兩種頁面都會留到 Scene 卸載。Popup 在開啟期間才可查到。
+
+`OpenPopupAsync` 等到進場結束。`OpenPopupForResultAsync<T>` 等到退場與隱藏通知結束。Popup 內可呼叫 `View.Close(value)`，或在 ClosePopup 路由設定字串結果。只有最上層且開著的 Popup 可以透過 `View.Close` 關閉。
+
+`UIPopupResult<T>.Status` 反映開啟失敗、正常關閉或取消。`HasValue` 表示收到型別相符的結果，確認後可讀取 `Value`，也可直接呼叫 `GetValueOrDefault(fallback)`。返回、切頁或未指定結果的關閉會回傳 `Completed`，此時 `HasValue` 為 false。型別不符時 Console 會指出實際和期望的型別。取消 token、停用或銷毀工作區，以及 Popup 被外部銷毀都會以 `Canceled` 結束等待。取消 token 或停用工作區時，已開啟的 Popup 保持原狀。
+
+### 生命週期與導航結果
+
+每一階段依序呼叫 View 根節點上的介面接收者（依元件順序）、View Inspector 的 UnityEvent，再發出 `UIRoot.ViewShowing`、`ViewShown`、`ViewHiding` 或 `ViewHidden`。畫面啟用後、進場動畫開始前會觸發 `OnShowing(data)`。切頁時，依序收到舊頁 Hiding、新頁 Showing、舊頁 Hidden、新頁 Shown。隱藏後與顯示後的通知會等轉場成功。
+
+`Emit` 路由依序呼叫來源畫面的 `OnAction(action)` 和 `UIRoot.ActionEmitted`。後者可以從 Inspector 接線，會提供來源 ID 和動作。`UIRoot.ActionTriggered` 在有效路由開始執行時通知，可用來播放按鈕音效。`UIRoot.ActionCompleted` 帶路由和執行結果，包含執行後的失敗或取消。
+
+| 出錯的地方 | 處理方式 |
+|---|---|
+| `OnShowing`、`Showing` | 第一個接收者出錯就停止，還原原畫面並回傳 `Failed`。 |
+| 顯示後、隱藏前、隱藏後 | 記錄例外，同階段其餘接收者照常執行，導航回傳 `Completed`。 |
+| `OnAction`、`ActionEmitted` | 記錄例外並繼續通知其他接收者，Emit 回傳 `Failed`。 |
+| 工作區全域事件 | 個別記錄例外，其他訂閱者和導航結果照常。 |
+| 轉場動畫 | 還原畫面並回傳 `Failed`。 |
+
+`async void` 的非同步例外由腳本自行捕捉。框架接不到第一個 `await` 後拋出的例外。
 
 導航結果共有六種。
 
 | 結果 | 意義與 Console 診斷 |
 |---|---|
-| `Completed` | 操作完成，安靜回傳。 |
+| `Completed` | 操作完成。個別事件的例外仍會按上述規則記錄。 |
 | `Busy` | 另一個轉場正在進行，安靜回傳。 |
 | `Canceled` | 操作取消，安靜回傳。 |
 | `Unavailable` | 請求合法，目前狀態無法執行。通常會警告。沒有上一頁的返回安靜回傳。 |
@@ -131,13 +207,11 @@ var result = await root.TriggerAsync(WorkshopUI.Views.Workshop, WorkshopUI.Actio
 
 診斷會帶呼叫的操作、相關 ID 或來源與動作，以及工作區的 Scene 名稱。
 
-在 View Inspector 可接 `Showing`、`Shown`、`Hiding`、`Hidden`。頁面切換成功時，舊頁 `Hiding`、新頁 `Showing`、舊頁 `Hidden`、新頁 `Shown` 依序觸發。`Hidden` 與 `Shown` 在兩段動畫都完成後確認切頁結果，動畫取消時可還原舊頁。藍圖的 `Emit` 會從 `UIRoot.ActionEmitted` 發出來源 ID 和動作名稱。程式端用 `root.ActionEmitted.AddListener(OnAction)` 訂閱，其中 `OnAction` 接收兩個 `string`，在停用時用 `RemoveListener` 移除。
-
 自訂 DOTween 轉場請繼承 `UIDOTweenAnimation`，在 `Build(Sequence sequence, UIView view, bool entering)` 加入 tween，掛到該 View 並選 `Custom`。播放、取消和還原 `Motion`／`CanvasGroup` 由框架管理。自訂動畫可用 `AppendCallback` 插入回呼。
 
 ## 審核
 
-1. **Tools → UniGameUI → Blueprint** 會開啟藍圖。選節點可定位對應 Scene 頁面。用右欄編輯動作、切換種類、目標和起始頁，也能從輸出端拖線。
+1. **Tools → UniGameUI → Blueprint** 會開啟藍圖。選節點可定位對應 Scene 頁面。用右欄編輯動作、切換種類、目標、返回歷史、關閉結果和起始頁，也能從輸出端拖線。在 Play Mode 用實際按鈕試走新增的互動。
 2. **檢視全部 UI** 會把 Scene 切到 2D 並框選所有審核畫面。Popup 可以在工作區右欄疊在指定頁面上預覽，用 **重新排列** 回到網格。
 3. 在 View Inspector 可預覽進場或退場。C# 可用 `UIAnimationPreview.Start(view, entering)` 與 `UIAnimationPreview.Stop()`。Validate 會核對 Scene 預覽和執行期 Prefab 上的按鈕；改名後遇到 Prefab 綁定錯誤，套用對應預覽的覆寫。若舊 View 缺少子 Canvas，按藍圖工具列的 **補上子 Canvas**，工具會將所需元件補到 Prefab 本體，其他預覽覆寫繼續由使用者審核。
 4. 在互動 Editor 進 Play 前，若有待套用的覆寫，可以選 **套用並進入**、**直接進入** 或 **取消**。直接進入會使用目前已儲存的 Prefab。若多個 Scene 的審核實例同時修改同一 Prefab，先選擇要手動套用的實例。

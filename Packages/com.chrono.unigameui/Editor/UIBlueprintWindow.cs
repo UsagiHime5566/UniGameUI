@@ -345,8 +345,11 @@ namespace UniGameUI.Editor
                     for (var suffix = 2; workspace.Routes.Any(route => route.Source == source && route.Action == action); suffix++)
                         action = $"{stem}_{suffix}";
                 }
+                var original = workspace.Routes.FirstOrDefault(route => route.Source == source &&
+                    route.Action == originalAction);
                 TryEdit(() => SaveRoute(source, originalAction, action,
-                    target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage, target.Id));
+                    target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage,
+                    target.Id, original?.History ?? UIHistoryMode.Push, null));
                 evt.StopPropagation();
             });
             port.RegisterCallback<PointerCaptureOutEvent>(_ =>
@@ -428,11 +431,24 @@ namespace UniGameUI.Editor
             sidebar.Add(kindField);
             var targetSlot = new VisualElement();
             sidebar.Add(targetSlot);
+            var historyField = new PopupField<UIHistoryMode>("返回歷史",
+                new List<UIHistoryMode> { UIHistoryMode.Push, UIHistoryMode.Replace, UIHistoryMode.Clear },
+                current?.History ?? UIHistoryMode.Push, HistoryLabel, HistoryLabel) { name = "route-history" };
+            sidebar.Add(historyField);
+            var resultField = new TextField("關閉結果")
+            {
+                name = "route-result",
+                value = current?.Result ?? "",
+                tooltip = "留空時不回傳結果。",
+            };
+            sidebar.Add(resultField);
             PopupField<string> targetField = null;
             void SetChoices(UIRouteKind kind, string target)
             {
                 targetSlot.Clear();
                 targetField = null;
+                historyField.style.display = kind == UIRouteKind.ShowPage ? DisplayStyle.Flex : DisplayStyle.None;
+                resultField.style.display = kind == UIRouteKind.ClosePopup ? DisplayStyle.Flex : DisplayStyle.None;
                 if (!UIRoute.TargetsEntry(kind))
                     return;
                 var type = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
@@ -445,7 +461,11 @@ namespace UniGameUI.Editor
             SetChoices((UIRouteKind)kindField.value, current?.Target);
             kindField.RegisterValueChangedCallback(evt => SetChoices((UIRouteKind)evt.newValue, null));
             sidebar.Add(new Button(() => TryEdit(() => SaveRoute(selected.Id, current?.Action,
-                actionField.value, (UIRouteKind)kindField.value, targetField?.value))) { text = "儲存路由" });
+                actionField.value, (UIRouteKind)kindField.value, targetField?.value, historyField.value, resultField.value)))
+            {
+                name = "save-route",
+                text = "儲存路由",
+            });
             if (current != null)
             {
                 sidebar.Add(new Button(() => TryEdit(() =>
@@ -461,14 +481,23 @@ namespace UniGameUI.Editor
             }
         }
 
-        private void SaveRoute(string source, string originalAction, string action, UIRouteKind kind, string target)
+        private void SaveRoute(string source, string originalAction, string action, UIRouteKind kind, string target,
+            UIHistoryMode history, string result)
         {
             if (originalAction == null)
-                UIAuthoring.Connect(workspace, source, action, kind, target);
+                UIAuthoring.Connect(workspace, source, action, kind, target, history, result);
             else
-                UIAuthoring.UpdateRoute(workspace, source, originalAction, action, kind, target);
+                UIAuthoring.UpdateRoute(workspace, source, originalAction, action, kind, target, history, result);
             selectedAction = action;
         }
+
+        private static string HistoryLabel(UIHistoryMode history) => history switch
+        {
+            UIHistoryMode.Push => "保留離開的頁面",
+            UIHistoryMode.Replace => "略過離開的頁面",
+            UIHistoryMode.Clear => "清空歷史",
+            _ => history.ToString(),
+        };
 
         private void DrawEdges(MeshGenerationContext context)
         {

@@ -13,7 +13,7 @@ using Object = UnityEngine.Object;
 
 namespace UniGameUI.Tests
 {
-    public sealed class UINavigationTests
+    public sealed partial class UINavigationTests
     {
         private GameObject rootObject;
         private GameObject prefabContainer;
@@ -25,6 +25,7 @@ namespace UniGameUI.Tests
         [TearDown]
         public void TearDown()
         {
+            UIViewTestHandler.Observed = null;
             if (rootObject)
                 Object.DestroyImmediate(rootObject);
             if (prefabContainer)
@@ -225,7 +226,7 @@ namespace UniGameUI.Tests
         }
 
         [UnityTest]
-        public IEnumerator ListenerFailureReturnsFailedAndRestoresThePage()
+        public IEnumerator ShowingFailureRestoresThePageAndStopsTheRemainingListeners()
         {
             CreateRoot();
             root.routes.Add(new UIRoute { source = "home", action = "emit", kind = UIRouteKind.Emit });
@@ -233,22 +234,23 @@ namespace UniGameUI.Tests
             yield return StartPage();
 
             next.Showing.AddListener(() => throw new InvalidOperationException("before-show"));
+            var laterListenerCalled = false;
+            next.Showing.AddListener(() => laterListenerCalled = true);
+            root.ViewShowing += _ => laterListenerCalled = true;
             ExpectFailure("ShowPage 'next'", "before-show");
             yield return Expect(root.ShowPageAsync("next"), UINavResult.Failed);
             Assert.That(root.CurrentPageId, Is.EqualTo("home"));
-            next.Showing.RemoveAllListeners();
-
-            next.Shown.AddListener(() => throw new InvalidOperationException("after-show"));
-            ExpectFailure("ShowPage 'next'", "after-show");
-            yield return Expect(root.ShowPageAsync("next"), UINavResult.Failed);
             Assert.That(first.gameObject.activeInHierarchy, Is.True);
             Assert.That(next.gameObject.activeSelf, Is.False);
-            Assert.That(root.CurrentPageId, Is.EqualTo("home"));
+            Assert.That(laterListenerCalled, Is.False);
             yield return Expect(root.BackAsync(), UINavResult.Unavailable);
 
             root.ActionEmitted.AddListener((_, _) => throw new InvalidOperationException("emit-handler"));
+            root.ActionEmitted.AddListener((_, _) => laterListenerCalled = true);
             ExpectFailure("Trigger 'home'/'emit'", "emit-handler");
             yield return Expect(root.TriggerAsync("home", "emit"), UINavResult.Failed);
+            Assert.That(laterListenerCalled, Is.True);
+            Assert.That(root.CurrentPage, Is.SameAs(first));
         }
 
         [UnityTest]
@@ -361,7 +363,7 @@ namespace UniGameUI.Tests
         private void ExpectFailure(string request, string detail)
         {
             ExpectLog(LogType.Error, request, detail);
-            ExpectLog(LogType.Exception, request, detail);
+            LogAssert.Expect(LogType.Exception, new Regex("^InvalidOperationException: .*" + Regex.Escape(detail)));
         }
 
         private void ExpectLog(LogType type, string request, string detail)

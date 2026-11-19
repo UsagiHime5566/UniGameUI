@@ -12,6 +12,7 @@ namespace UniGameUI
     public enum UIEntryKind { Page, Popup }
     public enum UIRouteKind { ShowPage, OpenPopup, Back, ClosePopup, Emit }
     public enum UINavResult { Completed, Busy, Canceled, Unavailable, NotFound, Failed }
+    public enum UIHistoryMode { Push, Replace, Clear }
 
     [Serializable]
     public sealed class UIEntry
@@ -38,11 +39,15 @@ namespace UniGameUI
         [SerializeField] internal string action;
         [SerializeField] internal UIRouteKind kind;
         [SerializeField] internal string target;
+        [SerializeField] internal UIHistoryMode history;
+        [SerializeField] internal string result;
 
         public string Source => source;
         public string Action => action;
         public UIRouteKind Kind => kind;
         public string Target => target;
+        public UIHistoryMode History => history;
+        public string Result => result;
 
         public static bool TargetsEntry(UIRouteKind kind)
         {

@@ -24,10 +24,16 @@ namespace UniGameUI.Editor.Tests
 {
     public sealed class UIAuthoringTests
     {
+        private const string GeneratedParent = "Assets/UniGameUI";
+        private const string Generated = GeneratedParent + "/Generated";
+        private const string GeneratedAssembly = Generated + "/UniGameUI.Generated.asmdef";
         private readonly List<Scene> scenes = new List<Scene>();
         private Scene original;
         private string folder;
         private bool importedTmp;
+        private bool hadGeneratedParent;
+        private bool hadGeneratedFolder;
+        private bool hadGeneratedAssembly;
 
         [SetUp]
         public void SetUp()
@@ -35,6 +41,9 @@ namespace UniGameUI.Editor.Tests
             original = SceneManager.GetActiveScene();
             folder = "Assets/UniGameUI-Tests-" + Guid.NewGuid().ToString("N");
             importedTmp = false;
+            hadGeneratedParent = Directory.Exists(GeneratedParent);
+            hadGeneratedFolder = Directory.Exists(Generated);
+            hadGeneratedAssembly = File.Exists(GeneratedAssembly);
             EditorApplication.LockReloadAssemblies();
         }
 
@@ -67,14 +76,23 @@ namespace UniGameUI.Editor.Tests
 
         private void DeleteGeneratedFixtures()
         {
-            const string generated = "Assets/UniGameUI/Generated";
-            if (!Directory.Exists(generated))
+            if (!Directory.Exists(Generated))
                 return;
-            foreach (var file in Directory.EnumerateFiles(generated, "*.cs"))
+            foreach (var file in Directory.GetFiles(Generated, "*.cs"))
             {
                 if (File.ReadLines(file).Take(4).Any(line => line.StartsWith("// 場景路徑: " + folder + "/", StringComparison.Ordinal)))
                     AssetDatabase.DeleteAsset(file.Replace('\\', '/'));
             }
+            if (!hadGeneratedAssembly && File.Exists(GeneratedAssembly))
+                AssetDatabase.DeleteAsset(GeneratedAssembly);
+            DeleteNewEmptyFolder(Generated, hadGeneratedFolder);
+            DeleteNewEmptyFolder(GeneratedParent, hadGeneratedParent);
+        }
+
+        private static void DeleteNewEmptyFolder(string path, bool alreadyExisted)
+        {
+            if (!alreadyExisted && Directory.Exists(path) && !Directory.EnumerateFileSystemEntries(path).Any())
+                Assert.That(AssetDatabase.DeleteAsset(path), Is.True, path);
         }
 
         [Test]
@@ -439,6 +457,144 @@ namespace UniGameUI.Editor.Tests
             var updatedSource = File.ReadAllText(path);
             Assert.That(updatedSource, Does.Contain("public const string _9End = \"9-end\";")
                 .And.Not.Contain("public const string Archive ="));
+        }
+
+        [Test]
+        public void ElementCanShareItsViewIdAndGeneratedAssemblyIsWrittenOnlyOnce()
+        {
+            RequireDOTween();
+            var scene = NewScene("Batch2 Constants");
+            SceneManager.SetActiveScene(scene);
+            var existingAssembly = hadGeneratedFolder
+                ? Directory.EnumerateFiles(Generated, "*.asmdef").FirstOrDefault() : null;
+
+            var root = UIPlan.Apply(@"{
+                ""views"": [{ ""id"": ""confirm"", ""elements"": [{ ""id"": ""confirm"", ""kind"": ""Image"" }] }]
+            }");
+            var path = UIIdConstants.Generate(root);
+            Assert.That(File.ReadAllText(path), Does.Contain("public static class ConfirmView\n" +
+                "            {\n                public const string Confirm = \"confirm\";"));
+
+            var asmdef = existingAssembly ?? GeneratedAssembly;
+            var assemblySource = File.ReadAllText(asmdef);
+            if (existingAssembly == null)
+            {
+                Assert.That(assemblySource, Does.Contain("\"name\": \"UniGameUI.Generated\""));
+                Assert.That(AssetDatabase.LoadMainAssetAtPath(asmdef), Is.Not.Null);
+                File.SetLastWriteTimeUtc(asmdef, new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            }
+            var timestamp = File.GetLastWriteTimeUtc(asmdef);
+            UIIdConstants.Generate(root);
+            Assert.That(File.GetLastWriteTimeUtc(asmdef), Is.EqualTo(timestamp));
+            Assert.That(File.ReadAllText(asmdef), Is.EqualTo(assemblySource));
+        }
+
+        [Test]
+        public void PlanAddsAndPartiallyUpdatesRouteHistoryAndPopupResult()
+        {
+            RequireDOTween();
+            SceneManager.SetActiveScene(NewScene("Batch2 Plan Routes"));
+            var root = UIPlan.Apply($@"{{
+                ""views"": [
+                    {{ ""id"": ""home"" }},
+                    {{ ""id"": ""next"" }},
+                    {{ ""id"": ""popup"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Popup.prefab"" }}
+                ],
+                ""routes"": [
+                    {{ ""source"": ""home"", ""action"": ""next"", ""kind"": ""ShowPage"",
+                        ""target"": ""next"", ""history"": ""Replace"" }},
+                    {{ ""source"": ""next"", ""action"": ""home"", ""target"": ""home"" }},
+                    {{ ""source"": ""popup"", ""action"": ""confirm"", ""kind"": ""ClosePopup"", ""result"": ""yes"" }}
+                ]
+            }}");
+            Assert.That(root.Routes[0].History, Is.EqualTo(UIHistoryMode.Replace));
+            Assert.That(root.Routes[1].History, Is.EqualTo(UIHistoryMode.Push));
+            Assert.That(root.Routes[2].Result, Is.EqualTo("yes"));
+
+            UIPlan.Apply(@"{
+                ""routes"": [
+                    { ""source"": ""home"", ""action"": ""next"", ""history"": ""Clear"" },
+                    { ""source"": ""popup"", ""action"": ""confirm"", ""replace"": true, ""result"": ""no"" }
+                ]
+            }");
+            Assert.That(root.Routes[0].History, Is.EqualTo(UIHistoryMode.Replace));
+            Assert.That(root.Routes[2].Kind, Is.EqualTo(UIRouteKind.ClosePopup));
+            Assert.That(root.Routes[2].Result, Is.EqualTo("no"));
+
+            UIPlan.Apply(@"{
+                ""routes"": [
+                    { ""source"": ""home"", ""action"": ""next"", ""replace"": true, ""history"": ""Clear"" },
+                    { ""source"": ""popup"", ""action"": ""confirm"", ""replace"": true, ""result"": """" }
+                ]
+            }");
+            Assert.That(root.Routes[0].Kind, Is.EqualTo(UIRouteKind.ShowPage));
+            Assert.That(root.Routes[0].Target, Is.EqualTo("next"));
+            Assert.That(root.Routes[0].History, Is.EqualTo(UIHistoryMode.Clear));
+            Assert.That(root.Routes[2].Result, Is.Empty);
+        }
+
+        [Test]
+        public void BlueprintSavesAndReloadsRouteHistoryAndPopupResult()
+        {
+            var scene = NewScene("Batch2 Blueprint Routes");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            UIAuthoring.CreatePage(root, "next", "Next");
+            UIAuthoring.CreatePopup(root, "popup", "Popup", $"{folder}/Popup.prefab");
+            UIAuthoring.Connect(root, "home", "next", UIRouteKind.ShowPage, "next");
+            UIAuthoring.Connect(root, "popup", "confirm", UIRouteKind.ClosePopup);
+            SceneManager.SetActiveScene(scene);
+
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                var click = typeof(Clickable).GetMethod("Invoke", BindingFlags.Instance | BindingFlags.NonPublic);
+                SelectRoute("home", "next");
+                var history = window.rootVisualElement.Q<PopupField<UIHistoryMode>>("route-history");
+                Assert.That(history.style.display.value, Is.EqualTo(DisplayStyle.Flex));
+                history.value = UIHistoryMode.Replace;
+                Save();
+                Assert.That(root.Routes[0].History, Is.EqualTo(UIHistoryMode.Replace));
+                Assert.That(window.rootVisualElement.Q<PopupField<UIHistoryMode>>("route-history").value,
+                    Is.EqualTo(UIHistoryMode.Replace));
+
+                SelectRoute("popup", "confirm");
+                var result = window.rootVisualElement.Q<TextField>("route-result");
+                Assert.That(result.style.display.value, Is.EqualTo(DisplayStyle.Flex));
+                result.value = "yes";
+                Save();
+                Assert.That(root.Routes[1].Result, Is.EqualTo("yes"));
+
+                void SelectRoute(string source, string action)
+                {
+                    var serialized = new SerializedObject(window);
+                    serialized.FindProperty("selectedId").stringValue = source;
+                    serialized.FindProperty("selectedAction").stringValue = action;
+                    serialized.ApplyModifiedPropertiesWithoutUndo();
+                    window.CreateGUI();
+                }
+
+                void Save()
+                {
+                    var button = window.rootVisualElement.Q<UnityEngine.UIElements.Button>("save-route");
+                    click.Invoke(button.clickable, new object[] { null });
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+            }
+
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            var path = scene.path;
+            var mode = SceneManager.sceneCount > 1 ? OpenSceneMode.Additive : OpenSceneMode.Single;
+            if (mode == OpenSceneMode.Additive)
+                Assert.That(EditorSceneManager.CloseScene(scene, true), Is.True);
+            var reopened = EditorSceneManager.OpenScene(path, mode);
+            scenes.Add(reopened);
+            var saved = UIAuthoring.FindWorkspace(reopened);
+            Assert.That(saved.Routes[0].History, Is.EqualTo(UIHistoryMode.Replace));
+            Assert.That(saved.Routes[1].Result, Is.EqualTo("yes"));
         }
 
         [Test]
