@@ -83,7 +83,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 - `views[].id`、`elements[].id` 和 `action` 使用 ASCII 字母、數字、底線或連字號。ID 是定位與接線用的鍵。Hierarchy 物件名稱可以調整。
 - `mode` 可用 `SingleScene` 或 `Prefab`。只有確定需要新 Scene 時才給 `createScene: true`。新工作區預設參考解析度 1920×1080、每排 3 格。
 - `startPage` 是可選的頁面 ID，指定空字串可清除起始頁。路由種類有 `ShowPage`、`OpenPopup`、`Back`、`ClosePopup`、`Emit`。前兩種需要 `target`。同一來源頁的一個 `action` 對應一條路由。
-- `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。
+- `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。將任一欄位寫在其他種類的路由上，計畫會在套用前指出路由與欄位。
 - `pageTransitionMode` 可用 `Sequential` 或 `Concurrent`。新工作區預設依序播放。要讓切頁的進場和退場重疊，設定 `Concurrent` 或在 `UIRoot` Inspector 修改「切頁動畫」。
 - 元件支援 `Text`、`Button`、`Image`。矩形座標是 Unity RectTransform 的 anchor 與參考解析度下的座標，Y 向上。可指定 `fontSize`、`fontPath`（TMP Font Asset）、`textColor`、`color`、`spritePath`。首次建立文字時，工具會安裝 uGUI 附帶的 TMP Essential Resources。若專案曾匯入部分資源，先透過 **Window → TextMeshPro → Import TMP Essential Resources** 完成安裝。使用中文或其他語系時，交付前確認字型涵蓋所需字符。
 - `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Zoom` 或 `Custom`。例如 `"enter": { "preset": "Zoom", "duration": 0.2, "zoomScale": 0.8, "ease": "OutBack" }`。Zoom 倍率相對於原本的 Motion 尺寸，預設為 0.85。Slide 可設定方向 `Left`、`Right`、`Up`、`Down` 和 `distance`，RotateFade 可設定 `angle`。Ease 有 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
@@ -170,7 +170,7 @@ public sealed class WorkshopPage : UIViewBehaviour
 
 遊戲程式可呼叫 `await root.ShowPageAsync(id, data)`、`await root.OpenPopupAsync(id, data)`、`await root.ClosePopupAsync()` 或 `await root.BackAsync()`。每個 Unity `Awaitable` 只等待一次。轉場中收到的導航請求會立即回傳 `Busy`，不排隊。
 
-`root.ShowPageAsync(id, data, history)` 的 `Push` 會把離開的頁面加入歷史，`Replace` 會略過離開的頁面，`Clear` 會在切頁成功後清空歷史。失敗或取消時保留原歷史。`HistoryCount` 可查深度，`ClearHistory()` 可直接清空。返回會先關最上層的 Popup。返回上一頁會重用頁面實例與上次顯示時的資料。
+`root.ShowPageAsync(id, data, history)` 的 `Push` 會把離開的頁面加入歷史，`Replace` 會略過離開的頁面，`Clear` 會在切頁成功後清空歷史。切頁或返回成功後會移除歷史尾端與目前頁相同的項目。失敗或取消時保留原歷史。`HistoryCount` 可查還能返回幾頁，`ClearHistory()` 可直接清空。返回會先關最上層的 Popup。返回上一頁會重用頁面實例與上次顯示時的資料。
 
 `CurrentPage`、`TopPopup`、`Popups` 可查目前畫面。`TryGetView(id, out var view)` 取得已存在的實例。單 Scene 頁面隨 Scene 載入，Prefab 頁面在首次顯示時建立，兩種頁面都會留到 Scene 卸載。Popup 在開啟期間才可查到。
 
@@ -182,7 +182,44 @@ public sealed class WorkshopPage : UIViewBehaviour
 
 每一階段依序呼叫 View 根節點上的介面接收者（依元件順序）、View Inspector 的 UnityEvent，再發出 `UIRoot.ViewShowing`、`ViewShown`、`ViewHiding` 或 `ViewHidden`。畫面啟用後、進場動畫開始前會觸發 `OnShowing(data)`。切頁時，依序收到舊頁 Hiding、新頁 Showing、舊頁 Hidden、新頁 Shown。隱藏後與顯示後的通知會等轉場成功。
 
-`Emit` 路由依序呼叫來源畫面的 `OnAction(action)` 和 `UIRoot.ActionEmitted`。後者可以從 Inspector 接線，會提供來源 ID 和動作。`UIRoot.ActionTriggered` 在有效路由開始執行時通知，可用來播放按鈕音效。`UIRoot.ActionCompleted` 帶路由和執行結果，包含執行後的失敗或取消。
+- 第一次顯示時，會先執行 `Awake` 與 `OnShowing`。有跨影格的進場動畫時，已啟用接收者的 `Start` 在 `OnShowing` 與 `OnShown` 之間執行。瞬間切換時，`OnShown` 也可能早於 `Start`。把首次顯示所需的初始化放在 `Awake`，或在 `OnShowing` 裡用 `View.Get<T>()` 取得元件。 [Unity Start 文件](https://docs.unity.com/en-us/engine/6000.3/script-reference/unityengine/monobehaviour/start)
+- 導航失敗或取消後，原畫面會還原並繼續顯示。原畫面如果已收到 `OnHiding`，這次只會收到這個階段的通知。需要在離開後才改變狀態的收尾工作放在 `OnHidden`。
+- 把接收者元件的 `enabled` 設為 false 時，框架仍會呼叫它的生命週期方法。
+
+`Emit` 路由依序呼叫來源畫面的 `OnAction(action)` 和 `UIRoot.ActionEmitted`。後者可以從 Inspector 接線，會提供來源 ID 和動作。`UIRoot.ActionTriggered` 表示路由已被接受，可用來播放按鈕音效。以沒有歷史的 Back 路由為例，會先發出 `ActionTriggered`，接著由 `ActionCompleted` 回報 `Unavailable`。
+
+`UIRoot.ActionCompleted` 帶路由和執行結果，包含執行後的失敗或取消。關閉 Popup 的路由發出 `ActionCompleted` 時，等待該 Popup 結果的程式已先繼續執行，可能已經開始下一次導航。
+
+在 View 的生命週期方法、對應的 UnityEvent、工作區的 View 事件及非 Emit 路由的 `ActionTriggered` 同步呼叫導航時，框架會回傳 `Busy` 並記錄警告。要在 `OnShown` 接續導航，先用 `Awaitable.NextFrameAsync()` 等一個影格。下例掛在 `Launch.unity` 的 `launch` 起始頁，目標頁 ID 是 `mainMenu`。 [Unity NextFrameAsync 文件](https://docs.unity.com/en-us/engine/6000.3/script-reference/unityengine/awaitable/nextframeasync)
+
+```csharp
+using System;
+using UniGameUI;
+using UniGameUI.Generated;
+using UnityEngine;
+
+public sealed class LaunchPage : UIViewBehaviour
+{
+    protected override async void OnShown()
+    {
+        try
+        {
+            var root = Root;
+            await Awaitable.NextFrameAsync();
+            if (!this || !root || root.CurrentPage != View)
+                return;
+
+            var result = await root.ShowPageAsync(LaunchUI.Views.MainMenu, null, UIHistoryMode.Clear);
+            if (result == UINavResult.Busy)
+                Debug.LogWarning("主選單切換遇到另一個導航，請在它結束後再呼叫。", this);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception, this);
+        }
+    }
+}
+```
 
 | 出錯的地方 | 處理方式 |
 |---|---|
@@ -194,12 +231,14 @@ public sealed class WorkshopPage : UIViewBehaviour
 
 `async void` 的非同步例外由腳本自行捕捉。框架接不到第一個 `await` 後拋出的例外。
 
+Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `UnityEvent.Invoke()` 呼叫。此時同一個 UnityEvent 會在第一個監聽丟出例外時停止，其餘階段仍依上表處理。
+
 導航結果共有六種。
 
 | 結果 | 意義與 Console 診斷 |
 |---|---|
 | `Completed` | 操作完成。個別事件的例外仍會按上述規則記錄。 |
-| `Busy` | 另一個轉場正在進行，安靜回傳。 |
+| `Busy` | 另一個導航正在進行。從同步通知提出時會記錄警告，動畫播放期間的一般忙碌請求安靜回傳。 |
 | `Canceled` | 操作取消，安靜回傳。 |
 | `Unavailable` | 請求合法，目前狀態無法執行。通常會警告。沒有上一頁的返回安靜回傳。 |
 | `NotFound` | 畫面 ID、Prefab 或路由設定缺失或不符合請求。Console 會記錄錯誤。 |

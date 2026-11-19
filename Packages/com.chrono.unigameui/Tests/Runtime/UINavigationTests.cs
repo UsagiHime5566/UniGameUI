@@ -100,6 +100,7 @@ namespace UniGameUI.Tests
             Assert.That(next.gameObject.activeInHierarchy, Is.True);
             Assert.That(next.Motion.localScale, Is.EqualTo(pose * 0.5f));
             yield return Expect(root.BackAsync(), UINavResult.Busy);
+            LogAssert.NoUnexpectedReceived();
             yield return Expect(transition, UINavResult.Completed);
             Assert.That(events, Is.EqualTo(new[] { "hiding", "showing", "hidden", "shown" }));
             Assert.That(first.gameObject.activeSelf, Is.False);
@@ -362,14 +363,25 @@ namespace UniGameUI.Tests
 
         private void ExpectFailure(string request, string detail)
         {
-            ExpectLog(LogType.Error, request, detail);
+            ExpectNavigationException(request, "執行失敗。", detail);
+        }
+
+        private void ExpectNotificationException(string request, string detail)
+        {
+            ExpectNavigationException(request, "接收者丟出例外，導航照常處理。", detail);
+        }
+
+        private void ExpectNavigationException(string request, string summary, string detail)
+        {
+            ExpectLog(LogType.Error, request, summary, detail);
             LogAssert.Expect(LogType.Exception, new Regex("^InvalidOperationException: .*" + Regex.Escape(detail)));
         }
 
-        private void ExpectLog(LogType type, string request, string detail)
+        private void ExpectLog(LogType type, params string[] parts)
         {
-            LogAssert.Expect(type, new Regex(Regex.Escape(request) + ".*" + Regex.Escape(detail) +
-                ".*" + Regex.Escape($"Scene: {rootObject.scene.name}")));
+            var scene = $"Scene: {rootObject.scene.name}";
+            var pattern = string.Join(".*", parts.Append(scene).Select(Regex.Escape));
+            LogAssert.Expect(type, new Regex(pattern));
         }
 
         private void CreateRoot()

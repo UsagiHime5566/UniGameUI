@@ -6,7 +6,11 @@ namespace UniGameUI.Tests
     public sealed class UIViewTestHandler : UIViewBehaviour
     {
         internal static Action<UIViewTestHandler, string, object> Observed;
+        internal Action<string> UnityLifecycle;
         [SerializeField] internal string label;
+
+        private void Awake() => UnityLifecycle?.Invoke(nameof(Awake));
+        private void Start() => UnityLifecycle?.Invoke(nameof(Start));
 
         protected override void OnShowing(object data) => Observed?.Invoke(this, "Showing", data);
         protected override void OnShown() => Observed?.Invoke(this, "Shown", null);

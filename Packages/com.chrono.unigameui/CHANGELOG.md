@@ -8,6 +8,10 @@
 - 新增 `OpenPopupForResultAsync<T>` 與 `UIView.Close(result)`。藍圖與 JSON 計畫支援設定切頁歷史和關閉結果。
 - 新增工作區的 View 和路由全域事件。顯示前的接收者出錯時會還原導航，顯示後與隱藏階段出錯時會照常完成。Console 會記錄原始例外與上下文。
 - ID 常數會產生獨立的 `UniGameUI.Generated` 組件。`Elements` 下的畫面類別改加 `View` 後綴，例如 `Elements.ConfirmView.Confirm`。指南新增頁面腳本範本和編譯時機說明。
+- 修正切頁和返回後的歷史，會移除尾端與目前頁相同的項目，避免返回時把目前畫面關掉。
+- 在同步通知期間提出導航時會回傳 `Busy` 並記錄上下文。指南補上 `OnShown` 等下一影格再導航的範本與生命週期時機。
+- UnityEvent 的逐一派送方法無法取得時會警告一次並使用公開的 `Invoke()`。仍可繼續的通知例外與導航失敗會顯示不同的診斷文字。
+- JSON 計畫會回報用於不適用路由的 `history` 或 `result` 欄位。
 
 ## 0.2.0（2026-11-20）
 

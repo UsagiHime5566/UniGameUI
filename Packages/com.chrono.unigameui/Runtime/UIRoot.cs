@@ -41,6 +41,7 @@ namespace UniGameUI
         private RectTransform stagingLayer;
         private UIView currentPage;
         private CancellationTokenSource lifetime;
+        private (string Request, string Phase, string ViewId)? notification;
         private bool ready;
         private bool busy;
 
@@ -224,6 +225,8 @@ namespace UniGameUI
         internal async Awaitable<UINavResult> ClosePopupAsync(UIView popup, object result)
         {
             var request = $"Close '{popup.Id}'";
+            if (busy && notification.HasValue)
+                return Busy(request);
             if (!popup || popup != TopPopup)
                 return Unavailable(request, "只有目前最上層且開著的 Popup 能關閉。");
             return await RunAsync(request, token => ClosePopupCoreAsync(token, request, result), default);
@@ -242,7 +245,7 @@ namespace UniGameUI
             await Awaitable.MainThreadAsync();
             var request = $"Trigger '{source}'/'{action}'";
             if (busy)
-                return UINavResult.Busy;
+                return Busy(request);
             if (!CanNavigate())
                 return Unavailable(request, "工作區停用或尚未就緒。");
             if (cancellation.IsCancellationRequested)
@@ -255,7 +258,7 @@ namespace UniGameUI
                 return Unavailable(request, "來源不是目前最上層的畫面。");
 
             void Triggered() => UIEventDispatch.Invoke(ActionTriggered, listener => listener(route),
-                exception => LogFailure($"{request} {nameof(ActionTriggered)}", exception));
+                exception => LogNotificationException($"{request} {nameof(ActionTriggered)}", exception));
 
             UINavResult result;
             if (route.Kind == UIRouteKind.Emit)
@@ -269,14 +272,14 @@ namespace UniGameUI
             {
                 result = await RunAsync(request, async token =>
                 {
-                    Triggered();
+                    NotifyDuringNavigation(request, nameof(ActionTriggered), source, Triggered);
                     token.ThrowIfCancellationRequested();
                     return await FollowRouteAsync(route, token, request);
                 }, cancellation);
             }
 
             UIEventDispatch.Invoke(ActionCompleted, listener => listener(route, result),
-                exception => LogFailure($"{request} {nameof(ActionCompleted)}", exception));
+                exception => LogNotificationException($"{request} {nameof(ActionCompleted)}", exception));
             return result;
         }
 
@@ -301,10 +304,24 @@ namespace UniGameUI
         internal void NotifyHiding(UIView view, string request) => NotifyView(ViewHiding, view, request, nameof(ViewHiding));
         internal void NotifyHidden(UIView view, string request) => NotifyView(ViewHidden, view, request, nameof(ViewHidden));
 
+        internal void NotifyDuringNavigation(string request, string phase, string viewId, Action notify)
+        {
+            var previous = notification;
+            notification = (request, phase, viewId);
+            try
+            {
+                notify();
+            }
+            finally
+            {
+                notification = previous;
+            }
+        }
+
         private void NotifyView(Action<UIView> signal, UIView view, string request, string phase)
         {
             UIEventDispatch.Invoke(signal, listener => listener(view),
-                exception => LogFailure($"{request} {phase} '{view.Id}'", exception));
+                exception => LogNotificationException($"{request} {phase} '{view.Id}'", exception));
         }
 
         private async Awaitable<UINavResult> RunAsync(
@@ -312,7 +329,7 @@ namespace UniGameUI
         {
             await Awaitable.MainThreadAsync();
             if (busy)
-                return UINavResult.Busy;
+                return Busy(request);
             if (!CanNavigate())
                 return Unavailable(request, "工作區停用或尚未就緒。");
 
@@ -357,6 +374,16 @@ namespace UniGameUI
             return UINavResult.NotFound;
         }
 
+        private UINavResult Busy(string request)
+        {
+            if (notification is { } active)
+            {
+                Debug.LogWarning(Diagnostic(request, $"目前導航 {active.Request} 正在通知 {active.Phase}" +
+                    $"（畫面 '{active.ViewId}'）。請等這次導航結束後再呼叫。"), this);
+            }
+            return UINavResult.Busy;
+        }
+
         private UINavResult Unavailable(string request, string detail)
         {
             Debug.LogWarning(Diagnostic(request, detail), this);
@@ -369,9 +396,19 @@ namespace UniGameUI
             return UINavResult.Failed;
         }
 
-        internal void LogFailure(string request, Exception exception)
+        private void LogFailure(string request, Exception exception)
         {
-            Debug.LogError(Diagnostic(request, $"執行失敗。{exception.Message}"), this);
+            LogNavigationException(request, "執行失敗。", exception);
+        }
+
+        internal void LogNotificationException(string request, Exception exception)
+        {
+            LogNavigationException(request, "接收者丟出例外，導航照常處理。", exception);
+        }
+
+        private void LogNavigationException(string request, string detail, Exception exception)
+        {
+            Debug.LogError(Diagnostic(request, detail + exception.Message), this);
             Debug.LogException(exception, this);
         }
 
@@ -430,6 +467,7 @@ namespace UniGameUI
         {
             if (popups.Count > 0)
                 return await ClosePopupCoreAsync(cancellation, request, null);
+            RemoveCurrentPageFromHistory();
             if (history.Count == 0)
                 return UINavResult.Unavailable;
             if (!GetPage(history[^1], out var previous))
@@ -443,10 +481,20 @@ namespace UniGameUI
             return UINavResult.Completed;
         }
 
+        private void RemoveCurrentPageFromHistory()
+        {
+            var id = CurrentPageId;
+            while (history.Count > 0 && history[^1] == id)
+                history.RemoveAt(history.Count - 1);
+        }
+
         private async Awaitable ChangePageAsync(UIView next, object data, CancellationToken cancellation,
             string request, Action commitHistory)
         {
             var previous = currentPage;
+            if (next == previous)
+                throw new InvalidOperationException($"畫面 '{next.Id}' 已在顯示中，無法對同一個 View 切頁。");
+
             var previousData = next.Data;
             var openPopups = popups.ToArray();
             try
@@ -488,6 +536,7 @@ namespace UniGameUI
 
             currentPage = next;
             commitHistory();
+            RemoveCurrentPageFromHistory();
             for (var index = openPopups.Length - 1; index >= 0; index--)
             {
                 if (openPopups[index])

@@ -123,6 +123,10 @@ namespace UniGameUI.Tests
             var waiting = root.OpenPopupForResultAsync<string>("popup");
             var popup = root.TopPopup;
             var laterCalled = false;
+            var previousNotifications = new List<string>();
+            next.Hiding.AddListener(() => previousNotifications.Add("Hiding"));
+            next.Hidden.AddListener(() => previousNotifications.Add("Hidden"));
+            next.Showing.AddListener(() => previousNotifications.Add("Showing"));
             third.Showing.AddListener(() => laterCalled = true);
             root.ViewShowing += view => laterCalled |= view == third;
             UIViewTestHandler.Observed = (handler, phase, _) =>
@@ -145,6 +149,7 @@ namespace UniGameUI.Tests
             Assert.That(third.gameObject.activeSelf, Is.False);
             Assert.That(third.Data, Is.Null);
             Assert.That(laterCalled, Is.False);
+            Assert.That(previousNotifications, Is.EqualTo(new[] { "Hiding" }));
             Assert.That(waiting.GetAwaiter().IsCompleted, Is.False);
             yield return Expect(popup.Close("retained"), UINavResult.Completed);
             yield return ExpectPopup(waiting, UINavResult.Completed, true, "retained");
@@ -180,10 +185,10 @@ namespace UniGameUI.Tests
             next.Shown.AddListener(() => received.Add("shown-event"));
             root.ViewShown += _ => received.Add("shown-root");
 
-            ExpectFailure("ShowPage 'next' Hiding 'home'", "handler-hiding");
-            ExpectFailure("ShowPage 'next' Hiding 'home'", "event-hiding");
-            ExpectFailure("ShowPage 'next' Shown 'next'", "handler-shown");
-            ExpectFailure("ShowPage 'next' Shown 'next'", "event-shown");
+            ExpectNotificationException("ShowPage 'next' Hiding 'home'", "handler-hiding");
+            ExpectNotificationException("ShowPage 'next' Hiding 'home'", "event-hiding");
+            ExpectNotificationException("ShowPage 'next' Shown 'next'", "handler-shown");
+            ExpectNotificationException("ShowPage 'next' Shown 'next'", "event-shown");
             yield return Expect(root.ShowPageAsync("next"), UINavResult.Completed);
             Assert.That(root.CurrentPage, Is.SameAs(next));
             Assert.That(received, Is.EqualTo(new[] { "hiding-event", "second-handler", "shown-event", "shown-root" }));
@@ -193,8 +198,8 @@ namespace UniGameUI.Tests
             popup.Hidden.AddListener(() => throw new InvalidOperationException("event-hidden"));
             popup.Hidden.AddListener(() => received.Add("hidden-event"));
             root.ViewHidden += _ => received.Add("hidden-root");
-            ExpectFailure("Close 'popup' Hidden 'popup'", "handler-hidden");
-            ExpectFailure("Close 'popup' Hidden 'popup'", "event-hidden");
+            ExpectNotificationException("Close 'popup' Hidden 'popup'", "handler-hidden");
+            ExpectNotificationException("Close 'popup' Hidden 'popup'", "event-hidden");
             yield return Expect(popup.Close("yes"), UINavResult.Completed);
             yield return ExpectPopup(waiting, UINavResult.Completed, true, "yes");
             Assert.That(received.GetRange(received.Count - 2, 2), Is.EqualTo(new[] { "hidden-event", "hidden-root" }));
@@ -225,7 +230,8 @@ namespace UniGameUI.Tests
             Application.logMessageReceived += Capture;
             try
             {
-                ExpectLog(LogType.Error, "ShowPage 'next' Shown 'next'", "persistent-failure");
+                ExpectLog(LogType.Error, "ShowPage 'next' Shown 'next'",
+                    "接收者丟出例外，導航照常處理。persistent-failure");
                 LogAssert.Expect(LogType.Exception, "FormatException: persistent-failure");
                 yield return Expect(root.ShowPageAsync("next"), UINavResult.Completed);
             }
@@ -557,9 +563,9 @@ namespace UniGameUI.Tests
             Assert.That(timeline, Is.Empty);
 
             next.Showing.AddListener(() => throw new InvalidOperationException("route-failed"));
-            ExpectFailure("Trigger 'home'/'next' ActionTriggered", "global-triggered");
+            ExpectTriggerNotices();
             ExpectFailure("Trigger 'home'/'next' Showing 'next'", "route-failed");
-            ExpectFailure("Trigger 'home'/'next' ActionCompleted", "global-completed");
+            ExpectNotificationException("Trigger 'home'/'next' ActionCompleted", "global-completed");
             yield return Expect(root.TriggerAsync("home", "next"), UINavResult.Failed);
             yield return Expect(busyAttempt, UINavResult.Busy);
             yield return ExpectPopup(busyOpen, UINavResult.Busy);
@@ -567,16 +573,16 @@ namespace UniGameUI.Tests
 
             void CancelOnTrigger(UIRoute _) => cancellation.Cancel();
             root.ActionTriggered += CancelOnTrigger;
-            ExpectFailure("Trigger 'home'/'next' ActionTriggered", "global-triggered");
-            ExpectFailure("Trigger 'home'/'next' ActionCompleted", "global-completed");
+            ExpectTriggerNotices();
+            ExpectNotificationException("Trigger 'home'/'next' ActionCompleted", "global-completed");
             yield return Expect(root.TriggerAsync("home", "next", cancellation.Token), UINavResult.Canceled);
             yield return Expect(busyAttempt, UINavResult.Busy);
             yield return ExpectPopup(busyOpen, UINavResult.Busy);
             root.ActionTriggered -= CancelOnTrigger;
 
-            ExpectFailure("Trigger 'home'/'next' ActionTriggered", "global-triggered");
-            ExpectFailure("Trigger 'home'/'next' ViewShowing 'next'", "global-showing");
-            ExpectFailure("Trigger 'home'/'next' ActionCompleted", "global-completed");
+            ExpectTriggerNotices();
+            ExpectNotificationException("Trigger 'home'/'next' ViewShowing 'next'", "global-showing");
+            ExpectNotificationException("Trigger 'home'/'next' ActionCompleted", "global-completed");
             yield return Expect(root.TriggerAsync("home", "next"), UINavResult.Completed);
             yield return Expect(busyAttempt, UINavResult.Busy);
             yield return ExpectPopup(busyOpen, UINavResult.Busy);
@@ -584,6 +590,14 @@ namespace UniGameUI.Tests
             {
                 "triggered", "Failed", "triggered", "Canceled", "triggered", "showing:next", "Completed",
             }));
+
+            void ExpectTriggerNotices()
+            {
+                const string navigation = "Trigger 'home'/'next'";
+                ExpectNotificationException($"{navigation} ActionTriggered", "global-triggered");
+                ExpectBusyWarning(navigation, navigation, "ActionTriggered", "home");
+                ExpectBusyWarning("OpenPopupForResult 'popup'", navigation, "ActionTriggered", "home");
+            }
         }
 
         private static UIViewTestHandler AddHandler(UIView view, string label)

@@ -533,6 +533,32 @@ namespace UniGameUI.Editor.Tests
             Assert.That(root.Routes[2].Result, Is.Empty);
         }
 
+        [TestCase(UIRouteKind.Back, "history", "\"invalid\"", UIRouteKind.ShowPage, false)]
+        [TestCase(UIRouteKind.Emit, "result", "\"\"", UIRouteKind.ClosePopup, false)]
+        [TestCase(UIRouteKind.Back, "history", "null", UIRouteKind.ShowPage, true)]
+        public void PlanRejectsRouteOptionsThatDoNotApply(UIRouteKind kind, string field, string jsonValue,
+            UIRouteKind expectedKind, bool replaceExisting)
+        {
+            RequireDOTween();
+            var scene = NewScene("Batch2 Invalid Route Option");
+            SceneManager.SetActiveScene(scene);
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            if (replaceExisting)
+                UIAuthoring.Connect(root, "home", "choose", kind);
+            var route = replaceExisting ? @"""replace"": true" : $@"""kind"": ""{kind}""";
+            var plan = $@"{{
+                ""views"": [{{ ""id"": ""newPage"" }}],
+                ""routes"": [{{ ""source"": ""home"", ""action"": ""choose"", {route}, ""{field}"": {jsonValue} }}]
+            }}";
+
+            var exception = Assert.Throws<ArgumentException>(() => UIPlan.Apply(plan));
+            Assert.That(exception.Message, Does.Contain("home/choose").And.Contain(field)
+                .And.Contain(expectedKind.ToString()).And.Contain(kind.ToString()));
+            Assert.That(UIAuthoring.FindEntry(root, "newPage"), Is.Null);
+            Assert.That(root.Routes.Count, Is.EqualTo(replaceExisting ? 1 : 0));
+        }
+
         [Test]
         public void BlueprintSavesAndReloadsRouteHistoryAndPopupResult()
         {

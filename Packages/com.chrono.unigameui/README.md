@@ -8,7 +8,7 @@
 
 UniGameUI 需要 [DOTween 標準版](https://assetstore.unity.com/packages/tools/animation/dotween-hotween-v2-27676)。可從 **Tools → UniGameUI → Install DOTween…** 匯入本機快取或開啟 Asset Store，再依提示完成 [Setup DOTween](https://dotween.demigiant.com/getstarted)。Validate 與 JSON 計畫會檢查套件是否就緒。執行期遇到缺少 DOTween 的環境時，會警告一次並以瞬間切換保護導航。
 
-遊戲程式以 `UIViewBehaviour` 接收頁面生命週期，從 `View.Root` 導航，並用 `View.Get<T>(id)` 取得元件。切頁可指定返回歷史，選擇視窗可用 `OpenPopupForResultAsync<T>` 等待關閉結果。音效與數據記錄可以訂閱工作區的全域事件。
+遊戲程式以 `UIViewBehaviour` 接收頁面生命週期，從 `View.Root` 導航，並用 `View.Get<T>(id)` 取得元件。切頁可指定返回歷史，選擇視窗可用 `OpenPopupForResultAsync<T>` 等待關閉結果。音效與數據記錄可以訂閱工作區的全域事件。要在 `OnShown` 接續導航，先用 `Awaitable.NextFrameAsync()` 等一個影格，從同步通知直接提出會回傳 `Busy` 並記錄警告。
 
 儲存場景或套用 JSON 計畫後，工具會在 `Assets/UniGameUI/Generated` 產生 ID 常數。等 Editor 編譯完成再接遊戲腳本。自訂 asmdef 需引用產生常數的 `UniGameUI.Generated` 組件。用法和完整頁面範本見 [AgentGuide 的遊戲程式章節](Documentation~/AgentGuide.md#遊戲程式)。
 

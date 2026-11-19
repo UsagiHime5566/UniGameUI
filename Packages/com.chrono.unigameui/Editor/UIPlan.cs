@@ -326,6 +326,10 @@ namespace UniGameUI.Editor
                 if (string.IsNullOrEmpty(route.source) || !kinds.ContainsKey(route.source) ||
                     !routeKeys.Add((route.source, route.action)))
                     throw new ArgumentException($"Missing source or duplicate route '{route.source}/{route.action}'.");
+                if (route.history != null && kind != UIRouteKind.ShowPage)
+                    throw new ArgumentException($"路由「{route.source}/{route.action}」的 history 欄位只適用於 ShowPage（目前為 {kind}）。");
+                if (route.result != null && kind != UIRouteKind.ClosePopup)
+                    throw new ArgumentException($"路由「{route.source}/{route.action}」的 result 欄位只適用於 ClosePopup（目前為 {kind}）。");
                 if (UIRoute.TargetsEntry(kind) &&
                     (string.IsNullOrEmpty(targetId) || !kinds.TryGetValue(targetId, out var target) ||
                      target != (kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup)))

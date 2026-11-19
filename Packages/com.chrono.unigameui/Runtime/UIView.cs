@@ -133,16 +133,19 @@ namespace UniGameUI
             Data = data;
             SetInput(false);
             gameObject.SetActive(true);
-            try
+            Root.NotifyDuringNavigation(request, nameof(Showing), Id, () =>
             {
-                InvokeHandlers(handler => handler.OnShowing(this, data), null);
-                UIEventDispatch.Invoke(showing, null);
-            }
-            catch (Exception exception)
-            {
-                throw new ShowingException(Id, exception);
-            }
-            Root.NotifyShowing(this, request);
+                try
+                {
+                    InvokeHandlers(handler => handler.OnShowing(this, data), null);
+                    UIEventDispatch.Invoke(showing, null);
+                }
+                catch (Exception exception)
+                {
+                    throw new ShowingException(Id, exception);
+                }
+                Root.NotifyShowing(this, request);
+            });
             await UITransition.PlayAsync(this, enter, true, cancellation);
         }
 
@@ -150,22 +153,19 @@ namespace UniGameUI
         {
             cancellation.ThrowIfCancellationRequested();
             SetInput(false);
-            Notify(hiding, handler => handler.OnHiding(this), request, nameof(Hiding));
-            Root.NotifyHiding(this, request);
+            Notify(hiding, handler => handler.OnHiding(this), Root.NotifyHiding, request, nameof(Hiding));
             await UITransition.PlayAsync(this, exit, false, cancellation);
         }
 
         internal void FinishShowing(string request)
         {
-            Notify(shown, handler => handler.OnShown(this), request, nameof(Shown));
-            Root.NotifyShown(this, request);
+            Notify(shown, handler => handler.OnShown(this), Root.NotifyShown, request, nameof(Shown));
         }
 
         internal void FinishHiding(string request)
         {
             gameObject.SetActive(false);
-            Notify(hidden, handler => handler.OnHidden(this), request, nameof(Hidden));
-            Root.NotifyHidden(this, request);
+            Notify(hidden, handler => handler.OnHidden(this), Root.NotifyHidden, request, nameof(Hidden));
         }
 
         internal bool Emit(string action, Action<Exception> report)
@@ -173,12 +173,17 @@ namespace UniGameUI
             return InvokeHandlers(handler => handler.OnAction(this, action), report);
         }
 
-        private void Notify(UnityEvent signal, Action<IUIViewHandler> invoke, string request, string phase)
+        private void Notify(UnityEvent signal, Action<IUIViewHandler> invoke, Action<UIView, string> notifyRoot,
+            string request, string phase)
         {
-            void Report(Exception exception) => Root.LogFailure($"{request} {phase} '{Id}'", exception);
+            void Report(Exception exception) => Root.LogNotificationException($"{request} {phase} '{Id}'", exception);
 
-            InvokeHandlers(invoke, Report);
-            UIEventDispatch.Invoke(signal, Report);
+            Root.NotifyDuringNavigation(request, phase, Id, () =>
+            {
+                InvokeHandlers(invoke, Report);
+                UIEventDispatch.Invoke(signal, Report);
+                notifyRoot(this, request);
+            });
         }
 
         private bool InvokeHandlers(Action<IUIViewHandler> invoke, Action<Exception> report)
