@@ -11,7 +11,15 @@ namespace UniGameUI
 {
     public enum UIInputMode { Pointer, Navigation }
 
-    // 輸入模式與手把、鍵盤的選取。輸入一律讀 InputSystemUIInputModule 上設定的動作。
+    /// <summary>
+    /// 掛在 View 根節點上，在框架處理返回鍵之前先收到通知。回傳 true 表示已經處理，框架不再做事。
+    /// </summary>
+    public interface IUIBackHandler
+    {
+        bool OnBackRequested(UIView view);
+    }
+
+    // 輸入模式、手把與鍵盤的選取，以及返回鍵。輸入一律讀 InputSystemUIInputModule 上設定的動作。
     public sealed partial class UIRoot
     {
         private const int MoveSlot = 0;
@@ -28,6 +36,9 @@ namespace UniGameUI
         private const int InputFieldFocusFrames = 2;
 
         private static readonly List<Selectable> SelectableBuffer = new List<Selectable>();
+        private static readonly List<TMP_Dropdown> DropdownBuffer = new List<TMP_Dropdown>();
+
+        [SerializeField] private bool handlesBackKey = true;
 
         private readonly InputAction[] hookedActions = new InputAction[SlotCount];
         private readonly bool[] pressedButtons = new bool[SlotCount];
@@ -38,10 +49,20 @@ namespace UniGameUI
         private UIInputMode inputMode;
         private UIInputMode? requestedMode;
         private int requestedModeFrame;
+        private bool backRequested;
         private Vector2 lastPointerPosition = new Vector2(float.NaN, float.NaN);
         private GameObject observedSelection;
         private int observedSelectionFrame;
         private GameObject reportedSelection;
+
+        /// <summary>
+        /// 是否把取消動作（Esc 與手把的取消鍵）當成返回。預設開啟。
+        /// </summary>
+        public bool HandlesBackKey
+        {
+            get => handlesBackKey;
+            set => handlesBackKey = value;
+        }
 
         /// <summary>
         /// 最後使用的輸入方式。起始為 <see cref="UIInputMode.Pointer"/>。
@@ -55,6 +76,11 @@ namespace UniGameUI
         /// </summary>
         public event Action<UIView, GameObject> ElementSelected;
 
+        /// <summary>
+        /// 按下返回鍵、但沒有開著的 Popup 也沒有上一頁時觸發。
+        /// </summary>
+        public event Action BackRequestedAtRoot;
+
         private UIView TopView => TopPopup ? TopPopup : CurrentPage;
 
         private void LateUpdate()
@@ -66,6 +92,7 @@ namespace UniGameUI
             if (!SyncInput(eventSystem))
             {
                 requestedMode = null;
+                backRequested = false;
                 return;
             }
 
@@ -76,6 +103,11 @@ namespace UniGameUI
             {
                 requestedMode = null;
                 SetInputMode(mode, eventSystem);
+            }
+            if (backRequested)
+            {
+                backRequested = false;
+                HandleBackKey();
             }
             UpdateSelection(eventSystem);
         }
@@ -175,6 +207,10 @@ namespace UniGameUI
         {
             if (IsNavigationDevice(context))
                 RequestMode(UIInputMode.Navigation);
+            // 輸入模組稍後才會把取消鍵送給選取中的物件。輸入框與下拉選單會自己處理，
+            // 所以要在它們還沒收起來之前判斷。
+            if (!IsEditingText() && !HasExpandedDropdown())
+                backRequested = true;
         }
 
         private void OnPointInput(InputAction.CallbackContext context)
@@ -219,6 +255,19 @@ namespace UniGameUI
             var eventSystem = EventSystem.current;
             var selected = eventSystem ? eventSystem.currentSelectedGameObject : null;
             return selected && selected.TryGetComponent<TMP_InputField>(out var field) && field.isFocused;
+        }
+
+        private bool HasExpandedDropdown()
+        {
+            var top = TopView;
+            if (!top)
+                return false;
+            top.GetComponentsInChildren(false, DropdownBuffer);
+            var expanded = false;
+            foreach (var dropdown in DropdownBuffer)
+                expanded |= dropdown.IsExpanded;
+            DropdownBuffer.Clear();
+            return expanded;
         }
 
         private void SetInputMode(UIInputMode mode, EventSystem eventSystem)
@@ -326,6 +375,57 @@ namespace UniGameUI
             }
             SelectableBuffer.Clear();
             return first;
+        }
+
+        private void HandleBackKey()
+        {
+            if (!handlesBackKey || busy)
+                return;
+
+            var top = TopView;
+            if (top)
+            {
+                foreach (var handler in top.GetComponents<IUIBackHandler>())
+                {
+                    if (handler is not UnityEngine.Object component || !component)
+                        continue;
+                    try
+                    {
+                        if (handler.OnBackRequested(top))
+                            return;
+                    }
+                    catch (Exception exception)
+                    {
+                        // 出錯當成沒有處理，繼續往下判斷：不能因為一個例外讓玩家離不開畫面。
+                        LogNavigationException($"Back '{top.Id}' {nameof(IUIBackHandler.OnBackRequested)}",
+                            "接收者丟出例外，當成沒有處理。", exception);
+                    }
+                }
+                if (!top || top.BlocksBackKey)
+                    return;
+            }
+            if (busy)
+                return;
+
+            if (popups.Count == 0 && history.Count == 0)
+            {
+                UIEventDispatch.Invoke(BackRequestedAtRoot, listener => listener(),
+                    exception => LogReceiverException(nameof(BackRequestedAtRoot), exception));
+                return;
+            }
+            BackFromKey();
+        }
+
+        private async void BackFromKey()
+        {
+            try
+            {
+                await BackAsync();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception, this);
+            }
         }
     }
 }

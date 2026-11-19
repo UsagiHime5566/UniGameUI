@@ -12,7 +12,7 @@ namespace UniGameUI
     }
 
     [RequireComponent(typeof(UIView))]
-    public abstract class UIViewBehaviour : MonoBehaviour, IUIViewHandler, IUILocalizationHandler
+    public abstract class UIViewBehaviour : MonoBehaviour, IUIViewHandler, IUILocalizationHandler, IUIBackHandler
     {
         private UIView view;
 
@@ -30,11 +30,18 @@ namespace UniGameUI
         /// </summary>
         protected virtual void OnLocalizationChanged() { }
 
+        /// <summary>
+        /// 這個畫面在最上層時按下返回鍵會先呼叫這裡。回傳 true 表示已經處理，框架不再返回。
+        /// 呼叫時沒有導航在進行，裡面可以直接導航。
+        /// </summary>
+        protected virtual bool OnBackRequested() => false;
+
         void IUIViewHandler.OnShowing(UIView view, object data) => OnShowing(data);
         void IUIViewHandler.OnShown(UIView view) => OnShown();
         void IUIViewHandler.OnHiding(UIView view) => OnHiding();
         void IUIViewHandler.OnHidden(UIView view) => OnHidden();
         void IUIViewHandler.OnAction(UIView view, string action) => OnAction(action);
         void IUILocalizationHandler.OnLocalizationChanged(UIView view) => OnLocalizationChanged();
+        bool IUIBackHandler.OnBackRequested(UIView view) => OnBackRequested();
     }
 }

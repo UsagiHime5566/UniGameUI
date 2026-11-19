@@ -9,10 +9,13 @@ namespace UniGameUI.Editor
     // 計畫裡 View 層級的選項。和背景、動畫一樣，只在新建 View 或 View 設了 updateExisting 時寫入。
     public static partial class UIPlan
     {
+        private enum BackKeyMode { Back, Ignore }
+
         private static void PreflightViewOptions(ViewSpec view, UIEntryKind kind, UIView existingReview,
             WidgetCatalog catalog)
         {
             PreflightDefaultSelected(view, existingReview, catalog);
+            Parse(view.backKey, BackKeyMode.Back);
         }
 
         private static void PreflightDefaultSelected(ViewSpec view, UIView existingReview, WidgetCatalog catalog)
@@ -51,22 +54,27 @@ namespace UniGameUI.Editor
 
         private static void ApplyViewOptions(UIView view, ViewSpec spec)
         {
-            if (spec.defaultSelected == null)
+            if (spec.defaultSelected == null && string.IsNullOrEmpty(spec.backKey))
                 return;
 
-            Selectable target = null;
-            if (spec.defaultSelected.Length > 0)
-            {
-                var element = FindElement(view, spec.defaultSelected);
-                target = element ? element.GetComponentInChildren<Selectable>(true) : null;
-                if (!target)
-                {
-                    throw new ArgumentException(
-                        $"畫面「{view.Id}」的 defaultSelected 指到的元件「{spec.defaultSelected}」不能被選取。");
-                }
-            }
             Undo.RecordObject(view, "Set UI view options");
-            view.defaultSelected = target;
+            if (spec.defaultSelected != null)
+            {
+                Selectable target = null;
+                if (spec.defaultSelected.Length > 0)
+                {
+                    var element = FindElement(view, spec.defaultSelected);
+                    target = element ? element.GetComponentInChildren<Selectable>(true) : null;
+                    if (!target)
+                    {
+                        throw new ArgumentException(
+                            $"畫面「{view.Id}」的 defaultSelected 指到的元件「{spec.defaultSelected}」不能被選取。");
+                    }
+                }
+                view.defaultSelected = target;
+            }
+            if (!string.IsNullOrEmpty(spec.backKey))
+                view.blocksBackKey = Parse(spec.backKey, BackKeyMode.Back) == BackKeyMode.Ignore;
             UIAuthoring.RecordOverride(view);
         }
     }

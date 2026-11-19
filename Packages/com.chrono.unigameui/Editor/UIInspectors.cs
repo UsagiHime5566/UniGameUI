@@ -33,6 +33,7 @@ namespace UniGameUI.Editor
             inspector.Add(transitionMode);
             inspector.Add(new Button(UIBlueprintWindow.Open) { text = "開啟藍圖" });
             inspector.Add(new Button(() => UIAuthoring.FocusReview(root)) { text = "檢視全部 UI" });
+            inspector.Add(new PropertyField(serializedObject.FindProperty("handlesBackKey"), "取消鍵當成返回"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("actionEmitted"), "送出動作事件"));
             return inspector;
         }
@@ -59,6 +60,7 @@ namespace UniGameUI.Editor
                 inspector.Add(new HelpBox(UIDOTweenSetup.SetupMessage(UIDOTweenSetup.Status),
                     HelpBoxMessageType.Info));
             inspector.Add(new PropertyField(serializedObject.FindProperty("defaultSelected"), "預設選取元件"));
+            inspector.Add(new PropertyField(serializedObject.FindProperty("blocksBackKey"), "不回應返回鍵"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("showing"), "Showing"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("shown"), "Shown"));
             inspector.Add(new PropertyField(serializedObject.FindProperty("hiding"), "Hiding"));

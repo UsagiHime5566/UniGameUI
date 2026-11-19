@@ -40,6 +40,7 @@ namespace UniGameUI.Editor
             public bool updateExisting;
             public string background;
             public string defaultSelected;
+            public string backKey;
             public AnimationSpec enter;
             public AnimationSpec exit;
             public ElementSpec[] elements;

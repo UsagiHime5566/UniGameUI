@@ -770,6 +770,37 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        [Test]
+        public void PlanSetsWhetherAViewAnswersTheBackKey()
+        {
+            RequireDOTween();
+            SceneManager.SetActiveScene(NewScene("Batch3 Back Key"));
+            var root = UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"" }},
+                {{ ""id"": ""loading"", ""backKey"": ""Ignore"" }},
+                {{ ""id"": ""tutorial"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Tutorial.prefab"",
+                   ""backKey"": ""Ignore"" }}
+            ] }}");
+            Assert.That(UIAuthoring.FindEntry(root, "home").Review.BlocksBackKey, Is.False);
+            var loading = UIAuthoring.FindEntry(root, "loading").Review;
+            Assert.That(loading.BlocksBackKey, Is.True);
+            var tutorial = UIAuthoring.FindEntry(root, "tutorial");
+            Assert.That(tutorial.Prefab.BlocksBackKey, Is.True);
+            Assert.That(UIAuthoring.HasReviewOverrides(tutorial), Is.False);
+
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""loading"", ""backKey"": ""Back"" }] }");
+            Assert.That(loading.BlocksBackKey, Is.True, "既有的 View 要有 updateExisting 才會改");
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""loading"", ""updateExisting"": true, ""background"": ""#000000"" }] }");
+            Assert.That(loading.BlocksBackKey, Is.True, "沒寫的選項維持原狀");
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""loading"", ""updateExisting"": true, ""backKey"": ""Back"" }] }");
+            Assert.That(loading.BlocksBackKey, Is.False);
+
+            var invalid = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""home"", ""updateExisting"": true, ""backKey"": ""Never"" }, { ""id"": ""other"" }] }"));
+            Assert.That(invalid.Message, Does.Contain("Never"));
+            Assert.That(UIAuthoring.FindEntry(root, "other"), Is.Null);
+        }
+
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)
         {
             return set.Find(widget).Prefab.GetComponentInChildren<TMP_Text>(true).font;

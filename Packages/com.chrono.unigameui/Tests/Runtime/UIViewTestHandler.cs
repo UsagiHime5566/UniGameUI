@@ -8,6 +8,7 @@ namespace UniGameUI.Tests
         internal static Action<UIViewTestHandler, string, object> Observed;
         internal Action<string> UnityLifecycle;
         internal string LocalizationFailure;
+        internal Func<bool> BackRequested;
         [SerializeField] internal string label;
 
         private void Awake() => UnityLifecycle?.Invoke(nameof(Awake));
@@ -24,6 +25,12 @@ namespace UniGameUI.Tests
             Observed?.Invoke(this, "Localization", null);
             if (LocalizationFailure != null)
                 throw new FormatException(LocalizationFailure);
+        }
+
+        protected override bool OnBackRequested()
+        {
+            Observed?.Invoke(this, "Back", null);
+            return BackRequested != null && BackRequested();
         }
 
         public void ReportFromInspector(string phase) => Observed?.Invoke(this, phase, null);

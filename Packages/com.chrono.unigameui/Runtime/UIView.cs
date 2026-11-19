@@ -18,6 +18,7 @@ namespace UniGameUI
         [SerializeField, HideInInspector] internal RectTransform content;
         [SerializeField, HideInInspector] internal CanvasGroup canvasGroup;
         [SerializeField] internal Selectable defaultSelected;
+        [SerializeField] internal bool blocksBackKey;
         [SerializeField] internal UITransition enter = new UITransition();
         [SerializeField] internal UITransition exit = new UITransition();
         [SerializeField] private UnityEvent showing = new UnityEvent();
@@ -45,6 +46,11 @@ namespace UniGameUI
         /// 進入導覽模式時優先選取的元件。沒有指定時，取階層順序第一個可操作的 Selectable。
         /// </summary>
         public Selectable DefaultSelected => defaultSelected;
+
+        /// <summary>
+        /// 這個畫面在最上層時不回應返回鍵。畫面上的返回按鈕照舊走路由。
+        /// </summary>
+        public bool BlocksBackKey => blocksBackKey;
         public object Data { get; internal set; }
         public UIRoot Root { get; internal set; }
 
