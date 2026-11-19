@@ -5,9 +5,11 @@
 - 第二輪：2026-11-19，commit `0cabfec`（codex 處理第一輪待辦）
 - 第一批改進：2026-11-20，`v0.2.0`
 - 第三輪：2026-11-20，commit `058ac1a`（Claude 審核第一批）
+- 第二批改進：2026-11-20，commit `487f4b6`（0.3.0，尚未打標籤）
+- 第四輪：2026-11-20，commit `487f4b6`（Claude 審核第二批）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一批已通過獨立審核。第二批 0.3.0 與 F1～F6 已實作並通過自動測試，等待審核與互動操作確認。本文件保留各項目的原始說明與待確認項目。
+**現況：** 第一批已通過獨立審核。第二批 0.3.0 已由 Claude 審核：七項規格與 F1～F6 都符合，自動測試結果與 codex 的紀錄一致。審核發現 G1～G5，其中 G1 會讓畫面變成空白，**要先修正並複驗，才打 `v0.3.0` 標籤**。問題說明在下方的「第四輪審核」，處理方式在 `ROADMAP.md` 的「第二批修正」。
 
 原本標示「需使用者決定」的項目已在 2026-11-20 定案，排進 `ROADMAP.md` 的四批工作裡。要做哪一項、怎麼做，以 `ROADMAP.md` 為準；這份文件保留各項目的問題說明。
 
@@ -45,6 +47,82 @@
 | F4 | `Failed` 記兩筆錯誤，原始例外的堆疊點不到 | 已直接記錄原始例外，PlayMode 與 Windows Player 都取得原始方法堆疊 |
 | F5 | 測試跑完留下空資料夾 | 已清理測試建立的空生成目錄與 .meta，已檢查隔離副本 |
 | F6 | 套用計畫後會重新編譯，文件沒有提醒 | AgentGuide 的 JSON 與常數段落已補編譯時機，範本依此流程通過編譯 |
+| G1 | 用 `Replace` 回到歷史最上面那一頁後按返回，畫面變成空白 | 待修正；修正並複驗後才打 `v0.3.0` 標籤 |
+| G2 | 在生命週期方法裡導航，會安靜地被拒絕 | 已定案採用建議（記錄警告、文件寫明標準寫法），待實作 |
+| G3 | 事件派送依賴 Unity 的非公開方法，失效時沒有退路 | 待處理 |
+| G4 | AgentGuide 要補的說明 | 待處理 |
+| G5 | 零碎項目（計畫欄位寫錯位置沒有提示、訊息用字） | 待處理 |
+
+## 第四輪審核：第二批（0.3.0）
+
+七項規格都已實作，逐項對照後與規格相符，沒有發現規格以外的公開 API 變動。F1～F6 全部確認修正。自動測試的數量與結果和 codex 的紀錄完全相同，見「驗證紀錄」。
+
+審核時發現一個會把玩家困住的問題（G1），**建議修正後再打 `v0.3.0` 標籤**。其餘項目比較小，在同一輪一起處理；G2 的做法已由使用者決定。G1、G2、G3 的根源都是 `ROADMAP.md` 第二批規格沒有寫到那個情況，不是實作偏離規格。
+
+### G1. 用 `Replace` 回到歷史最上面那一頁之後按返回，畫面會變成空白
+
+- **嚴重度：** 高。已在 PlayMode（`Sequential` 與 `Concurrent` 兩種模式）和 Windows Player 重現。
+- **位置：** `Runtime/UIRoot.cs` 的 `BackCoreAsync` 與 `ShowPageCoreAsync`。
+- **重現：** 從 `workshop` 用 `Push` 切到 `settings`，再用 `Replace` 切回 `workshop`（例如設定頁的「回主畫面」按鈕），然後按返回。
+- **結果：**
+  - 第二步之後，歷史仍是 `[workshop]`，而目前頁也是 `workshop`。
+  - 返回時，`ChangePageAsync` 把同一個 View 同時當成要隱藏和要顯示的頁面，最後 `FinishHiding` 把它關掉。
+  - `BackAsync` 回傳 `Completed`，`CurrentPageId` 是 `workshop`，但該頁的 GameObject 沒有啟用，畫面上沒有任何東西。
+  - 之後 `ShowPageAsync("workshop")` 回傳 `Unavailable`（已在該頁）。玩家沒有按鈕可按，離不開這個狀態。
+- **建議：**
+  - 切頁成功後，移除歷史尾端與新的目前頁相同的項目。這樣上面的例子在第二步之後歷史是空的，返回會安靜地回傳 `Unavailable`。
+  - `BackCoreAsync` 另外加一道防守：歷史最上面那一頁就是目前頁時，丟掉它再往下找。
+- **驗收：**
+  - PlayMode 測試涵蓋上述步驟，兩種切頁模式都要測。確認 `HistoryCount`、返回的結果，以及目前頁仍然啟用而且可以操作。
+  - 另外測：歷史是 `[A, B]`、目前在 C，用 `Replace` 切到 B 之後，返回會回到 A。
+
+### G2. 在生命週期方法裡導航，會安靜地被拒絕
+
+- **嚴重度：** 中。已在 PlayMode 確認。
+- **現況：** `OnShowing`、`OnShown`、`OnHiding`、`OnHidden`，以及對應的 UnityEvent 和全域事件，都在這次導航還沒結束時被呼叫。這時呼叫 `Root.ShowPageAsync`、`OpenPopupAsync`、`OpenPopupForResultAsync` 或 `View.Close`，會回傳 `Busy`，而 `Busy` 不會記錄任何訊息。
+- **問題：**
+  - 「主選單顯示後立刻跳出每日獎勵」、「啟動畫面顯示後自動進主選單」這類寫法很自然。agent 寫出來之後不會看到任何錯誤，只是沒有反應。
+  - `OpenPopupForResultAsync` 的情況更隱蔽：`GetValueOrDefault()` 會回傳預設值，程式會把它當成使用者選了「否」。
+- **不受影響的情況：** `OnAction`，以及等待 Popup 結果之後的程式。兩者都已實測可以立刻導航。
+- **做法（使用者已在 2026-11-20 決定採用）：**
+  - 維持回傳 `Busy`，但在通知進行中被拒絕時用 `LogWarning` 記錄。訊息包含被拒絕的請求、正在通知的階段與畫面 ID，並提示做法。其他情況的 `Busy`（例如轉場中連點按鈕）維持不記錄。
+  - AgentGuide 寫明標準寫法：在 `OnShown` 裡先等一個影格（`await Awaitable.NextFrameAsync()`）再導航。
+- **沒有採用的做法：** 讓通知期間提出的請求延到這次導航結束後自動執行。寫起來比較順，但框架要多處理請求的先後順序，等實際專案有需要再考慮。完整規則見 `ROADMAP.md` 的「第二批修正」。
+- **驗收：** PlayMode 測試確認警告的內容，以及轉場中的一般 `Busy` 仍然不記錄；AgentGuide 的範例實際編譯並執行過。
+
+### G3. 事件派送依賴 Unity 的非公開方法，失效時沒有退路
+
+- **嚴重度：** 低。目前的 Unity 版本沒有問題。
+- **位置：** `Runtime/UIEventDispatch.cs`。
+- **現況：** 為了讓同一個 UnityEvent 裡的監聽互不影響，用反射呼叫 `UnityEventBase.PrepareInvoke` 與 `BaseInvokableCall.Invoke(object[])`。原因是規格要求「同一階段的接收者，其中一個出錯不影響其他接收者」，而 UnityEvent 的公開 API 做不到這件事。
+- **已驗證：** Editor，以及 Mono 加上 High Managed Stripping 的 Windows Player 都正常，原始例外的堆疊也有保留。
+- **風險：**
+  - 這兩個方法不是公開 API，Unity 改版時可能改名或移除。
+  - IL2CPP 的 Player 沒有驗證過。Claude 的電腦沒有安裝 6000.3.19f1 的 IL2CPP 模組。
+  - 一旦找不到方法，`UIEventDispatch` 的靜態初始化會丟出例外。之後每一次顯示畫面都會回傳 `Failed`，Console 只看得到 `TypeInitializationException`，整個框架無法導航。這一點是從程式碼判讀的，沒有實測。
+- **建議：**
+  - 找不到方法時，退回一般的 `Invoke()` 並用 try/catch 包住，同時警告一次。退回後的差別只有一個：同一個 UnityEvent 裡，出錯的監聽之後的監聽不會被呼叫。
+  - 加一個測試確認反射路徑在目前的 Unity 版本有效。日後升級 Unity 時，這個測試會先失敗，不必等到執行期才發現。
+
+### G4. AgentGuide 要補的說明
+
+以下行為都已實測。agent 寫頁面腳本時容易踩到，請補進「遊戲程式」章節。
+
+- **`Start()` 比第一次 `OnShowing` 晚執行。** 頁面第一次顯示時的順序是 `Awake`、`OnShowing`、`Start`、`OnShown`。初始化要寫在 `Awake`，或直接在 `OnShowing` 裡用 `View.Get<T>()` 取元件，不要寫在 `Start`。
+- **`OnHiding` 之後不一定有 `OnHidden`。** 導航失敗或被取消時，原畫面會還原並繼續顯示。它已經收到 `OnHiding`，之後不會收到 `OnHidden`，也不會再收到一次 `OnShowing`。會改變狀態的收尾工作要寫在 `OnHidden`。
+- **停用的接收者元件仍然會收到通知。** 把元件的 `enabled` 設成 false，不會讓它停止接收生命週期方法。
+- **`ActionTriggered` 表示路由被接受，不代表畫面一定會變。** 例如沒有上一頁時觸發「返回」類的路由，`ActionTriggered` 仍會觸發，接著 `ActionCompleted` 帶著 `Unavailable`。
+- **`ActionCompleted` 的時機。** 關閉 Popup 的路由觸發 `ActionCompleted` 時，等待該 Popup 結果的程式已經先繼續執行，可能已經開始下一次導航。
+
+### G5. 零碎項目
+
+- **JSON 計畫的欄位寫錯位置時沒有提示。**
+  - `history` 寫在 `ShowPage` 以外的路由、`result` 寫在 `ClosePopup` 以外的路由，都會被安靜地忽略；這時連值寫錯也不會報錯。
+  - 位置是 `Editor/UIPlan.cs` 的 `ParseHistory` 與 `Editor/UIAuthoring.cs` 的 `SetRouteOptions`。
+  - 建議在計畫的檢查階段列為錯誤。這一項是從程式碼判讀的，沒有實測。
+- **不影響導航的例外，訊息仍寫「執行失敗」。**
+  - 例如 `ShowPage 'next' Hiding 'home' 執行失敗。`，實際上切頁已經完成。從 Console 判讀的 agent 可能以為導航失敗。
+  - 建議「顯示後」、「隱藏前」、「隱藏後」三個階段改用不同的文字，例如「接收者丟出例外，導航照常完成」。
 
 ## 第三輪審核：第一批（`v0.2.0`）
 
@@ -234,6 +312,33 @@
 - EditMode 驗證藍圖右欄的儲存回呼及 Scene 重新載入皆保留歷史與關閉結果。測試結束後，在套用消費端計畫之前確認生成目錄及其 .meta 已清除。
 - 用 CLI 套用 Workshop 計畫，將 AgentGuide 的 `WorkshopPage` 原文放進獨立 asmdef，引用實際生成的 `UniGameUI.Generated`。Windows 64 位元 Player 使用 Mono 與 High Managed Stripping，建置成功。執行驗證頁面腳本更新文字、Emit 開啟 Popup Prefab、關閉路由回傳 `yes`，以及持久 UnityEvent 的原始例外堆疊和後續監聽。Player 結束碼為 0。
 
+### 第四輪：Claude 對第二批的獨立驗證
+
+以上是 codex 自己的紀錄。Claude 另外在自己的暫存專案重跑，EditMode 啟用圖形裝置，PlayMode 使用批次模式。四組數字與上表完全相同：
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 22 | 0 | 0 |
+| 有 DOTween | PlayMode | 27 | 0 | 1 |
+| 無 DOTween | EditMode | 17 | 0 | 5 |
+| 無 DOTween | PlayMode | 25 | 0 | 3 |
+
+另外確認了以下幾點：
+
+- **F5：** 專案原本沒有 `Assets/UniGameUI` 時，EditMode 測試跑完不會留下這個資料夾。專案已經有產生的常數與 asmdef 時，測試跑完兩者都還在，`WorkshopUI.cs` 的內容沒有變。
+- **套用範例計畫：** 路由的 `history` 與 `result` 正確寫入，Validate 沒有任何問題。產生的常數包含 `Elements.ConfirmView.Confirm`（元件 ID 與畫面 ID 相同），同一個資料夾有 `UniGameUI.Generated.asmdef`。
+- **範本與 asmdef：** 把 AgentGuide 的 `WorkshopPage` 原文放進另一個 asmdef，引用 `UniGameUI.Runtime`、`UniGameUI.Generated`、`Unity.TextMeshPro`，可以編譯。
+- **實際打包（Mono、High Managed Stripping、含 DOTween）：**
+  - 頁面腳本更新了標題文字。
+  - `Emit` 路由開啟確認 Popup，Popup 的腳本用 `GetData<string>()` 顯示訊息。
+  - 帶結果的關閉路由讓呼叫端收到 `yes`；不帶結果的關閉路由沒有觸發確認後的動作。
+- **例外處理：** `Hiding` 的第一個監聽丟例外時，第二個監聽仍被呼叫，切頁照常完成。Player 的 log 裡有原始例外的堆疊，指到丟例外的那一行。
+- **顯示前出錯：** `OnShowing` 丟例外時回傳 `Failed`。原頁面恢復顯示而且可以操作，透明度與互動狀態都有還原；新頁面的資料與歷史都沒有變動。
+- **Popup 結果：** 等待結束時導航鎖已經釋放，接著立刻切頁會成功。
+- G1、G2、G4 所述的行為。
+
+以下 Claude 沒有另外寫測試，以 codex 的自動測試為準，這些測試都在上表裡通過：藍圖視窗的儲存邏輯、Prefab 模式頁面的 `View.Root`、Popup 結果的各種取消途徑。
+
 ### 第一批改進（`v0.2.0`）
 
 使用 Unity 6000.3.19f1 的隔離專案。EditMode 使用可用圖形裝置驗證 Scene View，PlayMode 以批次模式執行。
@@ -303,7 +408,7 @@ Prefab 模式的打包、外部磁碟安裝、互動 Editor 中的匯入，Claud
 
 ## 未驗證
 
-第二批的藍圖儲存邏輯已由測試覆蓋。互動 Editor 待人工確認右欄「返回歷史」選單、「關閉結果」輸入框及拖線操作，以及 Add Component 中的 `UniGameUI/UI Element Id`。IL2CPP Player 未執行。
+第二批的藍圖儲存邏輯已由測試覆蓋。互動 Editor 待人工確認右欄「返回歷史」選單、「關閉結果」輸入框及拖線操作，以及 Add Component 中的 `UniGameUI/UI Element Id`。IL2CPP Player 未執行；Claude 的電腦也沒有安裝 IL2CPP 模組，相關風險見 G3。
 
 第一批仍需在互動 Editor 人工確認以下操作。
 
