@@ -7,6 +7,7 @@ namespace UniGameUI.Tests
     {
         internal static Action<UIViewTestHandler, string, object> Observed;
         internal Action<string> UnityLifecycle;
+        internal string LocalizationFailure;
         [SerializeField] internal string label;
 
         private void Awake() => UnityLifecycle?.Invoke(nameof(Awake));
@@ -17,6 +18,13 @@ namespace UniGameUI.Tests
         protected override void OnHiding() => Observed?.Invoke(this, "Hiding", null);
         protected override void OnHidden() => Observed?.Invoke(this, "Hidden", null);
         protected override void OnAction(string action) => Observed?.Invoke(this, "Action", action);
+
+        protected override void OnLocalizationChanged()
+        {
+            Observed?.Invoke(this, "Localization", null);
+            if (LocalizationFailure != null)
+                throw new FormatException(LocalizationFailure);
+        }
 
         public void ReportFromInspector(string phase) => Observed?.Invoke(this, phase, null);
 

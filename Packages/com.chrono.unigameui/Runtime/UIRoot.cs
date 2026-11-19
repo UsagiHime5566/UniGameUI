@@ -15,7 +15,7 @@ namespace UniGameUI
     [DefaultExecutionOrder(-100)]
     [RequireComponent(typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster))]
     [AddComponentMenu("UniGameUI/UI Root")]
-    public sealed class UIRoot : MonoBehaviour
+    public sealed partial class UIRoot : MonoBehaviour
     {
         [SerializeField] internal UIAuthoringMode mode;
         [SerializeField] internal Vector2 referenceResolution = new Vector2(1920, 1080);
@@ -404,6 +404,12 @@ namespace UniGameUI
         internal void LogNotificationException(string request, Exception exception)
         {
             LogNavigationException(request, "接收者丟出例外，導航照常處理。", exception);
+        }
+
+        // 和導航無關的通知（語言切換、輸入模式等）出錯時使用。
+        private void LogReceiverException(string request, Exception exception)
+        {
+            LogNavigationException(request, "接收者丟出例外，其餘接收者照常執行。", exception);
         }
 
         private void LogNavigationException(string request, string detail, Exception exception)

@@ -300,7 +300,11 @@ namespace UniGameUI.Editor.Tests
             @"{ ""id"": ""bad"", ""kind"": ""ScrollList"", ""value"": 1 }|value",
             @"{ ""id"": ""bad"", ""kind"": ""Button"", ""spacing"": 2 }|spacing",
             @"{ ""id"": ""bad"", ""kind"": ""Toggle"", ""direction"": ""Vertical"" }|direction",
-            @"{ ""id"": ""bad"", ""kind"": ""Panel"", ""numberMode"": ""Whole"" }|numberMode"
+            @"{ ""id"": ""bad"", ""kind"": ""Panel"", ""numberMode"": ""Whole"" }|numberMode",
+            @"{ ""id"": ""bad"", ""kind"": ""Slider"", ""textKey"": ""a.b"" }|textKey",
+            @"{ ""id"": ""bad"", ""kind"": ""Text"", ""spriteKey"": ""a.b"" }|spriteKey",
+            @"{ ""id"": ""bad"", ""kind"": ""Button"", ""optionKeys"": [""a.b""] }|optionKeys",
+            @"{ ""id"": ""bad"", ""kind"": ""Toggle"", ""placeholderKey"": ""a.b"" }|placeholderKey"
         };
 
         [TestCaseSource(nameof(MisplacedElements))]
@@ -625,6 +629,87 @@ namespace UniGameUI.Editor.Tests
                 { ""id"": ""label"", ""text"": ""Outside"" }] }] }");
             Assert.That(UIPlan.FindElement(view, "label").transform.parent, Is.EqualTo(view.Content));
             Assert.That(FunctionalErrors(root), Is.Empty);
+        }
+
+        [Test]
+        public void PlanWritesLocalizationKeysNextToTheDefaultContentAndUpdatesThemPartially()
+        {
+            RequireDOTween();
+            SceneManager.SetActiveScene(NewScene("Batch3 Keys"));
+            var root = UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"", ""elements"": [
+                    {{ ""id"": ""title"", ""text"": ""Start game"", ""textKey"": ""menu.start"" }},
+                    {{ ""id"": ""logo"", ""kind"": ""Image"", ""spriteKey"": ""logo.main"" }},
+                    {{ ""id"": ""frame"", ""kind"": ""Panel"", ""spriteKey"": ""frame.main"" }},
+                    {{ ""id"": ""play"", ""kind"": ""Button"", ""text"": ""Play"", ""textKey"": ""menu.play"" }},
+                    {{ ""id"": ""mute"", ""kind"": ""Toggle"", ""textKey"": ""settings.mute"" }},
+                    {{ ""id"": ""quality"", ""kind"": ""Dropdown"", ""options"": [""Low"", ""High""],
+                       ""optionKeys"": [""quality.low"", ""quality.high""] }},
+                    {{ ""id"": ""name"", ""kind"": ""InputField"", ""placeholder"": ""Name"",
+                       ""placeholderKey"": ""profile.name"" }},
+                    {{ ""id"": ""plain"", ""text"": ""Plain"" }}
+                ] }},
+                {{ ""id"": ""popup"", ""kind"": ""Popup"", ""prefabPath"": ""{folder}/Keys.prefab"", ""elements"": [
+                    {{ ""id"": ""message"", ""text"": ""Saved"", ""textKey"": ""popup.saved"" }}] }}
+            ] }}");
+            var view = UIAuthoring.FindEntry(root, "home").Review;
+            var title = UIPlan.FindElement(view, "title");
+            Assert.That(title.GetComponent<UILocalizedText>().Key, Is.EqualTo("menu.start"));
+            Assert.That(title.GetComponent<TMP_Text>().text, Is.EqualTo("Start game"), "預設內容照常保留");
+            Assert.That(UIPlan.FindElement(view, "logo").GetComponent<UILocalizedImage>().Key, Is.EqualTo("logo.main"));
+            Assert.That(UIPlan.FindElement(view, "frame").GetComponent<UILocalizedImage>().Key,
+                Is.EqualTo("frame.main"));
+            var play = UIPlan.FindElement(view, "play").GetComponentInChildren<TMP_Text>();
+            Assert.That(play.GetComponent<UILocalizedText>().Key, Is.EqualTo("menu.play"));
+            Assert.That(play.text, Is.EqualTo("Play"));
+            var mute = UIPlan.FindElement(view, "mute").GetComponentInChildren<UILocalizedText>();
+            Assert.That(mute.Key, Is.EqualTo("settings.mute"));
+            var quality = UIPlan.FindElement(view, "quality");
+            Assert.That(quality.GetComponent<UILocalizedDropdown>().Keys,
+                Is.EqualTo(new[] { "quality.low", "quality.high" }));
+            Assert.That(quality.GetComponent<TMP_Dropdown>().options.Select(option => option.text),
+                Is.EqualTo(new[] { "Low", "High" }));
+            var input = UIPlan.FindElement(view, "name").GetComponent<TMP_InputField>();
+            Assert.That(input.placeholder.GetComponent<UILocalizedText>().Key, Is.EqualTo("profile.name"));
+            Assert.That(((TMP_Text)input.placeholder).text, Is.EqualTo("Name"));
+            Assert.That(input.textComponent.GetComponent<UILocalizedText>(), Is.Null);
+            Assert.That(UIPlan.FindElement(view, "plain").GetComponent<UILocalizedText>().Key, Is.Null.Or.Empty);
+
+            // 鍵值跟著套用到 Popup 的 Prefab 本體。
+            var popup = UIAuthoring.FindEntry(root, "popup");
+            Assert.That(popup.Prefab.GetComponentInChildren<UILocalizedText>(true).Key, Is.EqualTo("popup.saved"));
+            Assert.That(UIAuthoring.HasReviewOverrides(popup), Is.False);
+
+            // 部分更新：只改鍵值不動文字，只改文字不動鍵值；空字串清除鍵值。
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""elements"": [
+                { ""id"": ""title"", ""updateExisting"": true, ""text"": ""New game"" },
+                { ""id"": ""play"", ""kind"": ""Button"", ""updateExisting"": true, ""textKey"": ""menu.go"" },
+                { ""id"": ""mute"", ""kind"": ""Toggle"", ""updateExisting"": true, ""textKey"": """" },
+                { ""id"": ""quality"", ""kind"": ""Dropdown"", ""updateExisting"": true,
+                  ""optionKeys"": ["""", ""quality.max""] },
+                { ""id"": ""logo"", ""kind"": ""Image"", ""updateExisting"": true, ""color"": ""#FF0000"" }
+            ] }] }");
+            Assert.That(title.GetComponent<TMP_Text>().text, Is.EqualTo("New game"));
+            Assert.That(title.GetComponent<UILocalizedText>().Key, Is.EqualTo("menu.start"));
+            Assert.That(play.GetComponent<UILocalizedText>().Key, Is.EqualTo("menu.go"));
+            Assert.That(play.text, Is.EqualTo("Play"));
+            Assert.That(mute.Key, Is.Empty);
+            Assert.That(quality.GetComponent<UILocalizedDropdown>().Keys, Is.EqualTo(new[] { "", "quality.max" }));
+            Assert.That(quality.GetComponent<TMP_Dropdown>().options.Select(option => option.text),
+                Is.EqualTo(new[] { "Low", "High" }));
+            Assert.That(UIPlan.FindElement(view, "logo").GetComponent<UILocalizedImage>().Key, Is.EqualTo("logo.main"));
+
+            // 鍵值的數量要和選項一樣多，不管選項是這次給的還是原本就有的。
+            var withOptions = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"",
+                ""elements"": [{ ""id"": ""extra"", ""kind"": ""Dropdown"", ""options"": [""A"", ""B""],
+                                 ""optionKeys"": [""only.one""] }] }] }"));
+            Assert.That(withOptions.Message, Does.Contain("extra").And.Contain("optionKeys"));
+            var existingOptions = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [{
+                ""id"": ""home"", ""elements"": [{ ""id"": ""quality"", ""kind"": ""Dropdown"",
+                ""updateExisting"": true, ""optionKeys"": [""a"", ""b"", ""c""] }] }] }"));
+            Assert.That(existingOptions.Message, Does.Contain("quality").And.Contain("optionKeys"));
+            Assert.That(quality.GetComponent<UILocalizedDropdown>().Keys, Is.EqualTo(new[] { "", "quality.max" }));
+            Assert.That(UIPlan.FindElement(view, "extra"), Is.Null);
         }
 
         private static TMP_FontAsset FontOf(UIWidgetSet set, string widget)

@@ -135,6 +135,8 @@ namespace UniGameUI
             Data = data;
             SetInput(false);
             gameObject.SetActive(true);
+            // 多語系在 OnShowing 之前取值，頁面腳本之後仍然可以改寫文字。
+            Root.ApplyLocalization(transform, this);
             Root.NotifyDuringNavigation(request, nameof(Showing), Id, () =>
             {
                 try

@@ -66,7 +66,7 @@ namespace UniGameUI.Editor
         private static GameObject CreateText(Scene scene, UIWidgetSet set)
         {
             var root = Root(scene, "Text", new Vector2(320, 60));
-            Label(root, "Text", 32, Color.white, TextAlignmentOptions.Center, set);
+            Localized(Label(root, "Text", 32, Color.white, TextAlignmentOptions.Center, set));
             return root.gameObject;
         }
 
@@ -74,6 +74,7 @@ namespace UniGameUI.Editor
         {
             var root = Root(scene, "Image", new Vector2(160, 160));
             Graphic(root, null, Color.white, false);
+            root.gameObject.AddComponent<UILocalizedImage>();
             return root.gameObject;
         }
 
@@ -81,6 +82,7 @@ namespace UniGameUI.Editor
         {
             var root = Root(scene, "Panel", new Vector2(480, 320));
             Graphic(root, "Background.psd", Panel, false);
+            root.gameObject.AddComponent<UILocalizedImage>();
             return root.gameObject;
         }
 
@@ -92,7 +94,7 @@ namespace UniGameUI.Editor
 
             var label = Child("Label", root);
             Fill(label, new Vector2(12, 4), new Vector2(-12, -4));
-            Label(label, "Button", 32, Color.white, TextAlignmentOptions.Center, set);
+            Localized(Label(label, "Button", 32, Color.white, TextAlignmentOptions.Center, set));
             return root.gameObject;
         }
 
@@ -113,7 +115,7 @@ namespace UniGameUI.Editor
             var label = Child("Label", root);
             Fill(label, new Vector2(58, 0), Vector2.zero);
             // 點文字也能切換，和 Unity 內建的 Toggle 一致。
-            Label(label, "Toggle", 28, Color.white, TextAlignmentOptions.Left, set).raycastTarget = true;
+            Localized(Label(label, "Toggle", 28, Color.white, TextAlignmentOptions.Left, set)).raycastTarget = true;
 
             var toggle = root.gameObject.AddComponent<Toggle>();
             toggle.targetGraphic = backgroundImage;
@@ -271,6 +273,7 @@ namespace UniGameUI.Editor
             dropdown.options.Add(new TMP_Dropdown.OptionData("Option B"));
             dropdown.options.Add(new TMP_Dropdown.OptionData("Option C"));
             dropdown.RefreshShownValue();
+            root.gameObject.AddComponent<UILocalizedDropdown>();
             template.gameObject.SetActive(false);
             return root.gameObject;
         }
@@ -290,6 +293,7 @@ namespace UniGameUI.Editor
             placeholderColor.a = 0.5f;
             var placeholder = Label(placeholderRect, "Enter text...", 28, placeholderColor,
                 TextAlignmentOptions.Left, set);
+            Localized(placeholder);
             placeholder.fontStyle = FontStyles.Italic;
             placeholder.textWrappingMode = TextWrappingModes.NoWrap;
             placeholder.extraPadding = true;
@@ -357,7 +361,7 @@ namespace UniGameUI.Editor
 
             var label = Child("Label", root);
             Fill(label, new Vector2(16, 4), new Vector2(-16, -4));
-            Label(label, "Item", 28, Color.white, TextAlignmentOptions.Left, set);
+            Localized(Label(label, "Item", 28, Color.white, TextAlignmentOptions.Left, set));
             label.gameObject.AddComponent<UIElementId>().id = "label";
             return root.gameObject;
         }
@@ -383,6 +387,13 @@ namespace UniGameUI.Editor
             UIRoot.Stretch(rect);
             rect.offsetMin = offsetMin;
             rect.offsetMax = offsetMax;
+        }
+
+        // 起始元件先掛好記錄多語系鍵值的元件，鍵值留空；計畫寫了鍵值時只是多一筆欄位覆寫。
+        private static TextMeshProUGUI Localized(TextMeshProUGUI label)
+        {
+            label.gameObject.AddComponent<UILocalizedText>();
+            return label;
         }
 
         private static Image Graphic(RectTransform rect, string sprite, Color color, bool raycastTarget)

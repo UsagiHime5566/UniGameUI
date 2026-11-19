@@ -82,6 +82,8 @@ namespace UniGameUI
                 throw new InvalidOperationException($"清單「{name}」沒有設定 ItemPrefab。");
 
             ApplyDirection();
+            var view = GetComponentInParent<UIView>(true);
+            var root = view && view.Root ? view.Root : GetComponentInParent<UIRoot>(true);
             items.Clear();
             for (var index = 0; index < count; index++)
             {
@@ -96,6 +98,9 @@ namespace UniGameUI
                 }
                 item.SetActive(true);
                 items.Add(item);
+                // 建立或重用項目時取一次多語系的值，之後 bind 仍然可以改寫。
+                if (root)
+                    root.ApplyLocalization(item.transform, view);
             }
             for (var index = count; index < pool.Count; index++)
             {

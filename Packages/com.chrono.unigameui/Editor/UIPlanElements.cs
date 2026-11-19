@@ -28,6 +28,7 @@ namespace UniGameUI.Editor
             public bool updateExisting;
             public RectSpec rect;
             public string text;
+            public string textKey;
             public string action;
             public float fontSize;
             public string fontPath;
@@ -35,13 +36,16 @@ namespace UniGameUI.Editor
             public string textColor;
             public string alignment;
             public string spritePath;
+            public string spriteKey;
             public string state;
             public float min = float.NaN;
             public float max = float.NaN;
             public float value = float.NaN;
             public string numberMode;
             public string[] options;
+            public string[] optionKeys;
             public string placeholder;
+            public string placeholderKey;
             public string direction;
             public float spacing = float.NaN;
             public string itemPrefabPath;
@@ -63,16 +67,18 @@ namespace UniGameUI.Editor
             new Dictionary<UIWidgetKind, string[]>
             {
                 [UIWidgetKind.Custom] = Array.Empty<string>(),
-                [UIWidgetKind.Text] = new[] { "text", "fontSize", "fontPath", "textColor", "color", "alignment" },
-                [UIWidgetKind.Image] = new[] { "color", "spritePath" },
-                [UIWidgetKind.Panel] = new[] { "color", "spritePath" },
+                [UIWidgetKind.Text] = new[]
+                    { "text", "textKey", "fontSize", "fontPath", "textColor", "color", "alignment" },
+                [UIWidgetKind.Image] = new[] { "color", "spritePath", "spriteKey" },
+                [UIWidgetKind.Panel] = new[] { "color", "spritePath", "spriteKey" },
                 [UIWidgetKind.Button] = new[]
-                    { "text", "action", "color", "spritePath", "textColor", "fontSize", "fontPath" },
-                [UIWidgetKind.Toggle] = new[] { "text", "state", "textColor", "fontSize", "fontPath" },
+                    { "text", "textKey", "action", "color", "spritePath", "textColor", "fontSize", "fontPath" },
+                [UIWidgetKind.Toggle] = new[] { "text", "textKey", "state", "textColor", "fontSize", "fontPath" },
                 [UIWidgetKind.Slider] = new[] { "min", "max", "value", "numberMode" },
                 [UIWidgetKind.ProgressBar] = new[] { "value" },
-                [UIWidgetKind.Dropdown] = new[] { "options", "value" },
-                [UIWidgetKind.InputField] = new[] { "text", "placeholder", "fontSize", "fontPath" },
+                [UIWidgetKind.Dropdown] = new[] { "options", "optionKeys", "value" },
+                [UIWidgetKind.InputField] = new[]
+                    { "text", "placeholder", "placeholderKey", "fontSize", "fontPath" },
                 [UIWidgetKind.ScrollList] = new[] { "direction", "spacing", "itemPrefabPath" }
             };
 
@@ -189,6 +195,7 @@ namespace UniGameUI.Editor
         private static IEnumerable<string> ProvidedFields(ElementSpec spec)
         {
             if (spec.text != null) yield return "text";
+            if (spec.textKey != null) yield return "textKey";
             if (spec.action != null) yield return "action";
             if (spec.fontSize != 0) yield return "fontSize";
             if (spec.fontPath != null) yield return "fontPath";
@@ -196,13 +203,16 @@ namespace UniGameUI.Editor
             if (spec.textColor != null) yield return "textColor";
             if (spec.alignment != null) yield return "alignment";
             if (spec.spritePath != null) yield return "spritePath";
+            if (spec.spriteKey != null) yield return "spriteKey";
             if (spec.state != null) yield return "state";
             if (!float.IsNaN(spec.min)) yield return "min";
             if (!float.IsNaN(spec.max)) yield return "max";
             if (!float.IsNaN(spec.value)) yield return "value";
             if (spec.numberMode != null) yield return "numberMode";
             if (spec.options != null) yield return "options";
+            if (spec.optionKeys != null) yield return "optionKeys";
             if (spec.placeholder != null) yield return "placeholder";
+            if (spec.placeholderKey != null) yield return "placeholderKey";
             if (spec.direction != null) yield return "direction";
             if (!float.IsNaN(spec.spacing)) yield return "spacing";
             if (spec.itemPrefabPath != null) yield return "itemPrefabPath";
@@ -243,6 +253,13 @@ namespace UniGameUI.Editor
                 throw new ArgumentException($"{label}的 spacing 不可以是負數。");
             if (spec.options != null && spec.options.Any(option => option == null))
                 throw new ArgumentException($"{label}的 options 不可以包含 null。");
+            if (spec.optionKeys != null && spec.optionKeys.Any(key => key == null))
+                throw new ArgumentException($"{label}的 optionKeys 不可以包含 null，不需要鍵值的選項請寫空字串。");
+            if (spec.options != null && spec.optionKeys != null && spec.options.Length != spec.optionKeys.Length)
+            {
+                throw new ArgumentException($"{label}的 optionKeys 有 {spec.optionKeys.Length} 個，" +
+                    $"要和 options 的 {spec.options.Length} 個一樣多。");
+            }
 
             if (float.IsNaN(spec.value))
                 return;
@@ -293,6 +310,8 @@ namespace UniGameUI.Editor
                 case UIWidgetKind.Image:
                 case UIWidgetKind.Panel:
                     ApplyImage(Require<Image>(gameObject, label, name), spec);
+                    if (spec.spriteKey != null)
+                        SetKey<UILocalizedImage>(Require<Image>(gameObject, label, name), spec.spriteKey);
                     break;
                 case UIWidgetKind.Button:
                     ApplyButton(gameObject, spec, label, name);
@@ -348,14 +367,27 @@ namespace UniGameUI.Editor
 
         private static bool HasLabelFields(ElementSpec spec, string color)
         {
-            return spec.text != null || spec.fontSize > 0 || !string.IsNullOrEmpty(spec.fontPath) ||
-                !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(spec.alignment);
+            return spec.text != null || spec.textKey != null || spec.fontSize > 0 ||
+                !string.IsNullOrEmpty(spec.fontPath) || !string.IsNullOrEmpty(color) ||
+                !string.IsNullOrEmpty(spec.alignment);
+        }
+
+        // 多語系鍵值記在目標元件所在的物件上。起始元件已經掛好空的鍵值元件，自訂元件沒有時補上。
+        private static void SetKey<T>(Component target, string key) where T : UILocalizedElement
+        {
+            var localized = GetOrAdd<T>(target.gameObject);
+            var serialized = new SerializedObject(localized);
+            serialized.FindProperty("key").stringValue = key;
+            serialized.ApplyModifiedProperties();
+            UIAuthoring.RecordOverride(localized, "key");
         }
 
         private static void ApplyLabel(TMP_Text text, ElementSpec spec, string color)
         {
             if (!HasLabelFields(spec, color))
                 return;
+            if (spec.textKey != null)
+                SetKey<UILocalizedText>(text, spec.textKey);
 
             var pinned = new List<string>();
             Undo.RecordObject(text, "Set UI text");
@@ -487,11 +519,25 @@ namespace UniGameUI.Editor
 
         private static void ApplyDropdown(TMP_Dropdown dropdown, ElementSpec spec, string label)
         {
-            if (spec.options == null && float.IsNaN(spec.value))
+            if (spec.options == null && spec.optionKeys == null && float.IsNaN(spec.value))
                 return;
             var count = spec.options?.Length ?? dropdown.options.Count;
             if (!float.IsNaN(spec.value) && spec.value >= count)
                 throw new ArgumentException($"{label}的 value 超出選項的範圍（共 {count} 個）。");
+            if (spec.optionKeys != null)
+            {
+                if (spec.optionKeys.Length != count)
+                {
+                    throw new ArgumentException(
+                        $"{label}的 optionKeys 有 {spec.optionKeys.Length} 個，要和選項的 {count} 個一樣多。");
+                }
+                var localized = GetOrAdd<UILocalizedDropdown>(dropdown.gameObject);
+                Undo.RecordObject(localized, "Set UI dropdown keys");
+                localized.keys = spec.optionKeys.ToArray();
+                UIAuthoring.RecordOverride(localized);
+            }
+            if (spec.options == null && float.IsNaN(spec.value))
+                return;
 
             Undo.RecordObject(dropdown, "Set UI dropdown");
             if (dropdown.captionText)
@@ -514,6 +560,8 @@ namespace UniGameUI.Editor
         private static void ApplyInputField(TMP_InputField field, ElementSpec spec)
         {
             var placeholder = field.placeholder as TMP_Text;
+            if (spec.placeholderKey != null && placeholder)
+                SetKey<UILocalizedText>(placeholder, spec.placeholderKey);
             if (spec.placeholder != null && placeholder)
             {
                 Undo.RecordObject(placeholder, "Set UI input placeholder");
