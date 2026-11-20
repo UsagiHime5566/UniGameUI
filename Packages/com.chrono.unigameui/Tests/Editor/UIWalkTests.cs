@@ -2,12 +2,14 @@ using System;
 using System.Collections;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UniGameUI.Tests;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace UniGameUI.Editor.Tests
@@ -25,6 +27,7 @@ namespace UniGameUI.Editor.Tests
         private const string TmpRecordedKey = "UniGameUI.Editor.Tests.Walk.TmpRecorded";
         private const string OptionsKey = "UniGameUI.Editor.Tests.Walk.PlayModeOptions";
         private const string FinishedKey = "UniGameUI.Editor.Tests.Walk.Finished";
+        private const string ErrorPauseKey = "UniGameUI.Editor.Tests.Walk.ErrorPause";
 
         // 開始走訪。Domain 重新載入時，測試從這個指令的下一行接著執行；不重新載入時等到走訪結束。
         private sealed class StartWalk : IEditModeTestYieldInstruction
@@ -57,6 +60,51 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        // 開始走訪，但在進入 Play Mode 的途中由另一段程式取消（別的工具可能這樣做）。
+        // 沒有進 Play Mode，Domain 也不會重新載入。
+        private sealed class StartWalkAndCancelEntering : IEditModeTestYieldInstruction
+        {
+            private readonly UIWalkOptions options;
+
+            public StartWalkAndCancelEntering(UIWalkOptions options)
+            {
+                this.options = options;
+            }
+
+            public bool ExpectDomainReload => false;
+            public bool ExpectedPlaymodeState => false;
+
+            public IEnumerator Perform()
+            {
+                yield return null;
+                while (EditorApplication.isPlayingOrWillChangePlaymode)
+                    yield return null;
+
+                void Cancel(PlayModeStateChange change)
+                {
+                    if (change == PlayModeStateChange.ExitingEditMode)
+                        EditorApplication.isPlaying = false;
+                }
+
+                EditorApplication.playModeStateChanged += Cancel;
+                try
+                {
+                    UIWalk.Start(options);
+                    var deadline = EditorApplication.timeSinceStartup + 60;
+                    while (UIWalk.IsRunning || EditorApplication.isPlayingOrWillChangePlaymode)
+                    {
+                        if (EditorApplication.timeSinceStartup > deadline)
+                            throw new TimeoutException("被取消的走訪沒有在時間內結束。");
+                        yield return null;
+                    }
+                }
+                finally
+                {
+                    EditorApplication.playModeStateChanged -= Cancel;
+                }
+            }
+        }
+
         // 等走訪結束、Editor 回到 Edit Mode。
         private sealed class WaitForWalk : IEditModeTestYieldInstruction
         {
@@ -75,13 +123,32 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        // Console 的「Error Pause」沒有公開的 API，從 Editor 內部的 ConsoleWindow 設定。
+        private static bool SetErrorPause(bool value)
+        {
+            var method = typeof(EditorWindow).Assembly.GetType("UnityEditor.ConsoleWindow")?.GetMethod(
+                "SetConsoleErrorPause", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            if (method == null)
+                return false;
+            method.Invoke(null, new object[] { value });
+            return true;
+        }
+
         [TearDown]
         public void TearDown()
         {
             LogAssert.ignoreFailingMessages = false;
+            if (SessionState.GetBool(ErrorPauseKey, false))
+            {
+                SessionState.EraseBool(ErrorPauseKey);
+                SetErrorPause(false);
+                EditorApplication.isPaused = false;
+            }
             UIWidgets.FolderOverride = null;
             UIWalk.ResetForTests();
             SessionState.EraseFloat(UIWalk.WarmUpSecondsKey);
+            SessionState.EraseBool(UIWalk.NoExitKey);
+            SessionState.EraseFloat(UIWalk.StartDelaySecondsKey);
             var saved = SessionState.GetString(OptionsKey, "");
             if (saved.Length > 0)
             {
@@ -645,6 +712,181 @@ namespace UniGameUI.Editor.Tests
             var stay = report.Steps[7];
             Assert.That(stay.Result, Is.EqualTo("Unavailable"));
             Assert.That(stay.Reason, Does.Contain("「confirmQuit」只會開在「game」上面"));
+        }
+
+        // K7：還在進入 Play Mode 的途中就被取消，沒有走任何一步，不可以算通過。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator WalkCancelledWhileEnteringPlayModeIsNotRun()
+        {
+            var root = NewWorkspace();
+            Page(root, "home");
+            Page(root, "next");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, "home", "go", UIRouteKind.ShowPage, "next");
+            UIAuthoring.Connect(root, "next", "back", UIRouteKind.Back);
+            AssertNoValidationErrors(root);
+
+            LogAssert.ignoreFailingMessages = true;
+            yield return new StartWalkAndCancelEntering(new UIWalkOptions { ReportPath = ReportFile });
+
+            var report = UIWalk.LastReport;
+            Assert.That(report, Is.Not.Null);
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.NotRun), Describe(report));
+            Assert.That(report.Reason, Does.Contain("Play Mode"));
+            Assert.That(report.Steps, Is.Empty);
+            Assert.That(UIWalk.ExitCodeFor(report), Is.EqualTo(2));
+            Assert.That(EditorApplication.isPlaying, Is.False);
+        }
+
+        // K7：Console 開著「Error Pause」時，步驟裡的 Debug.LogError 會暫停 Play Mode。走訪要繼續走完。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator WalkKeepsGoingWhenTheConsolePausesOnErrors()
+        {
+            var root = NewWorkspace();
+            Page(root, "home");
+            Page(root, "noisy", UIWalkTestPage.Behaviour.LogErrorOnShown);
+            Page(root, "fine");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, "home", "openNoisy", UIRouteKind.ShowPage, "noisy");
+            UIAuthoring.Connect(root, "home", "openFine", UIRouteKind.ShowPage, "fine");
+            AssertNoValidationErrors(root);
+
+            SessionState.SetBool(ErrorPauseKey, true);
+            if (!SetErrorPause(true))
+                Assert.Ignore("這個版本的 Editor 找不到設定 Error Pause 的方法。");
+            SessionState.SetFloat(UIWalk.WarmUpSecondsKey, 5f);
+            LogAssert.ignoreFailingMessages = true;
+            yield return new StartWalk(new UIWalkOptions { StepTimeoutSeconds = 3f, ReportPath = ReportFile });
+            LogAssert.ignoreFailingMessages = true;
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Failed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "home/openNoisy=Failed", "home/openFine=Passed"
+            }), Describe(report));
+            Assert.That(EditorApplication.isPaused, Is.False);
+        }
+
+        // K7：進入 Play Mode 時不重新載入 Scene 的專案。起始頁的顯示與它記的訊息都要接得到。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator WalkWorksWithSceneReloadDisabled()
+        {
+            var root = NewWorkspace();
+            // 起始頁只在一開始顯示一次：沒有任何路由會回到它。
+            Page(root, "home", UIWalkTestPage.Behaviour.LogWarningOnShown);
+            Page(root, "next");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, "home", "go", UIRouteKind.ShowPage, "next");
+            AssertNoValidationErrors(root);
+
+            SessionState.SetString(OptionsKey, (EditorSettings.enterPlayModeOptionsEnabled ? "1" : "0") + "|" +
+                (int)EditorSettings.enterPlayModeOptions);
+            EditorSettings.enterPlayModeOptionsEnabled = true;
+            EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableSceneReload;
+
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            yield return new WaitForWalk();
+
+            AssertStartPageWasSeen(UIWalk.LastReport);
+        }
+
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator WalkWorksWithSceneAndDomainReloadDisabled()
+        {
+            var root = NewWorkspace();
+            Page(root, "home", UIWalkTestPage.Behaviour.LogWarningOnShown);
+            Page(root, "next");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, "home", "go", UIRouteKind.ShowPage, "next");
+            AssertNoValidationErrors(root);
+
+            SessionState.SetString(OptionsKey, (EditorSettings.enterPlayModeOptionsEnabled ? "1" : "0") + "|" +
+                (int)EditorSettings.enterPlayModeOptions);
+            EditorSettings.enterPlayModeOptionsEnabled = true;
+            EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload |
+                EnterPlayModeOptions.DisableSceneReload;
+
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            yield return new WaitForWalk();
+
+            AssertStartPageWasSeen(UIWalk.LastReport);
+        }
+
+        private static void AssertStartPageWasSeen(UIWalkReport report)
+        {
+            Assert.That(report, Is.Not.Null);
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Passed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "home/go=Passed"
+            }), Describe(report));
+            // 起始頁在 OnShown 記的警告算在起始那一步。
+            Assert.That(report.Steps[0].Logs.Select(log => (log.Type, log.Message.Contains("「home」在 OnShown"))),
+                Is.EqualTo(new[] { ("Warning", true) }), Describe(report));
+            Assert.That(report.Views.Where(view => view.Visited).Select(view => view.Id),
+                Is.EquivalentTo(new[] { "home", "next" }), Describe(report));
+        }
+
+        // K7：EnteredEditMode 在還沒進 Play Mode 的階段送達時，結果是 NotRun，不是「通過、0 步」。
+        [Test]
+        public void ReturningToEditModeBeforePlayModeWasEnteredIsNotRun()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("走訪沒有執行"));
+            UIWalk.SimulatePlayModeChangeForTests("Entering", PlayModeStateChange.EnteredEditMode, ReportFile);
+
+            Assert.That(UIWalk.IsRunning, Is.False);
+            var report = UIWalk.LastReport;
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.NotRun));
+            Assert.That(report.Reason, Does.Contain("還沒進入 Play Mode"));
+            Assert.That(report.Steps, Is.Empty);
+            Assert.That(UIWalk.ExitCodeFor(report), Is.EqualTo(2));
+            Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"outcome\": \"NotRun\""));
+        }
+
+        // K7：命令列啟動後、還沒開始之前發生 Domain Reload。排定的走訪要接著開始，Editor 才結束得了。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator CommandLineStartSurvivesADomainReload()
+        {
+            // 一個沒有工作區的 Scene：走訪開啟它之後的結果是 NotRun。這個案例要看的是它有沒有在
+            // Domain 重新載入之後接著開始；真的走訪的部分由其他案例涵蓋。
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            if (!AssetDatabase.IsValidFolder(Folder))
+                AssetDatabase.CreateFolder("Assets", Path.GetFileName(Folder));
+            Assert.That(EditorSceneManager.SaveScene(SceneManager.GetActiveScene(), Folder + "/Empty.unity"), Is.True);
+
+            SessionState.SetBool(UIWalk.NoExitKey, true);
+            // 排定之後至少等這麼久才開始，確保 Domain 是在開始之前重新載入的。
+            SessionState.SetFloat(UIWalk.StartDelaySecondsKey, 12f);
+            LogAssert.ignoreFailingMessages = true;
+            UIWalk.StartFromCommandLine(new[]
+            {
+                "Unity.exe", "-batchmode", "-unigameui-scene", Folder + "/Empty.unity",
+                "-unigameui-report", ReportFile, "-unigameui-timeout", "120"
+            });
+            Assert.That(UIWalk.IsRunning, Is.True, "排定之後就算進行中，而且已經存起來");
+            Assert.That(File.Exists(ReportFile), Is.False);
+
+            EditorUtility.RequestScriptReload();
+            yield return new WaitForDomainReload();
+            LogAssert.ignoreFailingMessages = true;
+
+            // Domain 重新載入之後，區域變數都不在了；排定的走訪要還在。
+            Assert.That(UIWalk.IsRunning, Is.True, "Domain 重新載入之後排定的走訪還在");
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report, Is.Not.Null);
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.NotRun));
+            Assert.That(report.Reason, Does.Contain("沒有 UniGameUI 工作區"));
+            Assert.That(report.ScenePath, Is.EqualTo(Folder + "/Empty.unity"));
+            Assert.That(File.Exists(ReportFile), Is.True);
         }
 
         private static void RecordFinished(UIWalkReport report)

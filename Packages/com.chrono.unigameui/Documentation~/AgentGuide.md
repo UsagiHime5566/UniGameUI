@@ -1028,7 +1028,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 |---|---|
 | 0 | `Passed`。可以有略過的步驟。 |
 | 1 | `Failed`：至少有一步失敗。 |
-| 2 | `NotRun`：Validate 有 Error、Scene 沒有工作區、整體逾時；或參數錯誤、Scene 不存在。 |
+| 2 | `NotRun`：Validate 有 Error、Scene 沒有工作區、整體逾時、還沒進入 Play Mode 就被別的工具取消；或參數錯誤、Scene 不存在。 |
 
 **流程**
 
@@ -1077,7 +1077,8 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 - **不看外觀。** 不檢查畫面長什麼樣子，不截圖。
 - **會執行頁面腳本。** 生命週期方法和實際遊玩時一樣會被呼叫。`Emit` 預設略過，所以 `OnAction` 預設不會被呼叫。
 - 由程式控制、而且沒有任何路由以它為來源的畫面不會被開啟；它列在報告的 `views` 裡，註明沒有走訪。
-- 走訪用的是目前 Scene 在 Editor 裡的內容，不必先存檔。Domain Reload 開啟或關閉的專案都可以用。
+- 走訪用的是目前 Scene 在 Editor 裡的內容，不必先存檔。Enter Play Mode Options 的 Reload Domain 與 Reload Scene 開啟或關閉的專案都可以用。
+- Console 開著 Error Pause 時，步驟裡的 `Debug.LogError` 會暫停 Play Mode。走訪會自動讓它繼續，並在報告的 `notes` 記一筆；那一步照常因為有 Error 而失敗。
 - 和 Validate 的命令列一樣，走訪只載入這一個 Scene。
 
 **報告**

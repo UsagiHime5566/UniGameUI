@@ -46,6 +46,14 @@ namespace UniGameUI.Editor
                 attached = true;
                 root.ViewShown += OnViewShown;
                 Application.logMessageReceived += OnLog;
+                // 接上的時候已經顯示著的畫面也算顯示過。
+                if (root.CurrentPage)
+                    shown.Add(root.CurrentPageId);
+                foreach (var popup in root.Popups)
+                {
+                    if (popup)
+                        shown.Add(popup.Id);
+                }
             }
 
             public void Stop()

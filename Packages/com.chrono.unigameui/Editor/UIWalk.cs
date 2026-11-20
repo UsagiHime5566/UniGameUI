@@ -20,6 +20,8 @@ namespace UniGameUI.Editor
     {
         private const string SessionKey = "UniGameUI.Walk.Session";
         private const string LastReportKey = "UniGameUI.Walk.LastReport";
+        // 命令列啟動後、還沒開始之前。這時也已經存在 SessionState 裡，並且有期限。
+        private const string PhasePending = "Pending";
         private const string PhaseEntering = "Entering";
         private const string PhaseWalking = "Walking";
         private const string PhaseLeaving = "Leaving";
@@ -33,6 +35,9 @@ namespace UniGameUI.Editor
         // 測試用：進入 Play Mode 之後先等幾秒再開始走。Domain 重新載入之後，測試要一點時間才接得上，
         // 會記錯誤的案例要等它準備好。
         internal const string WarmUpSecondsKey = "UniGameUI.Walk.WarmUpSeconds";
+        // 測試用：命令列的走訪結束時不要結束 Editor；命令列排定之後至少等幾秒才開始。
+        internal const string NoExitKey = "UniGameUI.Walk.NoExitForTests";
+        internal const string StartDelaySecondsKey = "UniGameUI.Walk.StartDelaySecondsForTests";
         private const double EnterPlayModeGraceSeconds = 30;
 
         // 走訪從 Edit Mode 開始、在 Play Mode 進行、回到 Edit Mode 才結束，途中 Domain 可能重新載入，
@@ -48,6 +53,8 @@ namespace UniGameUI.Editor
             public string reportPath = "";
             public bool commandLine;
             public bool fromWindow;
+            // 命令列指定的整體時間上限（秒）。排定之後、真正開始時要用。
+            public float timeout;
             public double startedAt;
             public double deadline;
             public UIWalkReport report = new UIWalkReport();
@@ -63,6 +70,7 @@ namespace UniGameUI.Editor
         private static Session session;
         private static Walker walker;
         private static UIWalkReport lastReport;
+        private static int pendingTicks;
 
         static UIWalk()
         {
@@ -191,7 +199,12 @@ namespace UniGameUI.Editor
         /// </summary>
         public static void RunFromCommandLine()
         {
-            var commandLine = Environment.GetCommandLineArgs();
+            StartFromCommandLine(Environment.GetCommandLineArgs());
+        }
+
+        // 解析參數並排定開始。和 RunFromCommandLine 分開，測試才能直接給參數。
+        internal static void StartFromCommandLine(string[] commandLine)
+        {
             // 參數寫錯時仍然盡量把報告寫到指定的位置。
             var starting = new Session
             {
@@ -212,30 +225,61 @@ namespace UniGameUI.Editor
                         $"找不到 Scene「{arguments.ScenePath}」。請使用專案裡的路徑，例如 Assets/Scenes/Main.unity。");
                 }
 
-                var ticks = 0;
-                void StartAfterStartup()
-                {
-                    if (++ticks < CommandLineStartTicks)
-                        return;
-                    EditorApplication.update -= StartAfterStartup;
-                    try
-                    {
-                        EditorSceneManager.OpenScene(arguments.ScenePath, OpenSceneMode.Single);
-                        Start(arguments.Options, true, false, arguments.TimeoutSeconds);
-                    }
-                    catch (Exception exception)
-                    {
-                        Debug.LogException(exception);
-                        NotRun(starting, exception.Message);
-                    }
-                }
-                EditorApplication.update += StartAfterStartup;
+                // 先讓 Editor 跑幾次更新再開始（見 CommandLineStartTicks）。這段時間可能發生 Domain Reload，
+                // 所以「等一下要開始」存在 SessionState 裡，整體的時間上限也從現在開始算：
+                // 不論之後發生什麼，批次模式的 Editor 都會結束。
+                starting.includeEmit = arguments.Options.IncludeEmit;
+                starting.stepTimeout = arguments.Options.StepTimeoutSeconds;
+                starting.timeout = arguments.TimeoutSeconds;
+                starting.startedAt = EditorApplication.timeSinceStartup;
+                starting.deadline = starting.startedAt + arguments.TimeoutSeconds;
+                starting.phase = PhasePending;
+                pendingTicks = 0;
+                session = starting;
+                SaveSession();
             }
             catch (Exception exception)
             {
                 Debug.LogException(exception);
                 NotRun(starting, exception.Message);
             }
+        }
+
+        // 命令列排定的走訪：開啟 Scene 並真正開始。
+        private static void BeginPending()
+        {
+            var pending = session;
+            session = null;
+            SessionState.EraseString(SessionKey);
+            try
+            {
+                EditorSceneManager.OpenScene(pending.scenePath, OpenSceneMode.Single);
+                Start(new UIWalkOptions
+                {
+                    IncludeEmit = pending.includeEmit,
+                    StepTimeoutSeconds = pending.stepTimeout,
+                    ReportPath = string.IsNullOrEmpty(pending.reportPath) ? null : pending.reportPath
+                }, true, false, pending.timeout);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                NotRun(pending, exception.Message);
+            }
+        }
+
+        // 測試用：模擬走訪在某個階段時收到 Play Mode 狀態改變的通知。
+        internal static void SimulatePlayModeChangeForTests(string phase, PlayModeStateChange change, string reportPath)
+        {
+            session = new Session
+            {
+                phase = phase,
+                sceneName = "Test",
+                reportPath = reportPath ?? "",
+                startedAt = EditorApplication.timeSinceStartup,
+                report = NewReport("")
+            };
+            OnPlayModeChanged(change);
         }
 
         /// <summary>
@@ -377,10 +421,28 @@ namespace UniGameUI.Editor
 
         private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            AttachBeforeStart(scene);
+        }
+
+        // 進入 Play Mode 時不重新載入 Scene 的專案（Enter Play Mode Options 關閉 Reload Scene）不會有 sceneLoaded。
+        // 這個時間點一樣在 Awake、OnEnable 之後、Start 之前，所以起始頁的顯示與它記的訊息都接得到。
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void OnAfterSceneLoad()
+        {
+            if (session == null || session.phase != PhaseEntering || walker != null)
+                return;
+            AttachBeforeStart(string.IsNullOrEmpty(session.scenePath)
+                ? SceneManager.GetActiveScene()
+                : SceneManager.GetSceneByPath(session.scenePath));
+        }
+
+        private static void AttachBeforeStart(Scene scene)
+        {
             // 這時 Scene 裡的物件已經 Awake，但還沒 Start。起始頁是工作區在 Start 顯示的，所以要趕在它之前接上。
             if (session == null || session.phase != PhaseEntering || !Application.isPlaying || walker != null)
                 return;
-            if (!string.IsNullOrEmpty(session.scenePath) && scene.path != session.scenePath)
+            if (!scene.IsValid() ||
+                (!string.IsNullOrEmpty(session.scenePath) && scene.path != session.scenePath))
                 return;
             try
             {
@@ -412,6 +474,14 @@ namespace UniGameUI.Editor
                         Interrupt("走訪還沒結束，Play Mode 就被停止了。");
                     break;
                 case PlayModeStateChange.EnteredEditMode:
+                    if (session.phase == PhaseEntering)
+                    {
+                        // 還沒進 Play Mode 就回到 Edit Mode（例如別的工具取消了進入）：一步都沒有走，不可以算通過。
+                        NotRun(session, "還沒進入 Play Mode 就回到 Edit Mode 了，可能是別的工具取消了進入 Play Mode。");
+                        break;
+                    }
+                    if (session.phase == PhaseWalking)
+                        Interrupt("走訪途中 Editor 離開了 Play Mode。");
                     Conclude(session);
                     break;
             }
@@ -484,6 +554,24 @@ namespace UniGameUI.Editor
                     EditorApplication.ExitPlaymode();
                 return;
             }
+            if (session.phase == PhasePending)
+            {
+                var delay = SessionState.GetFloat(StartDelaySecondsKey, 0f);
+                if (++pendingTicks >= CommandLineStartTicks &&
+                    EditorApplication.timeSinceStartup - session.startedAt >= delay)
+                    BeginPending();
+                return;
+            }
+            // 走訪期間 Editor 被暫停（Console 開著 Error Pause 時的 Debug.LogError、頁面腳本呼叫 Debug.Break）：
+            // 讓它繼續，否則會停到整體逾時，結果變成 NotRun 而不是那一步失敗。
+            if (session.phase == PhaseWalking && EditorApplication.isPaused)
+            {
+                EditorApplication.isPaused = false;
+                const string note = "走訪期間 Editor 被暫停過（例如 Console 的 Error Pause），走訪自動讓它繼續。";
+                if (!session.report.notes.Contains(note))
+                    session.report.notes.Add(note);
+                return;
+            }
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
 
@@ -553,7 +641,7 @@ namespace UniGameUI.Editor
             }
             if (finished.fromWindow && !Application.isBatchMode)
                 EditorUtility.DisplayDialog("UniGameUI 走訪", Summary(report), "關閉");
-            if (finished.commandLine)
+            if (finished.commandLine && !SessionState.GetBool(NoExitKey, false))
                 EditorApplication.Exit(ExitCodeFor(report));
         }
 
