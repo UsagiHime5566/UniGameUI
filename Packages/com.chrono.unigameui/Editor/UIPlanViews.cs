@@ -12,6 +12,7 @@ namespace UniGameUI.Editor
         private enum BackKeyMode { Back, Ignore }
         private enum PopupCache { Recreate, Reuse }
         private enum OverlayClick { Ignore, Close }
+        private enum NavigationMode { Routes, Code }
 
         // registered：這個工作區已經登記過這個畫面。登記過的畫面要設 updateExisting 才會寫入選項。
         private static void PreflightViewOptions(ViewSpec view, UIEntryKind kind, UIView existingReview,
@@ -19,6 +20,7 @@ namespace UniGameUI.Editor
         {
             PreflightDefaultSelected(view, existingReview, catalog);
             Parse(view.backKey, BackKeyMode.Back);
+            Parse(view.navigation, NavigationMode.Routes);
             foreach (var (field, value) in new[] { ("popupCache", view.popupCache), ("overlayClick", view.overlayClick) })
             {
                 if (value != null && kind != UIEntryKind.Popup)

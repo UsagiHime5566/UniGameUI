@@ -13,7 +13,9 @@ using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
+using UnityEngine.UIElements;
 using Button = UnityEngine.UI.Button;
+using Image = UnityEngine.UI.Image;
 using Object = UnityEngine.Object;
 using Slider = UnityEngine.UI.Slider;
 
@@ -93,6 +95,159 @@ namespace UniGameUI.Editor.Tests
             Assert.That(rows.Select(row => row.Code), Is.EquivalentTo(UIIssueCode.All));
             foreach (var (code, severity) in rows)
                 Assert.That(severity, Is.EqualTo(UIIssueCode.SeverityOf(code).ToString()), code);
+        }
+
+        [Test]
+        public void PlanMarksViewsAsNavigatedByCodeAndConfirmPopupsCountAutomatically()
+        {
+            RequireDOTween();
+            UseIsolatedWidgets();
+            var root = WorkspaceWithHomePage("Batch4 Navigation");
+            var scene = root.gameObject.scene;
+            var tipPath = $"{folder}/Tip.prefab";
+
+            // 新建的畫面：預設是 Routes。
+            UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""loading"", ""navigation"": ""Code"" }},
+                {{ ""id"": ""menu"" }},
+                {{ ""id"": ""explicit"", ""navigation"": ""Routes"" }},
+                {{ ""id"": ""tip"", ""kind"": ""Popup"", ""prefabPath"": ""{tipPath}"", ""navigation"": ""Code"" }},
+                {{ ""id"": ""confirm"", ""kind"": ""Popup"", ""prefabPath"": ""{UIWidgets.ConfirmPrefabPath}"" }}] }}");
+            Assert.That(Marked("loading"), Is.True);
+            Assert.That(Marked("menu"), Is.False);
+            Assert.That(Marked("explicit"), Is.False);
+            Assert.That(Marked("tip"), Is.True);
+            Assert.That(Marked("home"), Is.False);
+
+            // 根節點掛了 UIConfirmPopup 的畫面自動視為由程式控制，藍圖上不必標記。
+            var confirm = UIAuthoring.FindEntry(root, "confirm");
+            Assert.That(confirm.NavigatedByCode, Is.False);
+            Assert.That(UIAuthoring.IsNavigatedByCode(confirm), Is.True);
+            Assert.That(UIAuthoring.IsNavigatedByCode(UIAuthoring.FindEntry(root, "tip")), Is.True);
+            Assert.That(UIAuthoring.IsNavigatedByCode(UIAuthoring.FindEntry(root, "menu")), Is.False);
+
+            // 設定存在工作區的藍圖裡，不在 View Prefab 裡。
+            Assert.That(UIAuthoring.HasReviewOverrides(UIAuthoring.FindEntry(root, "tip")), Is.False);
+            Assert.That(File.ReadAllText(tipPath), Does.Not.Contain("navigatedByCode"));
+
+            // 既有的畫面沒有設 updateExisting 時不寫入。
+            UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""loading"", ""navigation"": ""Routes"" }, { ""id"": ""menu"", ""navigation"": ""Code"" }] }");
+            Assert.That(Marked("loading"), Is.True);
+            Assert.That(Marked("menu"), Is.False);
+
+            // 部分更新：只改有寫的畫面，沒寫 navigation 的維持原樣。
+            UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""loading"", ""updateExisting"": true, ""navigation"": ""Routes"" },
+                { ""id"": ""menu"", ""updateExisting"": true, ""navigation"": ""Code"" },
+                { ""id"": ""tip"", ""kind"": ""Popup"", ""updateExisting"": true, ""popupCache"": ""Reuse"" }] }");
+            Assert.That(Marked("loading"), Is.False);
+            Assert.That(Marked("menu"), Is.True);
+            Assert.That(Marked("tip"), Is.True);
+
+            // 寫錯值在套用前報錯，沒有留下任何變更。
+            var error = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [
+                { ""id"": ""other"" }, { ""id"": ""menu"", ""updateExisting"": true, ""navigation"": ""Script"" }] }"));
+            Assert.That(error.Message, Does.Contain("Script"));
+            Assert.That(UIAuthoring.FindEntry(root, "other"), Is.Null);
+            Assert.That(Marked("menu"), Is.True);
+
+            // C# 的入口。
+            UIAuthoring.SetNavigatedByCode(root, "home", true);
+            Assert.That(Marked("home"), Is.True);
+            UIAuthoring.SetNavigatedByCode(root, "home", false);
+            Assert.That(Marked("home"), Is.False);
+            Assert.That(Assert.Throws<ArgumentException>(() => UIAuthoring.SetNavigatedByCode(root, "ghost", true))
+                .Message, Does.Contain("ghost"));
+
+            bool Marked(string id) => UIAuthoring.FindEntry(root, id).NavigatedByCode;
+        }
+
+        [Test]
+        public void BlueprintStoresTheNavigatedByCodeSettingInTheWorkspace()
+        {
+            var scene = NewScene("Batch4 Blueprint Navigation");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            UIAuthoring.CreatePopup(root, "tip", "Tip", $"{folder}/Tip.prefab");
+            SceneManager.SetActiveScene(scene);
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                Select("tip");
+                var toggle = window.rootVisualElement.Q<UnityEngine.UIElements.Toggle>("navigated-by-code");
+                Assert.That(toggle, Is.Not.Null);
+                Assert.That(toggle.value, Is.False);
+                Assert.That(toggle.enabledSelf, Is.True);
+
+                // 右欄勾選之後記在工作區，Scene 變成未儲存，可以 Undo。
+                // 測試裡所有操作都在同一個 Undo 群組，先分開，否則會連建立畫面一起還原。
+                Undo.IncrementCurrentGroup();
+                window.SetNavigatedByCode("tip", true);
+                Assert.That(UIAuthoring.FindEntry(root, "tip").NavigatedByCode, Is.True);
+                Assert.That(scene.isDirty, Is.True);
+                Assert.That(window.rootVisualElement.Q<UnityEngine.UIElements.Toggle>("navigated-by-code").value,
+                    Is.True);
+                Undo.PerformUndo();
+                Assert.That(UIAuthoring.FindEntry(root, "tip").NavigatedByCode, Is.False);
+                window.SetNavigatedByCode("tip", true);
+
+                Select("home");
+                Assert.That(window.rootVisualElement.Q<UnityEngine.UIElements.Toggle>("navigated-by-code").value,
+                    Is.False);
+
+                void Select(string id)
+                {
+                    var serialized = new SerializedObject(window);
+                    serialized.FindProperty("selectedId").stringValue = id;
+                    serialized.ApplyModifiedPropertiesWithoutUndo();
+                    window.CreateGUI();
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+            }
+
+            // 存檔後重新開啟，設定還在。
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            var path = scene.path;
+            var mode = SceneManager.sceneCount > 1 ? OpenSceneMode.Additive : OpenSceneMode.Single;
+            if (mode == OpenSceneMode.Additive)
+                Assert.That(EditorSceneManager.CloseScene(scene, true), Is.True);
+            var reopened = EditorSceneManager.OpenScene(path, mode);
+            scenes.Add(reopened);
+            var saved = UIAuthoring.FindWorkspace(reopened);
+            Assert.That(UIAuthoring.FindEntry(saved, "tip").NavigatedByCode, Is.True);
+            Assert.That(UIAuthoring.FindEntry(saved, "home").NavigatedByCode, Is.False);
+        }
+
+        [Test]
+        public void BlueprintShowsConfirmPopupsAsNavigatedByCodeWithoutLettingThemBeUnmarked()
+        {
+            RequireDOTween();
+            UseIsolatedWidgets();
+            var root = WorkspaceWithHomePage("Batch4 Blueprint Confirm");
+            UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""confirm"", ""kind"": ""Popup"",
+                ""prefabPath"": ""{UIWidgets.ConfirmPrefabPath}"" }}] }}");
+
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                var serialized = new SerializedObject(window);
+                serialized.FindProperty("selectedId").stringValue = "confirm";
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                window.CreateGUI();
+                var toggle = window.rootVisualElement.Q<UnityEngine.UIElements.Toggle>("navigated-by-code");
+                Assert.That(toggle.value, Is.True);
+                Assert.That(toggle.enabledSelf, Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+            }
         }
 
         // 每個代碼各一個最小的重現案例，回傳 Validate 的結果。

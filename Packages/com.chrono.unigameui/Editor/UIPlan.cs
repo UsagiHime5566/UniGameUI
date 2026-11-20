@@ -43,6 +43,7 @@ namespace UniGameUI.Editor
             public string backKey;
             public string popupCache;
             public string overlayClick;
+            public string navigation;
             public AnimationSpec enter;
             public AnimationSpec exit;
             public ElementSpec[] elements;
@@ -447,7 +448,15 @@ namespace UniGameUI.Editor
                 ApplyElement(view, element, widgetSet);
             // 預設選取元件可能是這份計畫才建立的，所以 View 的選項放在元件之後。
             if (newView || spec.updateExisting)
+            {
                 ApplyViewOptions(view, spec);
+                // 由程式控制進出是藍圖上的設定，記在工作區，不在 View 上。
+                if (!string.IsNullOrEmpty(spec.navigation))
+                {
+                    UIAuthoring.SetNavigatedByCode(root, spec.id,
+                        Parse(spec.navigation, NavigationMode.Routes) == NavigationMode.Code);
+                }
+            }
             if (newPrefab)
                 UIAuthoring.ApplyReviewOverrides(root, spec.id);
         }

@@ -24,6 +24,7 @@ namespace UniGameUI
         [SerializeField] internal UIView review;
         [SerializeField] internal UIView prefab;
         [SerializeField] internal Vector2 graphPosition;
+        [SerializeField] internal bool navigatedByCode;
 
         public string Id => id;
         public string Title => title;
@@ -31,6 +32,12 @@ namespace UniGameUI
         public UIView Review => review;
         public UIView Prefab => prefab;
         public Vector2 GraphPosition => graphPosition;
+
+        /// <summary>
+        /// 這個畫面在藍圖上標記為「由程式控制進出」，不靠路由開啟或關閉。
+        /// 只影響 Editor 的 Validate 與走訪，執行期的行為不變。
+        /// </summary>
+        public bool NavigatedByCode => navigatedByCode;
     }
 
     [Serializable]

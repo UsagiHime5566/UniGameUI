@@ -249,7 +249,8 @@ namespace UniGameUI.Editor
             RegisterNodeDrag(header, entry);
 
             var details = new Label($"{(entry.Kind == UIEntryKind.Popup ? "Popup" : "頁面")}  ·  {entry.Id}" +
-                (entry.Id == workspace.StartPageId ? "  ·  起始" : ""));
+                (entry.Id == workspace.StartPageId ? "  ·  起始" : "") +
+                (UIAuthoring.IsNavigatedByCode(entry) ? "  ·  程式控制" : ""));
             details.AddToClassList("node-detail");
             card.Add(details);
 
@@ -407,6 +408,19 @@ namespace UniGameUI.Editor
                 sidebar.Add(new Button(() => UIAuthoring.PreviewPopupOnPage(workspace, selected.Id, context.value))
                     { text = "預覽疊加" });
             }
+            // 確認框用 ConfirmAsync 開啟、自己關閉，自動視為由程式控制，不能取消。
+            var isConfirm = UIAuthoring.IsConfirmPopup(selected.Review) || UIAuthoring.IsConfirmPopup(selected.Prefab);
+            var byCode = new Toggle("由程式控制進出")
+            {
+                name = "navigated-by-code",
+                value = UIAuthoring.IsNavigatedByCode(selected),
+                tooltip = isConfirm
+                    ? "確認框由 ConfirmAsync 開啟並自己關閉，自動視為由程式控制。"
+                    : "這個畫面不靠路由開啟或關閉。勾選後 Validate 不檢查它走不走得到、有沒有出口。",
+            };
+            byCode.SetEnabled(!isConfirm);
+            byCode.RegisterValueChangedCallback(evt => SetNavigatedByCode(selected.Id, evt.newValue));
+            sidebar.Add(byCode);
             if (UIAuthoring.HasReviewOverrides(selected))
             {
                 sidebar.Add(new HelpBox("這個預覽有待套用的 Prefab 覆寫。", HelpBoxMessageType.Warning));
@@ -479,6 +493,12 @@ namespace UniGameUI.Editor
                     DrawSidebar();
                 }) { text = "新增另一條路由" });
             }
+        }
+
+        // 右欄「由程式控制進出」勾選時呼叫。
+        internal void SetNavigatedByCode(string id, bool value)
+        {
+            TryEdit(() => UIAuthoring.SetNavigatedByCode(workspace, id, value));
         }
 
         private void SaveRoute(string source, string originalAction, string action, UIRouteKind kind, string target,

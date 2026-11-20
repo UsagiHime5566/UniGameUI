@@ -109,6 +109,34 @@ namespace UniGameUI.Editor
             MarkChanged(root);
         }
 
+        /// <summary>
+        /// 標記畫面由程式控制進出，例如用程式開啟、自己關閉的 Popup。標記之後 Validate 不檢查它走不走得到、
+        /// 有沒有出口，走訪也不要求它能單靠路由開啟。設定存在工作區的藍圖裡，不在 View Prefab 裡。
+        /// </summary>
+        public static void SetNavigatedByCode(UIRoot root, string id, bool value)
+        {
+            CheckRoot(root);
+            var entry = FindEntry(root, id) ?? throw new ArgumentException($"找不到畫面「{id}」。");
+            if (entry.navigatedByCode == value)
+                return;
+            Undo.RecordObject(root, "Set UI view navigation");
+            entry.navigatedByCode = value;
+            MarkChanged(root);
+        }
+
+        // 藍圖上有標記，或根節點掛了 UIConfirmPopup：確認框用 ConfirmAsync 開啟、自己關閉，不必另外標記。
+        internal static bool IsNavigatedByCode(UIEntry entry)
+        {
+            if (entry == null)
+                return false;
+            return entry.NavigatedByCode || IsConfirmPopup(entry.Review) || IsConfirmPopup(entry.Prefab);
+        }
+
+        internal static bool IsConfirmPopup(UIView view)
+        {
+            return view && view.GetComponent<UIConfirmPopup>();
+        }
+
         public static void SetPageTransitionMode(UIRoot root, UIPageTransitionMode mode)
         {
             CheckRoot(root);
