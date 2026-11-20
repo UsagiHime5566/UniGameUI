@@ -297,6 +297,106 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        // 5-2：範圍框。
+        [Test]
+        public void FrameSurroundsEveryNodeAndFollowsThem()
+        {
+            var scene = NewScene("Batch5 Frame");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            UIAuthoring.CreatePage(root, "next", "Next");
+            UIAuthoring.CreatePopup(root, "tip", "Tip", $"{folder}/Tip.prefab");
+            UIAuthoring.PositionNode(root, "home", new Vector2(-120, 40));
+            UIAuthoring.PositionNode(root, "next", new Vector2(400, 300));
+            UIAuthoring.PositionNode(root, "tip", new Vector2(380, -200));
+            UIAuthoring.PositionNode(root, UIRoot.AnySource, new Vector2(900, 60));
+            SceneManager.SetActiveScene(scene);
+
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                window.CreateGUI();
+                var frame = window.rootVisualElement.Q("blueprint-frame");
+                var caption = window.rootVisualElement.Q<Label>("blueprint-frame-caption");
+                Assert.That(frame, Is.Not.Null);
+
+                // 只是標示：不接收滑鼠事件，不擋住底下的操作。
+                Assert.That(frame.pickingMode, Is.EqualTo(PickingMode.Ignore));
+                Assert.That(caption.pickingMode, Is.EqualTo(PickingMode.Ignore));
+
+                // 框住每一個節點（包含「任何畫面」）加上邊距，而且剛好貼著最外圍的節點。
+                AssertFrameFits();
+                Assert.That(window.FrameRect.xMin, Is.EqualTo(-120 - UIBlueprintWindow.FrameMargin).Within(0.01f));
+                Assert.That(window.FrameRect.yMin, Is.EqualTo(-200 - UIBlueprintWindow.FrameMargin).Within(0.01f));
+                Assert.That(window.FrameRect.xMax,
+                    Is.EqualTo(900 + UIBlueprintWindow.NodeWidth + UIBlueprintWindow.FrameMargin).Within(0.01f));
+                Assert.That(caption.text, Is.EqualTo("Batch5 Frame · 2 個頁面 · 1 個 Popup"));
+
+                // 拖曳節點時即時更新，放開之後也一樣。
+                window.SetZoom(0.5f);
+                var grab = window.View.CanvasToWindow(window.NodeRect("next").center);
+                window.BeginNodeDrag("next", grab);
+                window.DragNodeTo(grab + new Vector2(0, 400));
+                Assert.That(window.FrameRect.yMax,
+                    Is.EqualTo(300 + 800 + UIBlueprintWindow.NodeHeight + UIBlueprintWindow.FrameMargin).Within(0.01f));
+                AssertFrameFits();
+                Assert.That(window.EndNodeDrag(), Is.True);
+                AssertFrameFits();
+
+                // 新增畫面。
+                UIAuthoring.CreatePage(root, "extra", "Extra");
+                UIAuthoring.PositionNode(root, "extra", new Vector2(-900, -700));
+                window.CreateGUI();
+                frame = window.rootVisualElement.Q("blueprint-frame");
+                AssertFrameFits();
+                Assert.That(window.FrameRect.xMin, Is.EqualTo(-900 - UIBlueprintWindow.FrameMargin).Within(0.01f));
+                Assert.That(window.rootVisualElement.Q<Label>("blueprint-frame-caption").text,
+                    Is.EqualTo("Batch5 Frame · 3 個頁面 · 1 個 Popup"));
+
+                // 畫面從藍圖移除之後。
+                var serialized = new SerializedObject(root);
+                var entries = serialized.FindProperty("entries");
+                entries.DeleteArrayElementAtIndex(entries.arraySize - 1);
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+                window.CreateGUI();
+                frame = window.rootVisualElement.Q("blueprint-frame");
+                AssertFrameFits();
+                Assert.That(window.FrameRect.xMin, Is.EqualTo(-120 - UIBlueprintWindow.FrameMargin).Within(0.01f));
+                Assert.That(window.rootVisualElement.Q<Label>("blueprint-frame-caption").text,
+                    Is.EqualTo("Batch5 Frame · 2 個頁面 · 1 個 Popup"));
+
+                // 「顯示全部」連範圍框一起放進視窗。
+                window.ShowAllNodes();
+                var shown = window.View.CanvasToWindow(window.FrameRect);
+                Assert.That(shown.xMin >= 0f && shown.yMin >= 0f && shown.xMax <= window.ViewSize.x &&
+                    shown.yMax <= window.ViewSize.y, Is.True, shown.ToString());
+
+                void AssertFrameFits()
+                {
+                    var rect = window.FrameRect;
+                    foreach (var id in root.Entries.Select(entry => entry.Id).Append(UIRoot.AnySource))
+                    {
+                        var node = window.NodeRect(id);
+                        Assert.That(node.xMin - rect.xMin >= UIBlueprintWindow.FrameMargin - 0.01f &&
+                            node.yMin - rect.yMin >= UIBlueprintWindow.FrameMargin - 0.01f &&
+                            rect.xMax - node.xMax >= UIBlueprintWindow.FrameMargin - 0.01f &&
+                            rect.yMax - node.yMax >= UIBlueprintWindow.FrameMargin - 0.01f, Is.True,
+                            $"節點「{id}」{node} 沒有被範圍框 {rect} 包住");
+                    }
+                    // 畫面上的元素和算出來的矩形一致。
+                    Assert.That(frame.style.left.value.value, Is.EqualTo(rect.x).Within(0.01f));
+                    Assert.That(frame.style.top.value.value, Is.EqualTo(rect.y).Within(0.01f));
+                    Assert.That(frame.style.width.value.value, Is.EqualTo(rect.width).Within(0.01f));
+                    Assert.That(frame.style.height.value.value, Is.EqualTo(rect.height).Within(0.01f));
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+                UIBlueprintSession.ForgetView(UIBlueprintSession.SceneKey(scene));
+            }
+        }
+
         private static string ZoomText(UIBlueprintWindow window)
         {
             return window.rootVisualElement.Q<ToolbarButton>("zoom-level").text;

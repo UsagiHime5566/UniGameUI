@@ -32,6 +32,20 @@
     transform-origin: left top;
 }
 
+/* 範圍框本身沒有底色，虛線是用程式畫的。 */
+.blueprint-frame {
+    position: absolute;
+}
+
+.blueprint-frame-caption {
+    position: absolute;
+    left: 0;
+    top: -24px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
 .blueprint-node {
     position: absolute;
     background-color: #343e46;

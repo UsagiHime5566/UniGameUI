@@ -14,8 +14,12 @@ namespace UniGameUI.Editor
     {
         internal const float NodeWidth = 210;
         internal const float NodeHeight = 94;
-        // 「顯示全部」時，節點和畫布邊緣之間留的距離（視窗的像素）。
-        private const float FramePadding = 48;
+        // 「顯示全部」時，範圍框和畫布邊緣之間留的距離（視窗的像素）。
+        private const float FramePadding = 24;
+        // 範圍框和最外圍的節點之間留的距離（畫布的單位）。
+        internal const float FrameMargin = 36;
+        // 範圍框左上角的標示佔的高度（畫布的單位）。
+        private const float FrameCaptionHeight = 26;
         // 背景格線的間距（畫布的單位）。
         private const float GridStep = 24;
         // 滑鼠移動超過這個距離（視窗的像素）才算拖曳，否則是點擊。
@@ -25,6 +29,7 @@ namespace UniGameUI.Editor
         private static readonly Color PopupColor = new Color32(195, 156, 237, 255);
         private static readonly Color GridMinorColor = new Color(1f, 1f, 1f, 0.04f);
         private static readonly Color GridMajorColor = new Color(1f, 1f, 1f, 0.09f);
+        private static readonly Color FrameColor = new Color(1f, 1f, 1f, 0.38f);
         internal const string AnySourceTitle = "任何畫面";
 
         [SerializeField] private UIRoot workspace;
@@ -39,6 +44,8 @@ namespace UniGameUI.Editor
         private VisualElement grid;
         private VisualElement edges;
         private VisualElement content;
+        private VisualElement frame;
+        private Label frameCaption;
         private ToolbarButton zoomButton;
         private TextField actionField;
         private UIBlueprintViewport view = UIBlueprintViewport.Default;
@@ -260,6 +267,15 @@ namespace UniGameUI.Editor
             content.AddToClassList("blueprint-content");
             canvas.Add(content);
 
+            // 範圍框：虛線框住所有節點，左上角標示 Scene 的名稱與數量。它只是標示，不接收滑鼠事件。
+            frame = new VisualElement { name = "blueprint-frame", pickingMode = PickingMode.Ignore };
+            frame.AddToClassList("blueprint-frame");
+            frame.generateVisualContent += DrawFrame;
+            frameCaption = new Label { name = "blueprint-frame-caption", pickingMode = PickingMode.Ignore };
+            frameCaption.AddToClassList("blueprint-frame-caption");
+            frame.Add(frameCaption);
+            content.Add(frame);
+
             foreach (var entry in workspace.Entries)
             {
                 positions.Add(entry.Id, entry.GraphPosition);
@@ -368,6 +384,32 @@ namespace UniGameUI.Editor
             return positions.Count == 0 ? new Rect(0, 0, NodeWidth, NodeHeight) : Rect.MinMaxRect(min.x, min.y, max.x, max.y);
         }
 
+        /// <summary>
+        /// 範圍框在畫布上的矩形：所有節點（包含「任何畫面」）佔的範圍，四周加上 <see cref="FrameMargin"/>。
+        /// </summary>
+        internal Rect FrameRect
+        {
+            get
+            {
+                var bounds = NodeBounds();
+                return new Rect(bounds.x - FrameMargin, bounds.y - FrameMargin,
+                    bounds.width + FrameMargin * 2f, bounds.height + FrameMargin * 2f);
+            }
+        }
+
+        /// <summary>範圍框左上角的標示：Scene 的名稱，以及頁面與 Popup 各有幾個。</summary>
+        internal string FrameCaption
+        {
+            get
+            {
+                var sceneName = workspace.gameObject.scene.name;
+                var pages = workspace.Entries.Count(entry => entry != null && entry.Kind == UIEntryKind.Page);
+                var popups = workspace.Entries.Count(entry => entry != null && entry.Kind == UIEntryKind.Popup);
+                return $"{(string.IsNullOrEmpty(sceneName) ? "尚未儲存的 Scene" : sceneName)} · " +
+                    $"{pages} 個頁面 · {popups} 個 Popup";
+            }
+        }
+
         /// <summary>滾輪縮放：以視窗座標的一點為中心，那一點底下的畫布位置不動。</summary>
         internal void ZoomAt(Vector2 windowPoint, float wheelDelta)
         {
@@ -390,7 +432,10 @@ namespace UniGameUI.Editor
         {
             if (content == null)
                 return;
-            SetView(UIBlueprintViewport.Framing(NodeBounds(), ViewSize, FramePadding));
+            // 連範圍框與它上面的標示一起放進視窗。
+            var bounds = FrameRect;
+            bounds.yMin -= FrameCaptionHeight;
+            SetView(UIBlueprintViewport.Framing(bounds, ViewSize, FramePadding));
         }
 
         private void ResetZoom()
@@ -415,6 +460,7 @@ namespace UniGameUI.Editor
             content.style.scale = new Scale(new Vector2(view.Zoom, view.Zoom));
             grid.MarkDirtyRepaint();
             edges.MarkDirtyRepaint();
+            frame.MarkDirtyRepaint();
             if (zoomButton != null)
                 zoomButton.text = $"{Mathf.RoundToInt(view.Zoom * 100f)}%";
         }
@@ -902,6 +948,39 @@ namespace UniGameUI.Editor
             painter.Stroke();
         }
 
+        // 範圍框的虛線。這一層會跟著縮放，所以線寬與虛線的長度都除以縮放比例，在螢幕上看起來才固定。
+        private void DrawFrame(MeshGenerationContext context)
+        {
+            var size = frame.contentRect.size;
+            if (float.IsNaN(size.x) || float.IsNaN(size.y) || size.x <= 0f || size.y <= 0f)
+                return;
+            var scale = 1f / view.Zoom;
+            var painter = context.painter2D;
+            painter.strokeColor = FrameColor;
+            painter.lineWidth = 1.5f * scale;
+            painter.BeginPath();
+            PaintDashes(painter, Vector2.zero, new Vector2(size.x, 0f), scale);
+            PaintDashes(painter, new Vector2(size.x, 0f), size, scale);
+            PaintDashes(painter, size, new Vector2(0f, size.y), scale);
+            PaintDashes(painter, new Vector2(0f, size.y), Vector2.zero, scale);
+            painter.Stroke();
+        }
+
+        private static void PaintDashes(Painter2D painter, Vector2 from, Vector2 to, float scale)
+        {
+            var length = Vector2.Distance(from, to);
+            if (length <= 0f)
+                return;
+            var direction = (to - from) / length;
+            var dash = 10f * scale;
+            var gap = 7f * scale;
+            for (var offset = 0f; offset < length; offset += dash + gap)
+            {
+                painter.MoveTo(from + direction * offset);
+                painter.LineTo(from + direction * Mathf.Min(offset + dash, length));
+            }
+        }
+
         // 連線畫在不跟著縮放的那一層，所以端點要從畫布座標換成視窗座標。
         private void DrawEdges(MeshGenerationContext context)
         {
@@ -958,6 +1037,15 @@ namespace UniGameUI.Editor
                 label.style.left = (from.x + NodeWidth + to.x) / 2;
                 label.style.top = (from.y + to.y + NodeHeight) / 2 - 16;
             }
+
+            // 範圍框跟著節點：節點移動、新增、刪除之後都重新計算。
+            var frameRect = FrameRect;
+            frame.style.left = frameRect.x;
+            frame.style.top = frameRect.y;
+            frame.style.width = frameRect.width;
+            frame.style.height = frameRect.height;
+            frameCaption.text = FrameCaption;
+            frame.MarkDirtyRepaint();
             edges.MarkDirtyRepaint();
         }
 
