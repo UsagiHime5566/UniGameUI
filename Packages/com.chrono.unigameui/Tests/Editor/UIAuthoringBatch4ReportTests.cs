@@ -152,6 +152,97 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        // K6：什麼都沒檢查到不可以讀成通過；同一個 Scene 給兩次只算一次。
+        [Test]
+        public void CheckScenesDoesNotPassWhenNothingWasCheckedAndCountsEachSceneOnce()
+        {
+            RequireDOTween();
+            var brokenPath = SaveWorkspaceScene("Batch4Fix Report Broken", root => root.startPageId = "ghost");
+            var cleanPath = SaveWorkspaceScene("Batch4Fix Report Clean", null);
+            var plainPath = NewScene("Batch4Fix Report Plain").path;
+            var otherPlainPath = NewScene("Batch4Fix Report Plain 2").path;
+            // 檢查之前只留一個存過檔的 Scene 開著。檢查會重新開啟 Scene，結束時把開著的記下來，案例結束才關得掉。
+            var kept = NewScene("Batch4Fix Report Kept");
+            foreach (var other in Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)
+                         .Where(scene => scene != kept).ToArray())
+                Assert.That(EditorSceneManager.CloseScene(other, true), Is.True);
+            try
+            {
+                CheckNothingAndDuplicates();
+            }
+            finally
+            {
+                for (var index = 0; index < SceneManager.sceneCount; index++)
+                    scenes.Add(SceneManager.GetSceneAt(index));
+            }
+
+            void CheckNothingAndDuplicates()
+            {
+                // 每一個 Scene 都沒有工作區：不算通過，C# 的結果與 JSON 一致，原因寫在 Error。
+                var nothing = UIValidation.CheckScenes(new[] { plainPath, otherPlainPath });
+                Assert.That(nothing.Scenes.Select(scene => scene.HasWorkspace), Is.EqualTo(new[] { false, false }));
+                Assert.That(nothing.ErrorCount, Is.Zero);
+                Assert.That(nothing.Passed, Is.False);
+                Assert.That(nothing.Error, Does.Contain("工作區"));
+                var json = JsonUtility.FromJson<ValidateReportShape>(nothing.ToJson());
+                Assert.That(json.passed, Is.False);
+                Assert.That(json.error, Is.EqualTo(nothing.Error));
+                Assert.That(UIValidation.ExitCodeFor(nothing), Is.EqualTo(2));
+                Assert.That(UIValidation.CheckScenes(new[] { plainPath }, true).Passed, Is.False);
+
+                // 只要有一個 Scene 有工作區就照常判斷。
+                var some = UIValidation.CheckScenes(new[] { plainPath, cleanPath });
+                Assert.That(some.Passed, Is.True);
+                Assert.That(some.Error, Is.Empty);
+                Assert.That(JsonUtility.FromJson<ValidateReportShape>(some.ToJson()).error, Is.Empty);
+                Assert.That(UIValidation.ExitCodeFor(some), Is.EqualTo(0));
+
+                // 同一個 Scene 寫了三次（其中一次用反斜線）：只開一次，問題只算一次。
+                var twice = UIValidation.CheckScenes(new[] { brokenPath, brokenPath.Replace('/', '\\'), brokenPath, cleanPath });
+                Assert.That(twice.Scenes.Select(scene => scene.ScenePath), Is.EqualTo(new[] { brokenPath, cleanPath }));
+                Assert.That(twice.ErrorCount, Is.EqualTo(1));
+                Assert.That(twice.Passed, Is.False);
+                Assert.That(twice.Error, Is.Empty);
+            }
+        }
+
+        // K6：未命名的 Scene 和存過檔的 Scene 一起開著時，檢查完兩個都要回來。
+        [Test]
+        public void CheckScenesPutsBackAnUntitledSceneThatWasOpenWithSavedOnes()
+        {
+            RequireDOTween();
+            var cleanPath = SaveWorkspaceScene("Batch4Fix Report Target", null);
+            var kept = NewScene("Batch4Fix Report Kept With Untitled");
+            var keptPath = kept.path;
+            foreach (var other in Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)
+                         .Where(scene => scene != kept).ToArray())
+                Assert.That(EditorSceneManager.CloseScene(other, true), Is.True);
+            var untitled = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            scenes.Add(untitled);
+            SceneManager.SetActiveScene(untitled);
+            Assert.That(untitled.isDirty, Is.False);
+            Assert.That(LoadedScenes(), Is.EqualTo(new[] { keptPath, "" }));
+
+            try
+            {
+                Assert.That(UIValidation.CheckScenes(new[] { cleanPath }).Passed, Is.True);
+                Assert.That(LoadedScenes(), Is.EqualTo(new[] { keptPath, "" }));
+                Assert.That(SceneManager.GetActiveScene().path, Is.Empty, "原本作用中的是未命名的 Scene");
+
+                // 作用中的是存過檔的那一個時，回來之後也一樣。
+                SceneManager.SetActiveScene(SceneManager.GetSceneByPath(keptPath));
+                Assert.That(UIValidation.CheckScenes(new[] { cleanPath }).Passed, Is.True);
+                Assert.That(LoadedScenes(), Is.EqualTo(new[] { keptPath, "" }));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(keptPath));
+            }
+            finally
+            {
+                // 檢查會重新開啟 Scene，把現在開著的記下來，案例結束時才關得掉。
+                for (var index = 0; index < SceneManager.sceneCount; index++)
+                    scenes.Add(SceneManager.GetSceneAt(index));
+            }
+        }
+
         [Test]
         public void ValidationReportSerializesToTheDocumentedJson()
         {

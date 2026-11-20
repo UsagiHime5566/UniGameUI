@@ -37,12 +37,22 @@ namespace UniGameUI.Editor
         /// <summary>嚴格模式：Warning 也算沒有通過。</summary>
         public bool Strict { get; }
 
+        internal const string NothingChecked = "指定的 Scene 都沒有 UniGameUI 工作區。";
+
         public IReadOnlyList<UIValidationSceneReport> Scenes { get; }
         public int ErrorCount { get; }
         public int WarningCount { get; }
 
-        /// <summary>沒有 Error。嚴格模式下也沒有 Warning。</summary>
-        public bool Passed => ErrorCount == 0 && (!Strict || WarningCount == 0);
+        /// <summary>
+        /// 沒辦法當成檢查過的原因：沒有任何一個 Scene 有 UniGameUI 工作區。正常情況是空字串。
+        /// </summary>
+        public string Error { get; }
+
+        /// <summary>
+        /// 至少檢查到一個工作區，沒有 Error，嚴格模式下也沒有 Warning。
+        /// 什麼都沒檢查到（<see cref="Error"/> 不是空的）時是 false。
+        /// </summary>
+        public bool Passed => Error.Length == 0 && ErrorCount == 0 && (!Strict || WarningCount == 0);
 
         internal UIValidationReport(bool strict, IReadOnlyList<UIValidationSceneReport> scenes)
         {
@@ -51,6 +61,7 @@ namespace UniGameUI.Editor
             var issues = Scenes.SelectMany(scene => scene.Issues).ToArray();
             ErrorCount = issues.Count(issue => issue.Severity == UIIssueSeverity.Error);
             WarningCount = issues.Count(issue => issue.Severity == UIIssueSeverity.Warning);
+            Error = Scenes.Any(scene => scene.HasWorkspace) ? "" : NothingChecked;
         }
 
         public string ToJson()
@@ -58,18 +69,19 @@ namespace UniGameUI.Editor
             return ToJson(null);
         }
 
-        // error：沒辦法執行時的原因，正常情況是空字串。
+        // error：沒辦法執行時的原因（例如參數錯誤）。沒有給的時候用報告自己的 Error。
         internal string ToJson(string error)
         {
+            var reason = string.IsNullOrEmpty(error) ? Error : error;
             return JsonUtility.ToJson(new ReportJson
             {
                 tool = ToolName,
                 version = UIValidation.PackageVersion,
                 strict = Strict,
-                passed = string.IsNullOrEmpty(error) && Passed,
+                passed = reason.Length == 0 && Passed,
                 errorCount = ErrorCount,
                 warningCount = WarningCount,
-                error = error ?? "",
+                error = reason,
                 scenes = Scenes.Select(scene => new SceneJson
                 {
                     scenePath = scene.ScenePath,
@@ -150,7 +162,8 @@ namespace UniGameUI.Editor
 
         /// <summary>
         /// 依序開啟並檢查多個 Scene，結束後回到原本開著的 Scene。<paramref name="scenePaths"/> 是 null 或空的時候，
-        /// 檢查 Build Settings 裡啟用的所有 Scene。沒有工作區的 Scene 會略過並記在報告裡。
+        /// 檢查 Build Settings 裡啟用的所有 Scene。沒有工作區的 Scene 會略過並記在報告裡；
+        /// 每一個 Scene 都沒有工作區時，結果的 Passed 是 false、Error 是原因。同一個 Scene 寫了兩次只檢查一次。
         /// 目前開著的 Scene 有未儲存的修改時丟出例外，不會自動存檔。這個方法不會結束 Editor。
         /// </summary>
         public static UIValidationReport CheckScenes(IEnumerable<string> scenePaths = null, bool strict = false)
@@ -166,11 +179,20 @@ namespace UniGameUI.Editor
             }
             if (paths.Length == 0)
                 throw new ArgumentException("沒有指定要檢查的 Scene，Build Settings 裡也沒有啟用的 Scene。");
-            foreach (var path in paths)
+
+            // 同一個 Scene 寫了兩次（包含斜線的寫法不同）只檢查一次，否則問題的數量會重複計算。
+            var unique = new List<string>();
+            var seen = new HashSet<string>();
+            foreach (var given in paths)
             {
-                if (string.IsNullOrEmpty(path) || !AssetDatabase.LoadAssetAtPath<SceneAsset>(path))
-                    throw new FileNotFoundException($"找不到 Scene「{path}」。請使用專案裡的路徑，例如 Assets/Scenes/Main.unity。", path);
+                var path = (given ?? "").Replace('\\', '/');
+                if (path.Length == 0 || !AssetDatabase.LoadAssetAtPath<SceneAsset>(path))
+                    throw new FileNotFoundException($"找不到 Scene「{given}」。請使用專案裡的路徑，例如 Assets/Scenes/Main.unity。", given);
+                var guid = AssetDatabase.AssetPathToGUID(path);
+                if (seen.Add(string.IsNullOrEmpty(guid) ? path : guid))
+                    unique.Add(path);
             }
+            paths = unique.ToArray();
 
             var restore = RememberOpenScenes();
             var reports = new List<UIValidationSceneReport>();
@@ -198,6 +220,8 @@ namespace UniGameUI.Editor
             var saved = new List<SceneSetup>();
             var active = SceneManager.GetActiveScene();
             var untitledSetup = NewSceneSetup.EmptyScene;
+            var hadUntitled = false;
+            var untitledWasActive = false;
             for (var index = 0; index < SceneManager.sceneCount; index++)
             {
                 var scene = SceneManager.GetSceneAt(index);
@@ -210,6 +234,8 @@ namespace UniGameUI.Editor
                 if (string.IsNullOrEmpty(scene.path))
                 {
                     // 沒存過、也沒改過的 Scene 沒有內容可以留，事後換回一個新的。
+                    hadUntitled = true;
+                    untitledWasActive |= scene == active;
                     if (scene.rootCount > 0)
                         untitledSetup = NewSceneSetup.DefaultGameObjects;
                     continue;
@@ -233,6 +259,13 @@ namespace UniGameUI.Editor
                     saved.First(setup => setup.isLoaded).isActive = true;
                 }
                 EditorSceneManager.RestoreSceneManagerSetup(saved.ToArray());
+                if (!hadUntitled)
+                    return;
+                // 未命名的 Scene 和存過檔的 Scene 一起開著：存過檔的開回來之後，再補回一個新的未命名 Scene。
+                // 新建立的 Scene 會變成作用中的 Scene，所以原本作用中的是哪一個要另外設回去。
+                var restoredActive = SceneManager.GetActiveScene();
+                var untitled = EditorSceneManager.NewScene(untitledSetup, NewSceneMode.Additive);
+                SceneManager.SetActiveScene(untitledWasActive ? untitled : restoredActive);
             };
         }
 
@@ -252,11 +285,10 @@ namespace UniGameUI.Editor
                 reportPath = arguments.ReportPath ?? DefaultReportPath;
                 var report = CheckScenes(arguments.Scenes, arguments.Strict);
                 code = ExitCodeFor(report);
-                var error = code == 2 ? "指定的 Scene 都沒有 UniGameUI 工作區。" : null;
-                WriteReport(reportPath, report.ToJson(error));
+                WriteReport(reportPath, report.ToJson());
                 Debug.Log(Summary(report, reportPath));
-                if (error != null)
-                    Debug.LogError("UniGameUI Validate 沒辦法執行：" + error);
+                if (report.Error.Length > 0)
+                    Debug.LogError("UniGameUI Validate 沒辦法執行：" + report.Error);
             }
             catch (Exception exception)
             {
@@ -271,7 +303,7 @@ namespace UniGameUI.Editor
         // 0：沒有 Error（嚴格模式下也沒有 Warning）。1：有。2：沒有任何 Scene 有工作區。
         internal static int ExitCodeFor(UIValidationReport report)
         {
-            if (report == null || !report.Scenes.Any(scene => scene.HasWorkspace))
+            if (report == null || report.Error.Length > 0)
                 return 2;
             return report.Passed ? 0 : 1;
         }

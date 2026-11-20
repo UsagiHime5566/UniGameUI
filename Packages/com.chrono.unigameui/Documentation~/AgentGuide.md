@@ -991,7 +991,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 ```
 
 - `error` 平常是空字串。結束代碼是 2 時，它是沒辦法執行的原因；這時報告仍然會寫出來，參數寫錯也一樣。
-- C# 入口是 `UIValidation.CheckScenes(scenePaths, strict)`，回傳 `UIValidationReport`（`Passed`、`ErrorCount`、`WarningCount`、`Scenes`、`ToJson()`），不會結束 Editor。它依序開啟各個 Scene，結束後回到原本開著的 Scene；目前開著的 Scene 有未儲存的修改時丟出例外，不會自動存檔。只檢查目前的工作區時用 `UIValidation.Check(root)`。
+- C# 入口是 `UIValidation.CheckScenes(scenePaths, strict)`，回傳 `UIValidationReport`（`Passed`、`ErrorCount`、`WarningCount`、`Error`、`Scenes`、`ToJson()`），不會結束 Editor。**每一個 Scene 都沒有工作區時，等於什麼都沒檢查：`Passed` 是 false，`Error` 是原因**，JSON 的 `passed` 與 `error` 也一樣，對應命令列的結束代碼 2。同一個 Scene 寫了兩次只檢查一次。它依序開啟各個 Scene，結束後回到原本開著的 Scene；目前開著的 Scene 有未儲存的修改時丟出例外，不會自動存檔。只檢查目前的工作區時用 `UIValidation.Check(root)`。
 - 命令列與 `CheckScenes` 是把每個 Scene **單獨開啟**來檢查的。EventSystem 放在另一個共用 Scene 的專案，單獨檢查會回報 `input.event-system-missing`；這種專案請在同時開著這些 Scene 的 Editor 裡用 `UIValidation.Check(root)`。
 - 命令列與 `CheckScenes` 只檢查，不會產生或更新 ID 常數。常數過期時回報 `constants.outdated`。
 - 藍圖視窗的 **Validate** 檢查目前的工作區，並先更新 ID 常數。對話框顯示 Error 與 Warning 各幾筆；每一筆問題連同代碼記到 Console，點擊可以定位到相關的畫面物件。
