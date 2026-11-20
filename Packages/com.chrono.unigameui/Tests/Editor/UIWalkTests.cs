@@ -588,6 +588,65 @@ namespace UniGameUI.Editor.Tests
             Assert.That(report.Steps[1].Logs.Select(log => log.Note), Is.All.Contains("被放棄的候選頁面「result」"));
         }
 
+        // K3：Popup 的 ShowPage 路由指回唯一會開啟它的頁面。實際遊玩時這條路由不會有反應，要如實失敗。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator PopupRoutesAreWalkedOnThePageThatOpensThePopup()
+        {
+            var root = NewWorkspace();
+            Page(root, "title");
+            Page(root, "game");
+            Popup(root, "pause");
+            // 兩個頁面都開得到的 Popup。
+            Popup(root, "menu");
+            // 由另一個 Popup 開啟的 Popup：它底下的頁面就是那個 Popup 底下的頁面。
+            Popup(root, "confirmQuit");
+            // 由程式開啟的 Popup：可能開在任何頁面上。
+            Popup(root, "notice");
+            UIAuthoring.SetNavigatedByCode(root, "notice", true);
+            UIAuthoring.SetStartPage(root, "title");
+            UIAuthoring.Connect(root, "title", "play", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "game", "pause", UIRouteKind.OpenPopup, "pause");
+            UIAuthoring.Connect(root, "pause", "resume", UIRouteKind.ClosePopup);
+            UIAuthoring.Connect(root, "pause", "restart", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "pause", "quit", UIRouteKind.ShowPage, "title", UIHistoryMode.Clear);
+            UIAuthoring.Connect(root, "pause", "askQuit", UIRouteKind.OpenPopup, "confirmQuit");
+            UIAuthoring.Connect(root, "confirmQuit", "stay", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "confirmQuit", "leave", UIRouteKind.ShowPage, "title");
+            UIAuthoring.Connect(root, "title", "menu", UIRouteKind.OpenPopup, "menu");
+            UIAuthoring.Connect(root, "game", "menu", UIRouteKind.OpenPopup, "menu");
+            UIAuthoring.Connect(root, "menu", "toGame", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "menu", "close", UIRouteKind.ClosePopup);
+            UIAuthoring.Connect(root, "notice", "toTitle", UIRouteKind.ShowPage, "title");
+            AssertNoValidationErrors(root);
+
+            SessionState.SetFloat(UIWalk.WarmUpSecondsKey, 5f);
+            LogAssert.ignoreFailingMessages = true;
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            LogAssert.ignoreFailingMessages = true;
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Failed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "title/play=Passed", "game/pause=Passed", "pause/resume=Passed", "pause/restart=Failed",
+                "pause/quit=Passed", "pause/askQuit=Passed", "confirmQuit/stay=Failed", "confirmQuit/leave=Passed",
+                "title/menu=Passed", "game/menu=Passed", "menu/toGame=Passed", "menu/close=Passed",
+                "notice/toTitle=Passed"
+            }), Describe(report));
+
+            // pause 只會開在 game 上面，restart 要切到 game：如實失敗，原因說明這件事。
+            var restart = report.Steps[4];
+            Assert.That(restart.Result, Is.EqualTo("Unavailable"));
+            Assert.That(restart.Reason, Does.Contain("「pause」只會開在「game」上面").And.Contain("OpenPopup")
+                .And.Contain("不會有反應"));
+            // 由 pause 開啟的 confirmQuit 也一樣只會出現在 game 上面。
+            var stay = report.Steps[7];
+            Assert.That(stay.Result, Is.EqualTo("Unavailable"));
+            Assert.That(stay.Reason, Does.Contain("「confirmQuit」只會開在「game」上面"));
+        }
+
         private static void RecordFinished(UIWalkReport report)
         {
             SessionState.SetBool(FinishedKey, !EditorApplication.isPlaying && !UIWalk.IsRunning &&

@@ -286,6 +286,13 @@ namespace UniGameUI.Editor
                     step.result = result.ToString();
                     var verdict = Judge(route, source, prepared.Previous, result) ??
                         await JudgeClearedHistory(route, clock);
+                    if (verdict != null && prepared.OnlyOpensOn != null && result == UINavResult.Unavailable)
+                    {
+                        // 準備時沒有為了讓這一步通過而把 Popup 開在別的頁面上：實際遊玩時它就是開在這裡。
+                        verdict = $"Popup「{step.source}」只會開在「{prepared.OnlyOpensOn}」上面" +
+                            $"（沿著 OpenPopup 路由只有這一頁開得到它），而這條路由要切到「{prepared.OnlyOpensOn}」。" +
+                            "那時已經在這一頁，導航結果是 Unavailable，實際遊玩時這個動作不會有反應。";
+                    }
                     await Settle(clock);
 
                     var targetByCode = UIRoute.TargetsEntry(route.Kind) && !string.IsNullOrEmpty(route.Target) &&
@@ -400,17 +407,23 @@ namespace UniGameUI.Editor
                 public readonly bool Busy;
                 public readonly string Previous;
                 public readonly string Reason;
+                // 來源的 Popup 只會開在這一頁上面，而這一步的路由正好要切到這一頁。平常是 null。
+                public readonly string OnlyOpensOn;
 
-                private Prepared(bool ok, bool skip, bool busy, string previous, string reason)
+                private Prepared(bool ok, bool skip, bool busy, string previous, string reason,
+                    string onlyOpensOn = null)
                 {
                     Ok = ok;
                     Skip = skip;
                     Busy = busy;
                     Previous = previous;
                     Reason = reason ?? "";
+                    OnlyOpensOn = onlyOpensOn;
                 }
 
-                public static Prepared Ready(string previous) => new Prepared(true, false, false, previous, "");
+                public static Prepared Ready(string previous, string onlyOpensOn = null) =>
+                    new Prepared(true, false, false, previous, "", onlyOpensOn);
+
                 public static Prepared Failed(string reason) => new Prepared(false, false, false, null, reason);
                 public static Prepared Skipped(string reason) => new Prepared(false, true, false, null, reason);
                 public static Prepared Interrupted() => new Prepared(false, false, true, null, "");
@@ -530,8 +543,9 @@ namespace UniGameUI.Editor
                 }
 
                 // 來源是 Popup：先顯示一個頁面，再開啟這個 Popup。
-                // 頁面優先選有 OpenPopup 路由指到它的，沒有就用起始頁。
-                foreach (var candidate in PagesUnder(source, route))
+                // 頁面選有 OpenPopup 路由指到它的，沒有就用起始頁。
+                var under = PagesUnder(source, route);
+                foreach (var candidate in under.Pages)
                 {
                     var attempt = logs.Mark();
                     var shownCandidate = await Show(candidate, UIHistoryMode.Clear, clock);
@@ -550,7 +564,8 @@ namespace UniGameUI.Editor
                     return Prepared.Failed($"開啟 Popup「{source.Id}」的結果是 {opened}。");
                 if (root.CurrentPopupId != source.Id)
                     return Prepared.Failed($"開啟之後最上層的畫面不是「{source.Id}」。");
-                return Prepared.Ready(root.CurrentPageId);
+                return Prepared.Ready(root.CurrentPageId,
+                    under.OnlyOpensOn != null && root.CurrentPageId == under.OnlyOpensOn ? under.OnlyOpensOn : null);
             }
 
             // 已經在那一頁時不必再切；工作區對「切到目前頁」回傳 Unavailable。
@@ -594,19 +609,65 @@ namespace UniGameUI.Editor
                     needed);
             }
 
-            private string[] PagesUnder(UIEntry popup, UIRoute route)
+            // 來源是 Popup 時，底下要先顯示的頁面。照實際遊玩時它會開在哪裡來選：
+            // 有 OpenPopup 路由通到它的頁面（經由別的 Popup 開啟的也算）。有好幾個時，ShowPage 的路由先用目標以外的那些。
+            // 這個 Popup 只會開在目標頁上面時，就照實開在那一頁：這條路由實際上不會有反應，這一步要如實失敗。
+            // 沒有任何頁面的路由會開啟它（由程式或訊號開啟）時，它可能開在任何頁面上：用起始頁，
+            // 起始頁剛好是目標時才改用其他頁面。
+            private (string[] Pages, string OnlyOpensOn) PagesUnder(UIEntry popup, UIRoute route)
             {
-                var candidates = routes
-                    .Where(candidate => candidate.Kind == UIRouteKind.OpenPopup && candidate.Target == popup.Id)
-                    .Select(candidate => candidate.Source)
-                    .Append(root.StartPageId)
-                    .Concat(pages.Select(page => page.Id))
+                var target = route.Kind == UIRouteKind.ShowPage ? route.Target : null;
+                var openers = PagesThatOpen(popup.Id, out var opensAnywhere);
+                if (openers.Length > 0 && !opensAnywhere)
+                {
+                    var others = openers.Where(id => id != target).ToArray();
+                    return others.Length > 0 ? (PreferRouted(others, true), null) : (openers, target);
+                }
+
+                var anywhere = openers.Append(root.StartPageId).Concat(pages.Select(page => page.Id))
                     .Where(id => !string.IsNullOrEmpty(id) && entries.TryGetValue(id, out var entry) &&
                         entry.Kind == UIEntryKind.Page).Distinct().ToArray();
-                // 這一步如果是從 Popup 切到某一頁，底下先不要放那一頁，否則切頁會因為「已經在那一頁」而無法執行。
-                var avoid = route.Kind == UIRouteKind.ShowPage ? route.Target : null;
-                return PreferRouted(candidates.Where(id => id != avoid).ToArray(), true)
-                    .Concat(candidates.Where(id => id == avoid)).ToArray();
+                return (PreferRouted(anywhere.Where(id => id != target).ToArray(), true)
+                    .Concat(anywhere.Where(id => id == target)).ToArray(), null);
+            }
+
+            // 沿著 OpenPopup 路由往回找：哪些頁面開得到這個 Popup。由別的 Popup 開啟時，算在那個 Popup 底下的頁面。
+            // opensAnywhere：它也會由訊號或程式開啟，可能出現在任何頁面上。
+            private string[] PagesThatOpen(string popupId, out bool opensAnywhere)
+            {
+                opensAnywhere = false;
+                var found = new List<string>();
+                var seen = new HashSet<string> { popupId };
+                var pending = new Queue<string>();
+                pending.Enqueue(popupId);
+                while (pending.Count > 0)
+                {
+                    var current = pending.Dequeue();
+                    if (byCode.Contains(current))
+                        opensAnywhere = true;
+                    foreach (var opener in routes)
+                    {
+                        if (opener.Kind != UIRouteKind.OpenPopup || opener.Target != current)
+                            continue;
+                        if (opener.IsSignal)
+                        {
+                            opensAnywhere = true;
+                            continue;
+                        }
+                        if (!entries.TryGetValue(opener.Source ?? "", out var from))
+                            continue;
+                        if (from.Kind == UIEntryKind.Page)
+                        {
+                            if (!found.Contains(from.Id))
+                                found.Add(from.Id);
+                        }
+                        else if (seen.Add(from.Id))
+                        {
+                            pending.Enqueue(from.Id);
+                        }
+                    }
+                }
+                return found.ToArray();
             }
 
             // 等到連續幾個影格沒有導航在進行。頁面腳本可能在 OnShown 之後接著導航，這不算失敗。
