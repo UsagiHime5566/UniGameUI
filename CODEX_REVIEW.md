@@ -14,9 +14,10 @@
 - 第三批修正：2026-11-20，commit `b29b305`（Claude 子 session 修正 J1～J8）
 - 第七輪：2026-11-20，commit `ea61890`（Claude 複驗第三批修正，通過）
 - 第四批改進：2026-11-20，commit `d0e395f`（0.5.0，Claude 子 session 實作，尚未打標籤）
+- 第四批追加 4-7：2026-11-20，commit `b8cc23a`（訊號與「任何畫面」節點，版本維持 0.5.0，Claude 子 session 實作）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 三批都已通過獨立審核。第二批的 G1～G5、第三批的 J1～J8 都已修正並由 Claude 複驗通過，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第三批的複驗結果見「第七輪審核」，剩下的互動操作見「未驗證」。第六輪「與規格不同的地方」第 7 點（複製確認框換畫面 ID 的工具），使用者在 2026-11-20 決定不加。第四批（0.5.0，驗收工具）的六項已由實作者完成，紀錄見驗證紀錄的「第四批改進（0.5.0）」，**等 Claude 審核；審核通過之前不要打 `v0.5.0` 標籤**。
+**現況：** 三批都已通過獨立審核。第二批的 G1～G5、第三批的 J1～J8 都已修正並由 Claude 複驗通過，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第三批的複驗結果見「第七輪審核」，剩下的互動操作見「未驗證」。第六輪「與規格不同的地方」第 7 點（複製確認框換畫面 ID 的工具），使用者在 2026-11-20 決定不加。第四批（0.5.0，驗收工具）的七項已由實作者完成，其中 4-7（訊號與「任何畫面」節點）是 2026-11-20 追加的。紀錄見驗證紀錄的「第四批改進（0.5.0）」與「第四批追加：4-7 訊號與「任何畫面」節點（0.5.0）」，**等 Claude 審核；審核通過之前不要打 `v0.5.0` 標籤**。
 
 **分工：** 2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，這份文件裡提到 codex 的地方是當時的紀錄。
 
@@ -70,6 +71,7 @@
 | J5～J7 | 選項的鍵值殘留、套用到一半才報錯、不存在的「待套用」 | 已修正。Claude 用第六輪的步驟複驗，三項都已改正 |
 | J8 | 讀程式碼發現的四點 | 前三點確認是問題並已修正，由實作者的測試覆蓋，Claude 讀過修正的程式碼。第四點沒有重現 |
 | 4-1～4-6 | 第四批：驗收工具（0.5.0） | 已實作，待審核。四組測試通過；Validate 與走訪的命令列在副本專案實際執行，十八種情況的結束代碼都符合預期，沒有卡住。藍圖視窗的按鈕與對話框待人工確認 |
+| 4-7 | 第四批追加：訊號與「任何畫面」節點（0.5.0） | 已實作，待審核。四組測試通過；命令列對有訊號路由的 Scene 實際執行過；Windows Player（Mono、High stripping）實際執行通過。4-3 與 4-5 已一併調整。藍圖視窗的「任何畫面」節點與 `OpenPopup` 的「返回歷史」選單待人工確認 |
 
 ## 第七輪審核：第三批修正（0.4.0）
 
@@ -455,6 +457,120 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 - `IProcessSceneWithReport` 的剝除只作用在 build 用的 Scene 複本，磁碟上的 Scene 檔不變。
 
 ## 驗證紀錄
+
+### 第四批追加：4-7 訊號與「任何畫面」節點（0.5.0）
+
+以下是實作者（Claude 的子 session）自己的紀錄，等主 session 獨立審核。4-7 是 2026-11-20 在 4-1～4-6 交付之後追加的，版本維持 0.5.0。分支 `feat/batch-4` 已快轉合併回 `main`，沒有 push，沒有打標籤。
+
+| commit | 做了什麼 |
+|---|---|
+| `1ac6262` | 把 4-7 的規格原文加進 `ROADMAP.md`，「已定案的決定」多兩列（訊號、不可返回）。 |
+| `b33dc06` | 4-7 本體。執行期：`UIRoot.AnySource`、`SignalAsync`、`OpenPopupAsync` 可以指定 `UIHistoryMode` 的多載、不可返回的 Popup 的五條規則、`OpenPopup` 路由的 `history`、`UIRoute.IsSignal`。Editor：`UIAuthoring` 的 `Connect`、`UpdateRoute`、`Disconnect`、`PositionNode` 接受 `UIRoot.AnySource`，計畫的 `"source": "*"`，藍圖視窗的「任何畫面」節點與 `OpenPopup` 的「返回歷史」選單，兩個新的問題代碼。 |
+| `3de9c6c` | 4-3 的調整：訊號路由的目標算走得到，訊號路由不算任何畫面的出口。 |
+| `ae93880` | 4-5 的調整：訊號路由也走訪；`history` 是 `Clear` 的確認；目標畫面由程式控制而顯示失敗時略過；遇到 `Busy` 等待後重來。 |
+| `b8cc23a` | 文件：AgentGuide 的「由遊戲事件觸發的跳轉」一節與其他段落的更新、README、CHANGELOG。 |
+
+**四組測試**
+
+和前幾輪同一組副本專案，Unity 6000.3.19f1。測試的程式碼和 `b8cc23a` 的內容逐檔相同。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 140 | 0 | 0 |
+| 有 DOTween | PlayMode | 81 | 0 | 1 |
+| 無 DOTween | EditMode | 80 | 0 | 60 |
+| 無 DOTween | PlayMode | 76 | 0 | 6 |
+
+- 4-1～4-6 交付時的基準是 131、68 加 1 略過、74 加 57 略過、64 加 5 略過。既有案例全部保留並通過；其中兩個走訪的案例加了訊號路由，預期的步驟數跟著改。
+- 新增 PlayMode 13 個（`UISignalTests.cs`）。無 DOTween 時多略過 1 個：轉場進行中送出訊號的案例需要跨影格的轉場。
+- 新增 EditMode 9 個：兩個新代碼各一個重現案例（代碼共 41 個）、訊號路由的 `UIAuthoring`、Validate、計畫、藍圖視窗各一個、4-3 的走得到判定一個、走訪兩個。無 DOTween 時多略過 3 個：套用計畫的案例與兩個走訪的案例。
+
+**PlayMode 的案例（規格的驗收清單逐項對應）**
+
+| 規格 | 案例 |
+|---|---|
+| 三種種類的訊號；`data` 送達目標 | `ShowPageSignalsWorkFromAnyViewAndDeliverData`（從起始頁與另一個頁面送出同一個訊號、已經在目標頁是 `Unavailable`、`ActionTriggered` 與 `ActionCompleted`）、`OpenPopupSignalsStackOnTopOfWhateverIsOpen`、`EmitSignalsReachTheTopViewAndKeepApartFromViewActions`（最上層的畫面收到、`ActionEmitted` 的來源是 `*`、和畫面同名的動作互不相干、有給 `data` 記警告）。 |
+| 找不到路由 | `SignalsWithoutAUsableRouteAreReported`：`NotFound` 與錯誤訊息；畫面自己的動作不是訊號；`TriggerAsync(UIRoot.AnySource, …)` 是 `Unavailable`；送出前 token 已取消是 `Canceled`；送出前工作區已停用是 `Unavailable`。 |
+| 轉場進行中送出；連續送出兩個；在 `OnShown` 裡送出 | `SignalSentDuringATransitionWaitsForItAndReturnsItsOwnResult`（需要 DOTween：兩個訊號在 0.6 秒的轉場期間送出，事件的順序證明它們在轉場結束後才依序執行）、`SignalsSentDuringANavigationRunAfterItInOrder`（在 `OnShown` 裡送出兩個訊號，有無 DOTween 都執行）。 |
+| 等待中取消 token、停用工作區 | `WaitingSignalsAreCanceledByTheirTokenOrByDisablingTheWorkspace`，另外確認被取消的訊號不會卡住後面的訊號。 |
+| 有 Popup 開著時送出 `ShowPage` 訊號；`ShowPage` 加 `Clear` | `ShowPageSignalWithClearClosesPopupsAndLeavesNowhereToGoBack`。 |
+| 有 Popup 開著時送出 `OpenPopup` 訊號 | `OpenPopupSignalsStackOnTopOfWhateverIsOpen`。 |
+| 規則一、二：清空歷史、返回鍵 | `UnreturnablePopupClearsHistoryAndIgnoresTheBackKey`：Esc 與手把取消鍵都無效而 `OnBackRequested` 被呼叫了兩次、沒有觸發 `BackRequestedAtRoot`、`BackAsync()` 是 `Unavailable`；點遮罩可以關閉，關閉後歷史是空的。 |
+| 規則二：`Back` 路由 | `BackRoutesFromAnUnreturnablePopupAreUnavailable`（用一般路由的 `OpenPopup` 加 `Clear` 開啟），並確認 `Replace` 丟出 `ArgumentException`。 |
+| 規則三：從它切頁後底下的頁面不在歷史裡 | `PageChangesFromAnUnreturnablePopupKeepTheHistoryEmpty`：同一條 `Push` 路由從一般 Popup 觸發時照常進歷史；不可返回的 Popup 被別的 Popup 蓋住時切頁也清空。 |
+| 規則四：`ClosePopup` 後歷史是空的 | `ClosingAnUnreturnablePopupLeavesAnEmptyHistory`：`ClosePopup` 路由與 `View.Close()`；關閉之後的切頁恢復正常。 |
+| 規則五：重用的實例 | `UnreturnableStateBelongsToOneOpeningEvenForReusedInstances`。 |
+| 其他導航 API 遇到忙碌仍然回傳 `Busy` | `SignalsSentDuringANavigationRunAfterItInOrder`（`ShowPageAsync`、`OpenPopupAsync`、`TriggerAsync`、`BackAsync`）與轉場的那個案例。 |
+
+**EditMode 與走訪的案例**
+
+- `AuthoringAcceptsTheAnySourceForSignalRoutes`：三種種類與 `history`、`Back` 與 `ClosePopup` 被拒絕、`OpenPopup` 加 `Replace` 被拒絕（訊號與一般路由）、和畫面同名的動作並存、改名不動畫面上同名的按鈕、移除、節點的位置。
+- `ValidateReportsSignalRoutesWithTheWrongKindOrHistory`：兩個新代碼；訊號路由的 `route.target-missing` 與 `route.invalid` 的 `ViewId` 是 null；只有訊號有那個動作時，畫面上的按鈕照舊回報 `button.action-unrouted`。
+- `PlanWritesSignalRoutesWithTheStarSource`：`"source": "*"`、`Entries` 沒有多出畫面、ID 常數、部分更新（只改 `history`、省略 `history` 時沿用、種類換了回到預設值、沒有 `replace` 時不動）、八種寫錯的計畫在套用前報錯而且什麼都沒有建立。
+- `BlueprintShowsTheAnySourceNodeAndEditsSignalRoutes`：節點存在並顯示 `Emit` 的訊號、選取它時右欄沒有畫面才有的選項、行為只有三種、從右欄新增訊號路由、`OpenPopup` 的「返回歷史」只有「可以返回」與「不可返回」（訊號與一般路由）、`Emit` 沒有這個選單。
+- `SignalRouteTargetsCountAsReachableButNotAsExits`（4-3）。
+- 走訪 `WalkCoversSignalRoutesAndChecksClearedHistory`：四條訊號路由（`ShowPage` 加 `Clear`、`OpenPopup` 加 `Clear`、`OpenPopup`、目標是起始頁的 `ShowPage`）與兩條 `Clear` 的一般路由全部通過，報告裡訊號那幾步的 `source` 是 `*`。
+- 走訪 `WalkWaitsForNavigationsStartedByPageScripts`：頁面腳本在走訪關掉它的 Popup 時馬上開始一次 0.5 秒的切頁。一步在觸發時遇到 `Busy`，另一步在準備時遇到；兩步都通過，報告裡有腳本記的警告，花的時間超過轉場的長度。
+- 既有的走訪案例加上：`Emit` 的訊號預設略過、開啟 `IncludeEmit` 後送到起始頁的 `OnAction`；目標由程式控制而顯示失敗時（一般路由與訊號路由各一條）記為略過，`result` 照實是 `Failed`。
+
+**命令列的實際執行**
+
+和 4-1～4-6 同一個副本專案，重新建立。除了原本的內容，另外用命令列套用 AgentGuide「由遊戲事件觸發的跳轉」的示例計畫（原文抽出，`Match.unity`），把指南的 `HudPage`、`ChallengerPage` 原文掛到對應的頁面，`MatchEvents` 掛在場景裡並指定工作區。形式和之前相同，沒有 `-quit`。
+
+| 入口與參數 | 結束代碼 | 秒數 | 報告摘要 |
+|---|---:|---:|---|
+| Validate `-unigameui-scene Assets/Scenes/Match.unity -unigameui-strict` | 0 | 5 | `passed: true`，Error 0、Warning 0。 |
+| 走訪 `-unigameui-scene Assets/Scenes/Match.unity` | 0 | 9 | `Passed`，通過 6、略過 3。訊號 `disconnected`（`OpenPopup` 加 `Clear`）通過；訊號 `challengerJoined` 的目標 `challenger` 由程式控制、沒有資料顯示不出來，記為略過，`result` 是 `Failed`；以 `challenger` 為來源的路由也略過；`Emit` 的訊號略過。 |
+| 同上加 `-unigameui-include-emit` | 0 | 9 | `Passed`，通過 7、略過 2。`Emit` 的訊號觸發。 |
+
+- 原本的十八種情況也重新執行了一次，結束代碼與報告的數量都和上一次相同。二十一次都由工具自己結束 Editor，每次 5 到 18 秒。
+
+**實際打包的執行檔**
+
+同一個副本專案的 `Match.unity`，Windows、Mono、Managed Stripping Level 是 High，以 `-batchmode -nographics` 執行。打包前把 `hud` 頁的進場設成 0.5 秒的淡入，讓轉場跨影格；場景裡加一個探針腳本，全部通過時以結束代碼 0 結束。**結果：結束代碼 0。**
+
+| 確認的內容 | 做法 |
+|---|---|
+| 從不同的畫面送出同一個訊號都到得了目標 | 用指南的 `MatchEvents.OnChallengerJoined` 從 `lobby` 與 `hud` 各送一次，`challenger` 頁顯示出各自的名字（資料經過指南的 `ChallengerPage`）。 |
+| 轉場中送出不會漏掉 | 在切到 `hud` 的淡入期間送出 `disconnected` 與 `roundTimeUp` 兩個訊號。這段期間 `ShowPageAsync` 回傳 `Busy`；轉場結束後兩個訊號依序執行，各自回傳 `Completed`，Popup 開在 `hud` 上。 |
+| 不可返回的設定有效 | `ShowPage` 加 `Clear` 之後歷史是空的、`BackAsync()` 是 `Unavailable`。以 `Clear` 開啟的 Popup：歷史是空的、`BackAsync()` 是 `Unavailable`、虛擬手把的取消鍵與鍵盤的 Esc 都關不掉；它自己的路由可以離開，離開之後歷史是空的。 |
+| 訊號搭配 `Emit` | `roundTimeUp` 在 `lobby` 沒有反應，在 `hud` 由指南的 `HudPage.OnAction` 切到結算畫面；Popup 開著時由 Popup 收到，`hud` 沒有反應。 |
+| 只在某個畫面發生的事 | 指南的 `HudPage.OnPlayerDefeated`：在 `hud` 還在淡入時呼叫、上面蓋著 Popup 時呼叫，兩次都切到了結算畫面。 |
+
+- 執行期間沒有任何 Error、Exception 或 Assert（探針把它們算成失敗）。
+
+**與規格不同、或規格沒寫到而由實作者決定的地方**
+
+請審核時一併判斷。
+
+1. **多了公開的 `UIRoute.IsSignal`。** 規格只定義 `UIRoot.AnySource`。走訪、Validate 與藍圖視窗都要判斷一條路由是不是訊號路由，遊戲程式訂閱 `ActionTriggered` 時也用得到。
+2. **`TriggerAsync(UIRoot.AnySource, 動作)` 回傳 `Unavailable` 並記警告**，提示要用 `SignalAsync`。規格說訊號和畫面的動作互不相干，沒有寫這個呼叫的結果。
+3. **送出之前的狀況沿用其他 API 的結果：** 工作區已經停用時回傳 `Unavailable`（規格寫的 `Canceled` 是「等待期間」）；token 在送出前已經取消時回傳 `Canceled`。
+4. **訊號路由的種類不對而還是出現在執行期時**（Validate 會擋下來）回傳 `NotFound` 並記錯誤，不會照做。
+5. **`Emit` 的訊號在還沒有任何畫面時**只觸發 `ActionEmitted`，回傳 `Completed`。
+6. **不可返回的 Popup 在最上層時不會觸發 `BackRequestedAtRoot`。** 規格寫「返回鍵不處理」。
+7. **`root.ClosePopupAsync()` 也可以關閉不可返回的 Popup。** 規格列的出口是 `ClosePopup` 路由、`View.Close()` 與點遮罩；程式直接呼叫這個 API 一樣是明確的關閉，走訪的準備也靠它。
+8. **規則三看的是「有沒有不可返回的 Popup 開著」，不是「它是不是最上層」；規則二只在它是最上層時成立。** 它上面再疊一個一般的 Popup 時，返回可以關掉上面那個；這時切頁仍然清空歷史。
+9. **新的問題代碼是 `route.signal-kind-invalid` 與 `route.history-invalid`**，都是 Error。問題代碼從 39 個變成 41 個。
+10. **計畫部分更新時，種類換了而沒有寫 `history`，`history` 回到 `Push`。** 否則把 `ShowPage` 加 `Replace` 的路由改成 `OpenPopup` 會因為沿用 `Replace` 而報錯。
+11. **`UIRoot` 多了一個隱藏的序列化欄位**，存「任何畫面」節點在藍圖視窗的位置（它不是畫面，沒有 `UIEntry`）。`UIAuthoring.PositionNode` 也接受 `UIRoot.AnySource`。
+12. **藍圖右欄的「行為」從 `EnumField` 換成一般的下拉選單**，顯示的文字不變，才能在「任何畫面」節點只列出三種。拖線把既有路由重接到另一種畫面時，`history` 回到 `Push`（Popup 沒有 `Replace`）。
+13. **`view.no-exit` 沒有考慮不可返回的 Popup。** 只接了 `Back` 路由的 Popup 以 `Clear` 開啟之後關不掉，目前 Validate 不會提醒，只寫在 AgentGuide。要不要加這項檢查請決定。
+14. **`start.none` 不受訊號影響。** 所有頁面都只靠訊號進入、又沒有起始頁時，仍然回報這筆 Warning。
+15. **走訪對 `Clear` 的兩項確認也套用到一般路由**（規格寫在訊號路由那一點）。為了讓「歷史是空的」有意義，準備 `Clear` 的路由時會盡量先放一筆歷史。
+16. **走訪準備訊號路由時依序試起始頁、其他靠路由進出的頁面、由程式控制的頁面。** `ShowPage` 訊號的目標是工作區唯一的頁面時，這一步略過。
+17. **「目標由程式控制而顯示失敗」的判斷是導航結果為 `Failed`。** 結果是 `Completed`、只是 Console 有錯誤的情況照舊算失敗。報告裡這一步的 `result` 照實記 `Failed`，`status` 是 `Skipped`。
+18. **遇到 `Busy` 時整個準備重來**，不只重試那一次呼叫：頁面腳本的導航結束後，畫面已經不是準備到一半的樣子。確認不可返回的 Popup 時 `BackAsync()` 剛好遇到 `Busy` 不算失敗。
+19. **`OpenPopupForResultAsync` 沒有加 `history` 的多載**，規格沒有要求。
+20. **`Runtime` 沒有新增公開型別。** 新的公開成員是 `UIRoot.AnySource`、`UIRoot.SignalAsync`、`UIRoot.OpenPopupAsync` 的多載與 `UIRoute.IsSignal`。
+21. **指南的示例多了一份計畫（`Match.unity`）與三個範本**（`MatchEvents`、`ChallengerPage`、`HudPage`），都在副本專案編譯並實際執行過。`HudPage` 遇到上面蓋著 Popup 時的做法是先關掉 Popup，範本的註解說明也可以改成放棄或等待。
+
+**沒有驗證的**
+
+- 藍圖視窗的「任何畫面」節點：實際的顯示與顏色、拖動節點、從它的輸出端拖線、右欄編輯。自動測試只確認節點存在、右欄的欄位與選項、按「儲存路由」之後的結果。
+- `OpenPopup` 路由的「返回歷史」選單在互動 Editor 裡的樣子。
+- 實體的手把與鍵盤。執行檔用的是虛擬裝置。
+- IL2CPP Player。這台電腦沒有 6000.3.19f1 的 IL2CPP 模組。
 
 ### 第四批改進（0.5.0）
 
@@ -957,6 +1073,8 @@ PlayerSettings:
 
 第四批（0.5.0）以下項目需要在互動 Editor 人工確認：
 
+- **藍圖的「任何畫面」節點（4-7）。** 節點固定出現在藍圖上，左邊框與連接點是橘色；可以拖動，位置存檔後還在；沒有線可以連進去；選取它時右欄只有路由的編輯，「行為」只有 `ShowPage`、`OpenPopup`、`Emit`；從它的輸出端拖線到頁面或 Popup 會建立訊號路由。
+- **`OpenPopup` 路由的「返回歷史」選單（4-7）。** 顯示「可以返回」與「不可返回」兩個選項，一般畫面與「任何畫面」節點都一樣；`ShowPage` 路由照舊是三個選項。
 - **藍圖工具列的「走訪」。** 按下後進入 Play Mode、走完自己回到 Edit Mode，跳出摘要：通過、失敗、略過各幾步，以及失敗步驟的來源、動作與原因；失敗的步驟同時出現在 Console。
 - **藍圖的 Validate。** 對話框顯示 Error 與 Warning 各幾筆；Console 裡每一筆帶代碼，點擊可以定位到相關的畫面物件（例如沒有動作的按鈕、缺字的文字）。
 - **藍圖右欄的「由程式控制進出」。** 勾選、取消、Undo；確認框是勾選而且不能改；節點上顯示「程式控制」。
