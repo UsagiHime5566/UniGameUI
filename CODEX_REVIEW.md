@@ -20,6 +20,7 @@
 - 第九輪：2026-11-20，commit `f0585c2`（Claude 完整驗收第四批，通過）
 - 第五批改進：2026-11-21，commit `763642a`（0.6.0，藍圖視窗的操作體驗，Claude 子 session 實作，尚未打標籤）
 - 第十輪：2026-11-21，commit `8cf4285`（Claude 審核第五批，自動驗證通過，外觀待使用者確認）
+- 第五批追加：2026-11-21，commit `64c6190`（5-6～5-8，版本維持 0.6.0，Claude 子 session 實作，待審核）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
 **現況：** 前四批都已通過獨立審核，標籤 `v0.3.0`、`v0.4.0`、`v0.5.0` 都已打上，repo 發佈在 <https://github.com/UsagiHime5566/UniGameUI>。第五批（0.6.0，藍圖視窗的操作體驗）自動驗證能確認的部分都通過，**外觀與手感待使用者照人工確認清單操作**，之後才打 `v0.6.0` 標籤。結果見「第十輪審核」。
@@ -85,6 +86,7 @@
 | K7 | 讀程式碼發現的七點 | 六點在修正前重現並已修正，一點沒有重現但仍加了檢查。由實作者的測試覆蓋 |
 | K8 | Editor 結束時偶發當機 | 指南已註明；結束前多等幾次更新。第九輪的 12 次命令列沒有再發生，效果無法判斷 |
 | 5-1～5-5 | 第五批：藍圖視窗的操作體驗（0.6.0） | 已實作。四組測試通過；Claude 用真的事件確認滾輪、中鍵平移、整個節點的選取與拖曳、點空白、點標籤、F 鍵都有接上。**外觀與手感沒有人看過，待使用者照人工確認清單操作** |
+| 5-6～5-8 | 第五批追加：執行中的藍圖、訊號路由的線、頁面自己的流程（0.6.0） | 已實作，待審核。四組測試通過；Play Mode 的測試實際進出 Play Mode；指南的日終結算範本在執行檔依三種結果各走一次。外觀與滑鼠的接線沒有驗證，人工確認清單（合併 5-1～5-8）見「驗證紀錄」的「第五批追加」 |
 | 4-7 | 第四批追加：訊號與「任何畫面」節點（0.5.0） | 已實作並通過審核。Claude 另外打包執行檔，23 項檢查全部通過；有訊號路由的場景 Validate 沒有問題、走訪通過。藍圖視窗的節點操作待人工確認 |
 
 ## 第十輪審核：第五批（0.6.0）
@@ -618,6 +620,96 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 - `IProcessSceneWithReport` 的剝除只作用在 build 用的 Scene 複本，磁碟上的 Scene 檔不變。
 
 ## 驗證紀錄
+
+### 第五批追加（5-6～5-8）
+
+以下是實作者（Claude 的子 session）自己的紀錄，等主 session 審核。分支 `feat/batch-5-extra`（從 `80cd488` 開出），每一項各自 commit，已快轉合併回 `main`。版本維持 0.6.0，沒有打標籤，沒有 push，兩個 `ProjectSettings` 檔沒有 commit。
+
+| 項目 | commit | 做了什麼 |
+|---|---|---|
+| 5-6 | `ed2a7b1` | Play Mode 時藍圖照常顯示執行中的工作區，唯讀。可以直接測的部分放在 `UIBlueprintLive.cs`：`UIBlueprintLiveState`（目前的頁面、Popup 由下到上、返回歷史由近到遠、轉場中、輸入模式；`NodeClasses` 與 `Markers` 把狀態換成節點的外框與徽章）、`UIBlueprintNavLog`（最多 20 筆）、`FlashLevel`（2 秒內淡掉）。視窗的部分在 `UIBlueprintWindowLive.cs`：訂閱、檢查、亮線、「觸發」按鈕、右欄的「執行中」與「最近的導航」。`UIRoot` 只多兩個 `internal` 成員：`HistoryIds`（返回歷史的唯讀清單）與 `DirectNavigationFinished`（不經過路由的導航結束時通知）；沒有人訂閱時直接回傳原本的 `Awaitable`，不多一層等待。 |
+| 5-6 修正 | `194e78a` | 5-8 的 PlayMode 測試抓到 5-6 的錯：`View.Close()` 用 Unity 的 null 判斷讀 Popup 的 ID，被外部銷毀的 Popup 在警告裡沒有 ID（既有測試 `ClosingIsLimitedToTheTopPopupAndExternalDestructionUnblocksTheStack` 失敗）。改用 `ReferenceEquals`。 |
+| 5-7 | `563069a` | 訊號路由畫成比較淡的虛線（和「任何畫面」節點同色），滑鼠靠近線（6 像素內）或移到標籤上、選取「任何畫面」或選取這條路由時變清楚。工具列的「顯示訊號路由」記在 `SessionState`；關掉時不畫線與標籤，「任何畫面」節點標出「N 條路由（線已隱藏）」。剛走過的訊號路由即使關掉也短暫畫出來。線的樣式（`EdgeStyle`）、要畫哪些線（`EdgesToDraw`）、滑鼠附近的線（`RouteNear`）都可以直接測。 |
+| 5-8 | `3389768` | `UIViewBehaviour.NavigateAsync(action, cancellation)` 與 `UIRoot.TriggerWhenIdleAsync(source, action, cancellation)`。和 `SignalAsync` 共用同一個排隊（`WhenIdleAsync`），輪到時：最上層就走、被 Popup 蓋住回傳 `Unavailable` 並警告、已經不在畫面上安靜地回傳 `Canceled`。`TriggerAsync` 的本體抽成 `FollowTriggeredRouteAsync`，行為不變。Validate：頁面標記為由程式控制之後照樣檢查 `view.no-exit`，Popup 照舊不檢查；新增 `start.navigated-by-code`（問題代碼共 47 個）。AgentGuide 的「頁面之間的流程」「由程式控制的畫面」「導航、返回與 Popup」與問題代碼表。 |
+| 文件 | `64c6190` | AgentGuide「審核」一節加上執行中的藍圖與訊號路由的線；套件與根目錄的 `README.md`；`CHANGELOG.md` 0.6.0 補記三項。 |
+
+**測試結果**
+
+Unity 6000.3.19f1，在兩個副本專案執行，套件內容與 `64c6190` 相同。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 185 | 0 | 0 |
+| 有 DOTween | PlayMode | 87 | 0 | 1 |
+| 無 DOTween | EditMode | 114 | 0 | 71 |
+| 無 DOTween | PlayMode | 81 | 0 | 7 |
+
+- EditMode 比 5-1～5-5 多 9 個：`UIBlueprintLiveTests` 4 個（5-6，用直接指定的狀態，不進 Play Mode）、`UIBlueprintPlayModeTests` 1 個（5-6，實際進出 Play Mode，需要 DOTween，所以無 DOTween 時略過）、`UIBlueprintSignalLineTests` 1 個（5-7）、`UIAuthoringBatch5FlowTests` 2 個（5-8）、「每個代碼都有重現案例」多一個 `start.navigated-by-code`。
+- PlayMode 多 6 個（`UINavigateTests`，5-8）；其中「轉場中呼叫」需要 DOTween 才有跨影格的轉場，無 DOTween 時略過。
+- 「實際進出 Play Mode」的測試放在 EditMode 組：要開著 Editor 的視窗進出 Play Mode，只能用 EditMode 測試的 `EnterPlayMode`／`ExitPlayMode`。測試期間關閉 Domain 重新載入（Scene 照常重新載入），才拿得到進出 Play Mode 前後的同一個視窗與工作區。它確認了：起始頁、路由切頁、程式直接返回、兩層 Popup 與最上層、雙擊在 Hierarchy 選取、「觸發」按鈕（最上層才能按、按了會走）、訊號（按鈕與遊戲程式送出的）、另一個視窗關掉時取消它自己的訂閱、停用工作區時顯示說明並取消訂閱、重新啟用時切回來、離開 Play Mode 後工作區的 8 個事件都沒有視窗的訂閱、`EditorApplication.update` 也沒有。
+- **5-8 的範本在副本專案（pb）實際跑過**：指南裡的計畫與 C# 範本全部抽出來編譯（12 個檔案，含新的 `DayCycle.cs` 與改過的 `HudPage.cs`），沒有錯誤也沒有警告。日終結算的計畫用指南的片段原文，加上開店前、週結、結局三頁。命令列 Validate 嚴格模式：結束代碼 0，Error 0、Warning 0。命令列走訪：結束代碼 0，`Passed`，`dayEnd` 的三條路由都是 `Passed`，按鈕的 `nextDay`（Emit）依預設略過。Windows 執行檔（Mono、High stripping）：從按鈕按「進入下一天」，依三種結果各走一次（第 2 天開店前、第 7 天週結、破產之後結局），三條路由各走過，沒有用到訊號，沒有 Error。
+- 操作指南第一份示例計畫（`Workshop.unity`）的 Validate 結果由既有測試 `GuideExamplePlanOnlyWarnsAboutTheConfirmButtonsWithoutAChineseFont` 確認，沒有改變（它沒有由程式控制的畫面）。
+- Log 裡沒有例外，也沒有 `UIBlueprint.uss` 的匯入警告。
+
+**與規格不同、或規格沒寫而我自己決定的地方**
+
+1. **5-6 的「PlayMode 測試」放在 EditMode 組**，原因見上面。它關閉了 Domain 重新載入；預設的設定（會重新載入 Domain）下進入 Play Mode 時，視窗會先 `OnDisable` 再 `CreateGUI`，這條路徑沒有自動測試，列在人工確認清單。
+2. **最近的導航裡，返回鍵觸發的返回標成「返回鍵」**，其他不經過路由的導航標成「程式」。規格只說標成「程式」。
+3. **「程式」的範圍：** `ShowPageAsync`、`OpenPopupAsync`、`OpenPopupForResultAsync` 與 `ConfirmAsync`（記成開啟 Popup）、`ClosePopupAsync`、`View.Close()`、`BackAsync`。起始頁是框架在 `Start` 時用 `ShowPageAsync` 顯示的，藍圖比它早訂閱時，第一筆會是「程式 · 切頁」。
+4. **在找到路由之前就被拒絕的 `TriggerAsync`（例如 `Busy`、來源不是最上層）不會記進最近的導航**：`UIRoot` 對這種情況不發出 `ActionCompleted`，要記就得再加 `internal` 通知。藍圖自己的「觸發」按鈕被拒絕時會補記。
+5. **右欄的唯讀做法：** 「新增路由」不顯示；選了路由時「編輯路由」改名為「路由內容」，欄位停用，沒有儲存與刪除；「設為起始頁」、Popup 的預覽、「套用到 Prefab」不顯示；「在 Scene 中定位」變成「在 Hierarchy 選取」，畫面還沒建立時停用。`Emit` 路由也有「觸發」按鈕。
+6. **狀態的檢查方式：** 事件只標記「有變化」，`EditorApplication.update` 每次比較幾個值（目前的頁面、最上層的 Popup、Popup 的數量、返回歷史的筆數、是否轉場中、輸入模式、走訪是否進行中），有變化才更新節點的樣式並重畫右欄；亮線淡掉的 2 秒內約每秒 30 次重畫連線那一層。工作區不見時每 0.5 秒找一次啟用中的 `UIRoot`，優先找作用中 Scene 的。
+7. **5-7：** 選取那條訊號路由本身時也變清楚（規格只說滑鼠與選取「任何畫面」）。「N 條路由」算的是「任何畫面」全部的路由，包含沒有線的 `Emit`。
+8. **5-8 的細節：** `TriggerWhenIdleAsync` 的來源寫 `*` 時和 `TriggerAsync` 一樣回傳 `Unavailable` 並提示用 `SignalAsync`；呼叫時工作區已經停用回傳 `Unavailable`（和 `SignalAsync` 相同），等待期間才停用的回傳 `Canceled`（規格）。畫面沒有交給工作區管理時，`NavigateAsync` 回傳 `Unavailable` 並記錄警告。
+9. **`view.no-exit` 的訊息：** 「由程式控制只表示進來的方式」只出現在有標記的頁面；「這一頁發生的換頁請畫成這一頁的路由，用 `NavigateAsync` 依結果挑其中一條」所有頁面都有。原本建議「由程式切換的頁面請標記為由程式控制」的那句拿掉了，因為標記已經不會消掉這個 Warning。
+10. **右欄勾選框的名稱維持「由程式控制進出」**，只改了下面的說明（頁面與 Popup 各一段）。定義已經改成「進來的方式」，名稱裡的「進出」可能讓人誤會；要改名請決定，指南與節點徽章的提示會一起改。
+11. **既有測試改了一處：** `ViewsWithoutAWayOutAreWarnings` 原本確認由程式控制的頁面不回報 `view.no-exit`，依新的規則改成要回報。`UIViewTestHandler` 多一個測試用的 `Navigate` 方法（`NavigateAsync` 是 protected）。
+12. **`HudPage` 範本：** 回傳 `Unavailable` 而且上面蓋著 Popup 時，先關掉 Popup 再走一次；其他結果只記警告。
+13. **指南的範本加了一個 `DayCycle` 類別**代表遊戲自己的日循環，讓範本可以單獨編譯。
+14. **安裝網址與版本表** 和 5-1～5-5 一樣維持 `v0.5.0`，等打 `v0.6.0` 標籤時再更新。
+
+**沒有驗證的部分**
+
+- 所有外觀：節點的強調、徽章、亮線的顏色與淡掉的樣子、虛線、右欄的新區塊。
+- 滑鼠的接線：線的滑鼠回饋（`PointerMoveEvent` 接到 `RouteNear`）、標籤的 `PointerEnter`／`PointerLeave`、工具列開關的點擊（測試直接設定屬性）。測試是直接呼叫函式。
+- 預設設定（會重新載入 Domain）下進出 Play Mode 時的視窗行為；Play Mode 中換 Scene（測試用停用、啟用工作區代替）。
+- 走訪進行中「觸發」按鈕停用：邏輯只看 `UIWalk.IsRunning`，沒有在走訪途中開著藍圖測試。
+- 5-8 的執行檔只用了 Mono；IL2CPP 沒有測。
+
+**人工確認清單（5-1～5-8 合併）**
+
+請在互動 Editor 開啟一個有幾個頁面、Popup 與訊號路由的 Scene，**Tools → UniGameUI → Blueprint**。
+
+Edit Mode：
+
+1. 滾輪縮放：游標底下的那一點不動；縮到 25%、放到 200% 就停；工具列的百分比跟著變，點一下回到 100%。
+2. 按住中鍵拖曳、按住 Alt 加左鍵拖曳：畫布平移，格線跟著動，放開後節點位置沒有被改掉（Scene 沒有變成未儲存）。
+3. 「顯示全部」與 F 鍵（先點一下畫布）：所有節點都在視窗裡。關掉視窗再開、進出 Play Mode 之後，視角還在。
+4. 範圍框：虛線圍住所有節點，拖曳節點時跟著變，左上角的文字正確，而且不會擋住點擊。虛線在各種縮放比例下看起來粗細一致。
+5. 節點：滑鼠移上去有回饋，游標變成移動的樣子；移到右邊的連接點時游標不同。按在標題、ID、空白處都能拖曳；在 50% 與 200% 拖曳時節點跟著游標走。
+6. 單擊只選取、Scene 視窗不動；雙擊才定位。點空白處取消選取，右欄回到「工作區」。
+7. 從連接點拉線到另一個節點（在非 100% 的縮放下也試一次）：線的終點跟著游標，放開後建立路由。
+8. 線上的動作標籤：滑鼠移上去有回饋，點了之後選取來源節點，右欄選中那條路由。
+9. 右欄的四種狀態（沒有選取、頁面、Popup、「任何畫面」）：區塊的順序、標題列、邊框與間距；徽章的顏色在節點、線上的標籤、右欄三處一致。
+10. 路由清單：整列可以點，選中的那一列夠明顯。「通到這裡的路由」點一列會跳到來源節點。
+11. 編輯路由：故意填重複的動作、不選目的地，錯誤出現在欄位下面而且看得清楚。「刪除這條路由」和「儲存」不會按錯。
+12. 拖曳畫布與右欄之間的分隔線：寬度會變、不會小於最小寬度，重新整理後還在。右欄內容太長時可以捲動。點區塊標題可以收合，換選取後仍然是收合的。
+13. 25% 與 200% 時節點上的文字讀不讀得清楚。
+14. 訊號路由的線：虛線是否夠淡、不會蓋過頁面之間的線；滑鼠移到線上或標籤上變清楚；選取「任何畫面」時全部變清楚。
+15. 工具列的「顯示訊號路由」：關掉之後線與標籤都不見，「任何畫面」節點上出現「N 條路由（線已隱藏）」；重新整理、關掉視窗再開之後狀態還在。
+16. 右欄「畫面設定」的說明：頁面寫著「頁面照樣要有出口」，Popup 沒有這句。
+
+Play Mode（用預設的 Enter Play Mode 設定，也就是會重新載入 Domain）：
+
+17. 進入 Play Mode：藍圖照常顯示，工具列有「執行中 · 唯讀」，目前的頁面的強調一眼看得出來；視角和進入前相同。
+18. 切頁、開 Popup：剛走過的線與標籤亮起來，約 2 秒內淡回原本的樣子；訊號路由從「任何畫面」亮起（訊號路由的線關掉時也一樣短暫出現）。
+19. 疊兩層 Popup：「Popup 1」「Popup 2」的順序與「最上層」的標示看得清楚；轉場中的「進場中／退場中」在轉場結束後消失。
+20. 右欄「執行中」與「最近的導航」好不好讀；結果不是 `Completed` 的（例如在轉場中按「觸發」得到 `Busy`）夠醒目；點一筆會選到那條路由。
+21. 「觸發」按鈕：來源不是最上層時按不了，訊號路由隨時可以按；按了會走。開著藍圖執行走訪時按鈕停用。
+22. 雙擊節點：在 Hierarchy 選取執行中的畫面；沒開過的 Popup 雙擊不做事。
+23. Play Mode 中不能拖曳節點、不能拉線、右欄不能修改。
+24. 換 Scene（或停用工作區）：藍圖顯示說明；新的 Scene 有工作區時自動切換過去。
+25. 離開 Play Mode：回到可以編輯的藍圖，視角不變。
 
 ### 第十輪：Claude 對第五批的驗證
 
