@@ -165,6 +165,77 @@ namespace UniGameUI.Editor.Tests
             Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty);
         }
 
+        // 5-5：以不可返回的方式開啟的 Popup，Back 路由無效，不算出口。
+        [Test]
+        public void UnreturnablePopupsNeedAnExitOtherThanBack()
+        {
+            var root = WorkspaceWithHomePage("Batch5 Unreturnable Exits");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.CreatePage(root, "other", "Other");
+            UIAuthoring.Connect(root, "home", "go", UIRouteKind.ShowPage, "other");
+            UIAuthoring.Connect(root, "other", "back", UIRouteKind.Back);
+            foreach (var id in new[] { "stuck", "bySignal", "byClose", "byPage", "byOverlay", "byCode", "returnable" })
+            {
+                UIAuthoring.CreatePopup(root, id, id, $"{folder}/{id}.prefab");
+                // 每個 Popup 都只有 Back 路由。
+                UIAuthoring.Connect(root, id, "back", UIRouteKind.Back);
+            }
+
+            // 還沒有路由開啟它們，或只以可以返回的方式開啟：Back 是出口，不回報。
+            Assert.That(NoExit(), Is.Empty);
+            foreach (var id in new[] { "stuck", "byClose", "byPage", "byOverlay", "byCode", "returnable" })
+                UIAuthoring.Connect(root, "home", "open_" + id, UIRouteKind.OpenPopup, id);
+            UIAuthoring.Connect(root, UIRoot.AnySource, "open_bySignal", UIRouteKind.OpenPopup, "bySignal");
+            Assert.That(NoExit(), Is.Empty, "只被 Push 的路由開啟的 Popup 不回報");
+
+            // 改成不可返回。returnable 維持可以返回。
+            foreach (var id in new[] { "stuck", "byClose", "byPage", "byOverlay", "byCode" })
+            {
+                UIAuthoring.UpdateRoute(root, "home", "open_" + id, "open_" + id, UIRouteKind.OpenPopup, id,
+                    UIHistoryMode.Clear, null);
+            }
+            UIAuthoring.UpdateRoute(root, UIRoot.AnySource, "open_bySignal", "open_bySignal", UIRouteKind.OpenPopup,
+                "bySignal", UIHistoryMode.Clear, null);
+            UIAuthoring.Connect(root, "byClose", "close", UIRouteKind.ClosePopup);
+            UIAuthoring.Connect(root, "byPage", "leave", UIRouteKind.ShowPage, "other");
+            EditPrefab($"{folder}/byOverlay.prefab",
+                contents => contents.GetComponent<UIView>().closesOnOverlayClick = true);
+            UIAuthoring.SetNavigatedByCode(root, "byCode", true);
+
+            // 回報的只有兩個：一般路由開啟的，與訊號路由開啟的。
+            Assert.That(NoExit(), Is.EquivalentTo(new[] { "stuck", "bySignal" }));
+            var issues = Issues(root, UIIssueCode.ViewNoExit);
+            var stuck = issues.Single(issue => issue.ViewId == "stuck");
+            Assert.That(stuck.Severity, Is.EqualTo(UIIssueSeverity.Warning));
+            // 訊息要說明它是以不可返回的方式開啟的，並指出是哪一條路由。
+            Assert.That(stuck.Message, Does.Contain("stuck").And.Contain("home/open_stuck").And.Contain("不可返回")
+                .And.Contain("Back").And.Contain("ClosePopup"));
+            Assert.That(issues.Single(issue => issue.ViewId == "bySignal").Message,
+                Does.Contain($"{UIRoot.AnySource}/open_bySignal").And.Contain("不可返回"));
+
+            // 同一個 Popup 另外還有可以返回的路由開啟它，仍然回報：不可返回的那條路由開啟時關不掉。
+            UIAuthoring.Connect(root, "other", "open_stuck", UIRouteKind.OpenPopup, "stuck");
+            Assert.That(NoExit(), Is.EquivalentTo(new[] { "stuck", "bySignal" }));
+
+            // 補上 ClosePopup、ShowPage、點遮罩關閉，或標記為由程式控制之後不回報。
+            UIAuthoring.Connect(root, "stuck", "close", UIRouteKind.ClosePopup);
+            Assert.That(NoExit(), Is.EqualTo(new[] { "bySignal" }));
+            UIAuthoring.SetNavigatedByCode(root, "bySignal", true);
+            Assert.That(NoExit(), Is.Empty);
+
+            // 把路由改回可以返回也不回報。
+            UIAuthoring.SetNavigatedByCode(root, "bySignal", false);
+            Assert.That(NoExit(), Is.EqualTo(new[] { "bySignal" }));
+            UIAuthoring.UpdateRoute(root, UIRoot.AnySource, "open_bySignal", "open_bySignal", UIRouteKind.OpenPopup,
+                "bySignal", UIHistoryMode.Push, null);
+            Assert.That(NoExit(), Is.Empty);
+
+            string[] NoExit()
+            {
+                return Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId).ToArray();
+            }
+        }
+
         // K4：遊戲頁只有「開啟暫停選單」，暫停選單有「回標題」：遊戲頁離得開。
         [Test]
         public void PagesCanLeaveThroughAPopupTheyOpen()

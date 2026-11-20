@@ -114,14 +114,38 @@ namespace UniGameUI.Editor
 
                 // Popup 執行期用的是 Prefab；沒有 Prefab 時另有 Error，這裡用審核畫面判斷。
                 var view = entry.Prefab ? entry.Prefab : entry.Review;
-                if (own.Any(route => route.Kind is UIRouteKind.ClosePopup or UIRouteKind.Back or UIRouteKind.ShowPage) ||
-                    (view && view.ClosesOnOverlayClick))
+                if ((view && view.ClosesOnOverlayClick) ||
+                    own.Any(route => route.Kind is UIRouteKind.ClosePopup or UIRouteKind.ShowPage))
+                    continue;
+                if (!own.Any(route => route.Kind == UIRouteKind.Back))
+                {
+                    issues.Add(new UIIssue(UIIssueCode.ViewNoExit,
+                        $"Popup「{entry.Id}」沒有任何 ClosePopup、Back 或 ShowPage 路由，也沒有設定點遮罩關閉，" +
+                        "開啟之後關不掉。請補上路由；由程式關閉的 Popup 請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
+                        entry.Id, context: ContextOf(root, entry)));
+                    continue;
+                }
+
+                // 只有 Back 路由的 Popup：以不可返回的方式開啟時，Back 無效，一樣關不掉。
+                // 開啟它的可以是一般路由，也可以是訊號路由，所以要看工作區全部的路由。
+                var opener = UnreturnableOpener(root, entry.Id);
+                if (opener == null)
                     continue;
                 issues.Add(new UIIssue(UIIssueCode.ViewNoExit,
-                    $"Popup「{entry.Id}」沒有任何 ClosePopup、Back 或 ShowPage 路由，也沒有設定點遮罩關閉，" +
-                    "開啟之後關不掉。請補上路由；由程式關閉的 Popup 請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
+                    $"Popup「{entry.Id}」由路由「{opener.Source}/{opener.Action}」以不可返回的方式開啟" +
+                    "（history: Clear）：開啟時清空返回歷史，返回鍵與 Back 路由都無效。" +
+                    "它只有 Back 路由，沒有 ClosePopup 或 ShowPage 路由，也沒有設定點遮罩關閉，開啟之後關不掉。" +
+                    "請補上 ClosePopup 或 ShowPage 路由，或把那條路由改成可以返回（history: Push）；" +
+                    "由程式關閉的 Popup 請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
                     entry.Id, context: ContextOf(root, entry)));
             }
+        }
+
+        // 以不可返回的方式（history: Clear）開啟這個 Popup 的路由，一般路由與訊號路由都算。沒有時回傳 null。
+        private static UIRoute UnreturnableOpener(UIRoot root, string popupId)
+        {
+            return root.Routes.FirstOrDefault(route => route != null && route.Kind == UIRouteKind.OpenPopup &&
+                route.Target == popupId && route.History == UIHistoryMode.Clear);
         }
 
         // 從這個頁面沿著 OpenPopup 路由開得到的 Popup（Popup 再開的 Popup 也算）裡，
