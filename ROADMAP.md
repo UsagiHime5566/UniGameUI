@@ -1145,7 +1145,7 @@ public readonly struct UIIssue
 | `view.unreachable` | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到的頁面或 Popup。 | 起始頁本身；由程式控制的畫面。沒有起始頁時不逐一回報，只回報 `start.none`。 |
 | `view.no-exit` | 頁面沒有任何 `ShowPage` 或 `Back` 路由，而且從它沿著 `OpenPopup` 路由開得到的 Popup 也都沒有 `ShowPage` 路由。Popup 沒有任何 `ClosePopup`、`Back` 或 `ShowPage` 路由，也沒有設定點遮罩關閉。（頁面的規則在第四批審核的 K4 放寬：遊戲頁只有「開啟暫停選單」、暫停選單有「回標題」時，遊戲頁算有出口。） | 由程式控制的畫面；工作區只有一個頁面時的那個頁面。 |
 | `button.unbound` | View 裡的 `Button` 沒有 `UIButtonAction`（或動作是空的），`onClick` 也沒有在 Inspector 接任何監聽。 | 由程式控制的畫面裡的按鈕；清單項目裡的按鈕。 |
-| `text.missing-glyph` | View 裡 TMP 文字的預設內容，有字型和它的 fallback 都沒有的字元。 | 空白與控制字元。 |
+| `text.missing-glyph` | View 裡 TMP 文字的預設內容，有字型和它的 fallback 都沒有的字元。 | 空白與控制字元；富文字標籤本身；Sprite Asset 補得到的字元（後兩項是第四批審核 K7 補上的）。 |
 
 - `button.unbound` 的訊息要建議標準做法：給按鈕 `action` 並接一條路由，要由程式處理就用 `Emit`。
 - `text.missing-glyph` 的細節：

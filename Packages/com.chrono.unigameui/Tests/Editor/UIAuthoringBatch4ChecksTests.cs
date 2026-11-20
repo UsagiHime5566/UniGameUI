@@ -431,6 +431,14 @@ namespace UniGameUI.Editor.Tests
         {
             var source = AssetDatabase.LoadAssetAtPath<Font>(TmpSourceFont);
             Assert.That(source, Is.Not.Null, TmpSourceFont);
+            return NewFontFrom(source, name, characters, dynamic, fallbacks);
+        }
+
+        // 同上，來源是指定的字型檔。
+        private TMP_FontAsset NewFontFrom(Font source, string name, string characters, bool dynamic,
+            params TMP_FontAsset[] fallbacks)
+        {
+            Assert.That(source, Is.Not.Null, name);
             var font = TMP_FontAsset.CreateFontAsset(source, 48, 4, GlyphRenderMode.SDFAA, 256, 256,
                 AtlasPopulationMode.Dynamic, false);
             font.name = name;

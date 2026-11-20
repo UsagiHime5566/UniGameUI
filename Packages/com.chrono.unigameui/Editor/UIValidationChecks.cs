@@ -176,7 +176,9 @@ namespace UniGameUI.Editor
             var onClick = button.onClick;
             for (var index = 0; index < onClick.GetPersistentEventCount(); index++)
             {
-                if (onClick.GetPersistentTarget(index) && !string.IsNullOrEmpty(onClick.GetPersistentMethodName(index)))
+                // Call State 是 Off 的監聽不會被呼叫，不算有接。
+                if (onClick.GetPersistentListenerState(index) != UnityEngine.Events.UnityEventCallState.Off &&
+                    onClick.GetPersistentTarget(index) && !string.IsNullOrEmpty(onClick.GetPersistentMethodName(index)))
                     return true;
             }
             return false;
@@ -187,32 +189,118 @@ namespace UniGameUI.Editor
             return string.IsNullOrEmpty(elementId) ? $"物件「{component.name}」" : $"「{elementId}」";
         }
 
-        // 只檢查預設內容：Scene 裡寫在元件上的文字與下拉選單的選項。多語系翻譯後的文字不在範圍內。
+        // 只檢查預設內容：Scene 裡寫在元件上的文字與下拉選單的選項，放在清單項目裡的也算。
+        // 多語系翻譯後的文字不在範圍內。
         private static void CheckGlyphs(UIEntry entry, List<UIIssue> issues)
         {
             var view = entry.Review;
             var glyphs = new GlyphLookup();
             foreach (var text in view.GetComponentsInChildren<TMP_Text>(true))
             {
-                if (text.GetComponentInParent<UIView>(true) != view ||
-                    UIList.IsInsideListItem(text.transform, view.transform))
+                if (text.GetComponentInParent<UIView>(true) != view)
                     continue;
-                ReportMissingGlyphs(entry, text, text.font, text.text, "文字", glyphs, issues);
+                var content = text.richText ? VisibleText(text.text) : text.text;
+                ReportMissingGlyphs(entry, text, text.font, text.spriteAsset, content, "文字", glyphs, issues);
             }
             foreach (var dropdown in view.GetComponentsInChildren<TMP_Dropdown>(true))
             {
-                if (dropdown.GetComponentInParent<UIView>(true) != view ||
-                    UIList.IsInsideListItem(dropdown.transform, view.transform))
+                if (dropdown.GetComponentInParent<UIView>(true) != view)
                     continue;
                 // 選項展開時用的是項目文字的字型。
                 var label = dropdown.itemText ? dropdown.itemText : dropdown.captionText;
-                var options = string.Concat(dropdown.options.Select(option => option?.text ?? ""));
-                ReportMissingGlyphs(entry, dropdown, label ? label.font : null, options, "選項", glyphs, issues);
+                var rich = !label || label.richText;
+                var options = string.Concat(dropdown.options.Select(option =>
+                    rich ? VisibleText(option?.text) : option?.text ?? ""));
+                ReportMissingGlyphs(entry, dropdown, label ? label.font : null, label ? label.spriteAsset : null,
+                    options, "選項", glyphs, issues);
             }
         }
 
-        private static void ReportMissingGlyphs(UIEntry entry, Component owner, TMP_FontAsset font, string content,
-            string what, GlyphLookup glyphs, List<UIIssue> issues)
+        // TMP 認得的富文字標籤。標籤本身不會畫出來。
+        private static readonly HashSet<string> RichTextTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "a", "action", "align", "allcaps", "alpha", "b", "br", "color", "cr", "cspace", "em-space", "en-space",
+            "font", "font-weight", "gradient", "i", "indent", "line-height", "line-indent", "link", "lowercase",
+            "margin", "margin-left", "margin-right", "mark", "material", "mspace", "nbsp", "nobr", "noparse", "page",
+            "pos", "rotate", "s", "scale", "shy", "size", "smallcaps", "space", "sprite", "strikethrough", "style",
+            "sub", "sup", "u", "uppercase", "voffset", "width", "zwj", "zwsp"
+        };
+
+        // TMP 的標籤最長到這裡就不再當成標籤。
+        private const int MaxTagLength = 128;
+
+        /// <summary>
+        /// 開著富文字時真的會畫出來的字元：拿掉 TMP 認得的標籤（例如 &lt;size=120%&gt;、&lt;sprite name=…&gt;）。
+        /// 不是標籤的角括號、TMP 不認得的標籤、&lt;noparse&gt; 裡的內容都會照字面畫出來，所以留著。
+        /// &lt;font&gt; 裡的文字用的是另一個字型，這裡不檢查。
+        /// </summary>
+        internal static string VisibleText(string content)
+        {
+            if (string.IsNullOrEmpty(content) || content.IndexOf('<') < 0)
+                return content ?? "";
+
+            var visible = new StringBuilder(content.Length);
+            var noParse = false;
+            var otherFont = 0;
+            for (var index = 0; index < content.Length; index++)
+            {
+                if (content[index] == '<')
+                {
+                    var end = content.IndexOf('>', index + 1);
+                    var closing = false;
+                    var name = end > index && end - index <= MaxTagLength
+                        ? TagName(content, index + 1, end, out closing)
+                        : null;
+                    if (noParse)
+                    {
+                        if (name == "noparse" && closing)
+                        {
+                            noParse = false;
+                            index = end;
+                            continue;
+                        }
+                    }
+                    else if (name != null && (name == "#" || RichTextTags.Contains(name)))
+                    {
+                        if (name == "noparse")
+                            noParse = !closing;
+                        else if (name == "font")
+                            otherFont = Math.Max(0, otherFont + (closing ? -1 : 1));
+                        index = end;
+                        continue;
+                    }
+                }
+                if (otherFont == 0)
+                    visible.Append(content[index]);
+            }
+            return visible.ToString();
+        }
+
+        // 標籤的名稱：<size=120%> 是 size，</b> 是 b（closing 為 true），<#FF0000> 是 #。不像標籤時是 null。
+        private static string TagName(string content, int start, int end, out bool closing)
+        {
+            closing = start < end && content[start] == '/';
+            if (closing)
+                start++;
+            if (start >= end)
+                return null;
+            if (content[start] == '#')
+                return closing ? null : "#";
+
+            var length = 0;
+            while (start + length < end && (char.IsLetter(content[start + length]) || content[start + length] == '-'))
+                length++;
+            if (length == 0)
+                return null;
+            // 名稱後面只能接結尾、等號或空白（屬性）。
+            var next = start + length;
+            if (next < end && content[next] != '=' && content[next] != ' ')
+                return null;
+            return content.Substring(start, length).ToLowerInvariant();
+        }
+
+        private static void ReportMissingGlyphs(UIEntry entry, Component owner, TMP_FontAsset font,
+            TMP_SpriteAsset sprites, string content, string what, GlyphLookup glyphs, List<UIIssue> issues)
         {
             if (string.IsNullOrEmpty(content))
                 return;
@@ -235,7 +323,7 @@ namespace UniGameUI.Editor
                 {
                     continue;
                 }
-                if (IsInvisible(unicode) || missing.Contains(unicode) || glyphs.Has(font, (uint)unicode))
+                if (IsInvisible(unicode) || missing.Contains(unicode) || glyphs.Has(font, (uint)unicode, sprites))
                     continue;
                 missing.Add(unicode);
             }
@@ -268,28 +356,28 @@ namespace UniGameUI.Editor
         }
 
         /// <summary>
-        /// 判斷字型畫不畫得出一個字元，順序和 TMP 相同：字型本身、它的 fallback、TMP Settings 的全域 fallback，
-        /// 最後是 TMP 的預設字型。**不會改動任何字型資產**：靜態字型只看已經在圖集裡的字元；
-        /// 動態字型直接問來源字型檔有沒有這個字，不把它加進圖集。
+        /// 判斷 TMP 畫不畫得出一個字元，找的地方和 TMP 相同：字型本身、它的 fallback、文字自己的 Sprite Asset、
+        /// TMP Settings 的全域 fallback、TMP 的預設字型，最後是 TMP Settings 的預設 Sprite Asset。
+        /// **不會改動任何資產**：靜態字型只看已經在圖集裡的字元；動態字型直接問來源字型檔有沒有這個字，
+        /// 不把它加進圖集；Sprite Asset 從序列化的資料讀。
         /// </summary>
         private sealed class GlyphLookup
         {
             private readonly Dictionary<(int Font, uint Unicode), bool> own =
                 new Dictionary<(int, uint), bool>();
+            private readonly Dictionary<int, HashSet<uint>> sprites = new Dictionary<int, HashSet<uint>>();
             private readonly HashSet<int> visited = new HashSet<int>();
             private readonly bool hasSettings = HasSettings;
-            private int loadedFace;
-            private bool loadedFaceIsValid;
 
             public static TMP_FontAsset DefaultFont => HasSettings ? TMP_Settings.defaultFontAsset : null;
 
             // TMP 的資源還沒匯入時，直接讀 TMP_Settings 會跳出匯入視窗。
             private static bool HasSettings => Resources.Load<TMP_Settings>("TMP Settings");
 
-            public bool Has(TMP_FontAsset font, uint unicode)
+            public bool Has(TMP_FontAsset font, uint unicode, TMP_SpriteAsset textSprites)
             {
                 visited.Clear();
-                if (HasWithFallbacks(font, unicode))
+                if (HasWithFallbacks(font, unicode) || HasSprite(textSprites, unicode))
                     return true;
                 if (!hasSettings)
                     return false;
@@ -297,7 +385,48 @@ namespace UniGameUI.Editor
                 var global = TMP_Settings.fallbackFontAssets;
                 if (global != null && global.Any(fallback => HasWithFallbacks(fallback, unicode)))
                     return true;
-                return HasWithFallbacks(TMP_Settings.defaultFontAsset, unicode);
+                return HasWithFallbacks(TMP_Settings.defaultFontAsset, unicode) ||
+                    HasSprite(TMP_Settings.defaultSpriteAsset, unicode);
+            }
+
+            // Sprite Asset 裡有對應這個碼位的 Sprite（例如表情符號）時，TMP 會畫 Sprite。它自己的 fallback 也算。
+            private bool HasSprite(TMP_SpriteAsset asset, uint unicode)
+            {
+                if (!asset || !visited.Add(asset.GetInstanceID()))
+                    return false;
+                if (SpriteUnicodes(asset).Contains(unicode))
+                    return true;
+                var fallbacks = asset.fallbackSpriteAssets;
+                return fallbacks != null && fallbacks.Any(fallback => HasSprite(fallback, unicode));
+            }
+
+            // 從序列化的資料讀，不呼叫 TMP 的查詢：那會把舊格式的 Sprite Asset 升級並標成已修改。
+            private HashSet<uint> SpriteUnicodes(TMP_SpriteAsset asset)
+            {
+                var id = asset.GetInstanceID();
+                if (sprites.TryGetValue(id, out var known))
+                    return known;
+
+                known = new HashSet<uint>();
+                var serialized = new UnityEditor.SerializedObject(asset);
+                Collect(serialized.FindProperty("m_SpriteCharacterTable"), "m_Unicode");
+                // 舊格式把 Sprite 記在另一個清單裡。
+                Collect(serialized.FindProperty("spriteInfoList"), "unicode");
+                sprites[id] = known;
+                return known;
+
+                void Collect(UnityEditor.SerializedProperty table, string field)
+                {
+                    if (table == null || !table.isArray)
+                        return;
+                    for (var index = 0; index < table.arraySize; index++)
+                    {
+                        var value = table.GetArrayElementAtIndex(index).FindPropertyRelative(field);
+                        // 0 與 0xFFFE 表示這個 Sprite 沒有對應的碼位。
+                        if (value != null && value.longValue > 0 && value.longValue != 0xFFFE)
+                            known.Add((uint)value.longValue);
+                    }
+                }
             }
 
             private bool HasWithFallbacks(TMP_FontAsset font, uint unicode)
@@ -324,30 +453,21 @@ namespace UniGameUI.Editor
                 return found;
             }
 
-            // 字型引擎一次只載入一個字型。這裡只是讀取字型檔，不會動到字型資產。
-            private bool LoadFace(TMP_FontAsset font)
+            // 字型引擎一次只載入一個字型，而且 TMP 自己也會換：第一次讀某個動態字型的對照表時，
+            // TMP 會把引擎換成那個字型。所以每次查詢前都重新載入，不記「目前載入的是哪一個」。
+            // 這裡只是讀取字型檔，不會動到字型資產。
+            private static bool LoadFace(TMP_FontAsset font)
             {
-                var id = font.GetInstanceID();
-                if (loadedFace == id)
-                    return loadedFaceIsValid;
-
                 FontEngine.InitializeFontEngine();
                 var face = font.faceInfo;
-                bool loaded;
                 if (font.atlasPopulationMode == AtlasPopulationMode.DynamicOS)
                 {
-                    loaded = FontEngine.LoadFontFace(face.familyName, face.styleName, face.pointSize) ==
+                    return FontEngine.LoadFontFace(face.familyName, face.styleName, face.pointSize) ==
                         FontEngineError.Success;
                 }
-                else
-                {
-                    var source = SourceFont(font);
-                    loaded = source && FontEngine.LoadFontFace(source, face.pointSize, FaceIndex(font)) ==
-                        FontEngineError.Success;
-                }
-                loadedFace = id;
-                loadedFaceIsValid = loaded;
-                return loaded;
+                var source = SourceFont(font);
+                return source && FontEngine.LoadFontFace(source, face.pointSize, FaceIndex(font)) ==
+                    FontEngineError.Success;
             }
 
             // 字型檔裡有多個字體時用的索引。它不是公開的屬性，從序列化的資料讀。

@@ -1158,8 +1158,8 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `element.id-duplicate` | Error | 同一個畫面裡有重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
 | `element.kind-unknown` | Error | 元件記錄的元件名稱不在元件集裡。 | 把元件登記回元件集，或刪掉這個元件重新建立。 |
 | `button.action-unrouted` | Error | 按鈕的動作找不到對應的路由。 | 補上路由，或修改按鈕的 `action`。訊息提到 Prefab 本體時，請修正審核實例並套用覆寫。 |
-| `button.unbound` | Warning | 畫面裡的 `Button` 沒有動作（沒有 `UIButtonAction`，或動作是空的），`onClick` 也沒有在 Inspector 接監聽。由程式控制的畫面與清單項目裡的按鈕不算。 | 給按鈕 `action` 並接一條路由；要由程式處理時用 `Emit` 路由，在頁面腳本的 `OnAction` 接收。 |
-| `text.missing-glyph` | Warning | TMP 文字的預設內容（包含輸入框的 placeholder 與下拉選單的選項）有字型和它的 fallback 都沒有的字元。空白與控制字元不算。訊息列出缺少的字元，最多十個。 | 設定含有這些字元的預設字型（`defaultFontPath`），或修改預設文字。 |
+| `button.unbound` | Warning | 畫面裡的 `Button` 沒有動作（沒有 `UIButtonAction`，或動作是空的），`onClick` 也沒有在 Inspector 接監聽（Call State 設成 Off 的監聽不會被呼叫，不算有接）。由程式控制的畫面與清單項目裡的按鈕不算。 | 給按鈕 `action` 並接一條路由；要由程式處理時用 `Emit` 路由，在頁面腳本的 `OnAction` 接收。 |
+| `text.missing-glyph` | Warning | TMP 文字的預設內容（包含輸入框的 placeholder、下拉選單的選項，以及放在清單項目裡的文字）有字型和它的 fallback 都沒有的字元。空白與控制字元不算；開著富文字時，TMP 認得的標籤本身（例如 `<size=120%>`、`<sprite name=…>`）不算，`<font>` 裡換了字型的文字不檢查；文字的 Sprite Asset 或 TMP Settings 的預設 Sprite Asset 補得到的字元（例如表情符號）不算。訊息列出缺少的字元，最多十個。 | 設定含有這些字元的預設字型（`defaultFontPath`），或修改預設文字。 |
 | `input.event-system-multiple` | Error | 工作區所在的 Scene 有超過一個啟用的 EventSystem。 | 只保留一個。 |
 | `input.event-system-missing` | Error | 載入的 Scene 裡沒有 EventSystem。 | 在工作區的 Scene 或共用的 Scene 加回一個。 |
 | `input.event-system-disabled` | Error | 載入的 Scene 裡有 EventSystem，但沒有啟用。 | 啟用它的 GameObject 與元件。 |
