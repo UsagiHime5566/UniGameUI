@@ -1,7 +1,7 @@
 # UniGameUI 改進計畫
 
 - 定案日期：2026-11-20（使用者與 Claude 討論後決定）
-- 目前版本：0.5.0。四批都已通過審核。`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上；0.5.0（第四批，包含追加的 4-7 與 K1～K8 的修正）可以打 `v0.5.0` 標籤，還沒打
+- 目前版本：0.5.0。四批都已通過審核。標籤 `v0.3.0`（`0a60b1d`）、`v0.4.0`（`19fa121`）、`v0.5.0`（`9188e4f`）都已打上。repo 在 2026-11-21 發佈到 <https://github.com/UsagiHime5566/UniGameUI>，安裝方式見根目錄的 `README.md`
 - 相關文件：`CODEX_REVIEW.md`（審核結果與 N、P、U、M、L 各項目的原始說明）、`AGENTS.md`（每一輪的工作規則）
 - 分工：2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，文件裡提到 codex 的地方是當時的紀錄。
 
@@ -37,7 +37,7 @@
 | 由程式控制的畫面 | 不靠路由進出的畫面可以在藍圖標記，標記後不檢查走不走得到、有沒有出口；確認框自動視為由程式控制（2026-11-20 決定）。 |
 | 訊號 | 遊戲事件用 `SignalAsync` 送出，由藍圖的「任何畫面」節點決定去哪裡。訊號會等進行中的導航結束再執行；其他導航 API 照舊回傳 `Busy`（2026-11-20 決定）。 |
 | 不可返回 | 路由的 `history: Clear` 表示跳過去之後不能返回，`ShowPage` 與 `OpenPopup` 都適用（2026-11-20 決定）。 |
-| 發佈 | GitHub repo，其他專案用 git URL 加 `?path=/Packages/com.chrono.unigameui` 安裝，用版本標籤鎖定。repo 尚未建立。 |
+| 發佈 | GitHub repo（<https://github.com/UsagiHime5566/UniGameUI>，2026-11-21 發佈）。其他專案用 git URL 加 `?path=/Packages/com.chrono.unigameui` 安裝，用版本標籤鎖定。安裝步驟寫在根目錄的 `README.md`。 |
 | 版本 | 每批交付時升一個版號。標籤等審核通過後才打。 |
 | 事件出錯 | 「顯示前」出錯會取消這次導航；「顯示後」、「隱藏前」、「隱藏後」出錯只記錄，導航照常完成（2026-11-20 決定，原因見 `CODEX_REVIEW.md` 的 F1）。 |
 | 通知期間的導航 | 在生命週期通知進行中提出的導航請求，維持回傳 `Busy` 並記錄警告，不延後自動執行。標準寫法是先等一個影格再導航（2026-11-20 決定，原因見 `CODEX_REVIEW.md` 的 G2）。 |
@@ -92,7 +92,7 @@
 
 - `view.no-exit` 加上不可返回的 Popup：只接了 `Back` 路由的 Popup 以 `history: Clear` 開啟之後關不掉，Validate 目前不會提醒（第九輪審核）。
 - IL2CPP Player 的驗證。開發用的電腦沒有安裝模組，四批都只驗證過 Mono。
-- 發佈：建立 GitHub repo，其他專案用 git URL 安裝。
+- 發佈：repo 已在 2026-11-21 建立，從全新的專案用 git URL 安裝已實測可用。版本標籤要另外推上去（`git push origin --tags`），`#v0.5.0` 這種鎖定版本的網址才有效。
 
 ### 先不做
 

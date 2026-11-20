@@ -2,7 +2,7 @@
 
 適用於 Unity 6.3、uGUI 與 Input System。這個套件提供 Scene 2D 審核、可編輯的 UI 藍圖、可以直接修改美術的起始元件，以及使用 Unity `Awaitable` 與 DOTween 的頁面和 Popup 轉場。
 
-1. 將此套件目錄放進專案的 `Packages/com.chrono.unigameui`，或在 Package Manager 使用 **Install package from disk** 選擇本套件的 `package.json`。相依的 uGUI（`com.unity.ugui`）與 Input System（`com.unity.inputsystem`）會由 Package Manager 一併安裝。
+1. 在 Package Manager 按 **+**，選 **Install package from git URL…**，貼上 `https://github.com/UsagiHime5566/UniGameUI.git?path=/Packages/com.chrono.unigameui#v0.5.0`。網址最後的 `#v0.5.0` 是版本標籤，用來鎖定版本。也可以把這個套件目錄放進專案的 `Packages/com.chrono.unigameui`，或用 **Install package from disk** 選擇本套件的 `package.json`。相依的 uGUI（`com.unity.ugui`）與 Input System（`com.unity.inputsystem`）會由 Package Manager 一併安裝。用 git URL 安裝需要電腦裝有 Git。
 2. 到 **Project Settings → Player → Active Input Handling** 選 `Input System Package (New)` 或 `Both`，並依提示重新啟動 Editor。套件只支援新的 Input System；只啟用舊的 Input Manager 時，Validate 會回報錯誤。
 3. 提供此次的 UI 需求，請 agent 先讀取 [AgentGuide.md](Documentation~/AgentGuide.md)。匯入時只有工具和文件。工作區、頁面、Popup、藍圖都由 agent 在接到需求後建立。
 4. 在交付 Scene 裡開啟 **Tools → UniGameUI → Blueprint**，用 **檢視全部 UI** 或藍圖節點定位畫面。單 Scene 頁面用 `Ctrl+S` 存檔。Popup 預覽的修改用 **套用到 Prefab** 儲存。
