@@ -1,6 +1,6 @@
 {
   "name": "com.chrono.unigameui",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "displayName": "UniGameUI",
   "description": "Scene-first uGUI authoring, editable navigation blueprints, starter widgets, gamepad navigation, Awaitable page and popup transitions, and command line validation and route walking.",
   "unity": "6000.3",
