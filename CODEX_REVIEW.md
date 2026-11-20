@@ -11,9 +11,10 @@
 - 第五輪：2026-11-20，commit `45b7e0b`（Claude 複驗第二批修正）
 - 第三批改進：2026-11-20，commit `db8691f`（0.4.0，Claude 子 session 實作，尚未打標籤）
 - 第六輪：2026-11-20，commit `43bbd51`（Claude 審核第三批，發現 J1～J8，待修正）
+- 第三批修正：2026-11-20，commit `b29b305`（Claude 子 session 修正 J1～J8，待複驗）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 第一批與第二批都已通過獨立審核。第二批的 G1～G5 已修正，Claude 複驗後確認全部符合，**0.3.0 可以打 `v0.3.0` 標籤**。複驗結果見「第五輪審核」，剩下的互動操作見「未驗證」。第三批（0.4.0）的十一項已實作並經過 Claude 獨立審核：執行期的行為與規格相符，但 Editor 端發現 J1～J8，**修正並複驗之前不要打 `v0.4.0` 標籤**。審核結果見「第六輪審核」，修正的規則見 `ROADMAP.md` 的「第三批修正」。
+**現況：** 第一批與第二批都已通過獨立審核。第二批的 G1～G5 已修正，Claude 複驗後確認全部符合，**0.3.0 可以打 `v0.3.0` 標籤**。複驗結果見「第五輪審核」，剩下的互動操作見「未驗證」。第三批（0.4.0）的十一項已實作並經過 Claude 獨立審核：執行期的行為與規格相符，Editor 端發現的 J1～J8 已由實作者修正，紀錄見驗證紀錄的「第三批修正」。**Claude 複驗通過之前不要打 `v0.4.0` 標籤**。審核結果見「第六輪審核」，修正的規則見 `ROADMAP.md` 的「第三批修正」。
 
 **分工：** 2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，這份文件裡提到 codex 的地方是當時的紀錄。
 
@@ -60,12 +61,12 @@
 | G5 | 零碎項目（計畫欄位寫錯位置沒有提示、訊息用字） | 已修正。JSON 預檢會定位不適用的欄位，通知例外與導航失敗使用不同訊息。Claude 已在 log 確認兩種訊息 |
 | I1 | 第五輪的小提醒（測試依賴靜態旗標、指南一句話不好讀） | 已在第三批（3-1）處理：測試開始前重設旗標，指南改成直接說明。Claude 已核對 |
 | 3-1～3-11 | 第三批：元件與輸入（0.4.0） | 已實作。Claude 重跑四組測試，結果相同；另在 Windows Player 走過 64 項檢查，全部通過。執行期的行為與規格相符，Editor 端的問題見 J1～J8。IL2CPP 與實際畫面未驗證 |
-| J1 | 計畫寫出的顏色只固定了一部分，改元件 Prefab 的顏色會讓畫面變色 | 待修正（高） |
-| J2 | 開著另一個有 UI 的 Scene 時，計畫套不進別的 Scene，還可能卡住 | 待修正（中） |
-| J3 | 登記既有的 View Prefab 時，預檢沒有看 Prefab 裡的內容 | 待修正（中） |
-| J4 | 起始下拉選單的捲軸寬度是 0 | 待修正（中低） |
-| J5～J7 | 選項的鍵值殘留、套用到一半才報錯、不存在的「待套用」 | 待修正（低） |
-| J8 | 讀程式碼發現的四點 | 待實作者用測試確認 |
+| J1 | 計畫寫出的顏色只固定了一部分，改元件 Prefab 的顏色會讓畫面變色 | 已修正，待複驗。顏色的每個分量、選項與鍵值的每一項都固定；EditMode 用只有部分分量不同的顏色驗證 |
+| J2 | 開著另一個有 UI 的 Scene 時，計畫套不進別的 Scene，還可能卡住 | 已修正，待複驗。EventSystem 依所在的 Scene 判斷，失敗的計畫會關回自己開啟的 Scene；EditMode 驗證四種情況與失敗後的 Scene 清單 |
+| J3 | 登記既有的 View Prefab 時，預檢沒有看 Prefab 裡的內容 | 已修正，待複驗。EditMode 用起始確認框驗證 |
+| J4 | 起始下拉選單的捲軸寬度是 0 | 已修正，待複驗。EditMode 檢查產生的 Prefab；選項超過展開範圍時的外觀待人工確認 |
+| J5～J7 | 選項的鍵值殘留、套用到一半才報錯、不存在的「待套用」 | 已修正，待複驗。三項各有 EditMode 測試 |
+| J8 | 讀程式碼發現的四點 | 前三點用測試確認是問題並已修正，待複驗。第四點（Play Mode 的 Validate）沒有重現，保留測試、沒有改程式 |
 
 ## 第六輪審核：第三批（0.4.0）
 
@@ -427,6 +428,75 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 
 ## 驗證紀錄
 
+### 第三批修正（J1～J8）
+
+以下是實作者（Claude 的子 session）自己的紀錄，等主 session 複驗。分支 `fix/batch-3`，八項各一個 commit，已快轉合併回 `main`。版本維持 0.4.0，公開 API 沒有變動。這一輪只改 Editor 組件、測試與文件，`Runtime` 資料夾沒有任何變動。
+
+| 項目 | commit | 修正方式 |
+|---|---|---|
+| J1 | `3365f02` | 固定覆寫時一路看到序列化的最底層：顏色的 r、g、b、a，陣列的長度與每一項，各自判斷是不是已經是覆寫。`options` 與 `optionKeys` 也固定。陣列長度用「暫時加長一項再改回」讓覆寫成立，多出來那一項留下的覆寫會清掉。 |
+| J2 | `0e4d82d` | EventSystem 的檢查改成依所在的 Scene 判斷（規則的四列表格），輸入模組檢查執行期會用到的那一個，訊息分開「沒有」與「有但沒有啟用」。計畫失敗時，為了套用而開啟或新建的 Scene 都關回去，並把作用中的 Scene 設回原本那個。 |
+| J3 | `314d591` | 預檢的「既有的畫面」：這個工作區登記過就用審核實例，否則用畫面指到的既有 Prefab。 |
+| J4 | `5cec1d0` | 建立範本時 `SetDirection` 不再對調已經排好的寬高。捲軸的 `sizeDelta` 是 `(40, 0)`。 |
+| J5 | `9ea5977` | 預檢比對套用後的選項數量與鍵值數量，鍵值不是 0 個又和選項不一樣多就報錯。`"optionKeys": []` 清除所有鍵值。 |
+| J6 | `2c47c16` | 滑桿、下拉選單、清單間距、缺少元件或遺失的元件 Prefab、沒有遮罩的 Popup，都在預檢依既有的實例或元件 Prefab 檢查。套用時的檢查保留。 |
+| J7 | `baf9112` | `HasReviewOverrides` 略過 `TMP_Text` 的 `m_fontColor32`；`m_fontColor` 照舊算。 |
+| J8 | `b29b305` | 見下面「J8 四點的確認」。 |
+
+使用 Unity 6000.3.19f1，和第三批同一組副本專案（有、無 DOTween），Active Input Handling 是新的 Input System。EditMode 啟用圖形裝置，PlayMode 使用批次模式。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 70 | 0 | 0 |
+| 有 DOTween | PlayMode | 68 | 0 | 1 |
+| 無 DOTween | EditMode | 23 | 0 | 47 |
+| 無 DOTween | PlayMode | 64 | 0 | 5 |
+
+- 修正前的基準是 56、67 加 1 略過、20 加 36 略過、63 加 5 略過。既有案例全部保留並通過，新增 EditMode 14 個、PlayMode 1 個。
+- 既有案例只改了一個：`NewWorkspaceUsesTheInputSystemModuleAndValidationRejectsOtherInputSetups` 的訊息斷言配合 J2 的新訊息，第二個 EventSystem 明確放進工作區的 Scene。
+- 無 DOTween 時多通過的 3 個是不需要套用計畫的新案例：EventSystem 的表格、下拉選單的捲軸、`SetDefaultFont` 對輸入框的判斷。其餘 11 個新的 EditMode 案例需要套用計畫，沒有 DOTween 時略過。
+- 新案例都放在 `Tests/Editor/UIAuthoringBatch3FixTests.cs`、`Tests/Editor/UIAuthoringBatch3J8Tests.cs` 與 `Tests/Runtime/UIBatch3J8Tests.cs`。
+- 跑完後兩個副本專案的 `Assets` 沒有留下測試用的資料夾。
+
+**各項的測試怎麼確認修正有效**
+
+- J1：白色圖片寫 `#FFD25A`、底色 `#204060` 的面板寫 `#204080`（只有一個分量不同）等七種欄位，之後把元件 Prefab 的顏色改成半透明的黑色，實例都維持計畫寫的值，沒寫顏色的實例跟著 Prefab。選項數量和 Prefab 相同（連文字與鍵值都相同的也測了）時，清空 Prefab 的選項並換掉鍵值，實例不變。Popup 的 Prefab 本體同樣檢查。
+- J2：表格四列各一個案例，另外測了訊息的兩種說法與輸入模組的檢查對象。開著一個有工作區的 Scene，計畫建立另一個 Scene 並套用成功，Console 有「只能留一個」的 Warning；對既有的另一個 Scene 也成功並維持附加開啟。失敗的情況測了三種（套用完的檢查失敗、預檢失敗、新建的 Scene 失敗），載入的 Scene 清單和套用前相同，接著對原本的 Scene 套用成功。只開著一個沒存過的空 Scene 時另外測了一個案例。
+- J3：把起始確認框登記到新的 Scene。`kind: Text` 的 `updateExisting` 在套用前報錯，工作區與 Prefab 檔案都沒有變；`defaultSelected` 指到不存在或不能選取的元件也被擋下；指到 `confirm` 可以套用。
+- J4：產生出來的 Prefab，捲軸的錨點、軸心、`sizeDelta`，以及算出來的寬度 40、高度等於範本；滑動區域與把手都在捲軸的範圍內。
+- J5：只換選項而數量不同時報錯並且沒有留下變更；數量相同時只換選項、同時提供新鍵值、用空陣列清除、沒有鍵值的下拉選單、只給鍵值而數量不對，共六種。
+- J6：十四種錯誤各自確認在套用前失敗，Scene 沒有被標成未儲存，Scene 檔案、工作區的畫面、元件與 Prefab 都沒有變。起始元件還沒安裝時另外確認失敗的計畫不會安裝元件集。
+- J7：照第六輪的步驟改 `Text.prefab` 與 `Button.prefab` 的文字顏色再登記確認框。測試先確認審核實例上確實出現 `m_fontColor32.rgba` 的覆寫（也就是修正前會回報待套用的情況），再確認 `HasReviewOverrides` 是 false；真的改了審核實例的文字顏色之後是 true。
+
+**J8 四點的確認**
+
+四點都先寫測試，在修正前的程式上執行一次。
+
+| 項目 | 修正前執行的結果 | 處理 |
+|---|---|---|
+| `defaultFontPath` | 測試失敗，確認是問題。讓第三個 Prefab 換字型時丟出例外，Scene 檔案已經是失敗那份計畫的內容。 | 已修正。換字型改在檢查通過之後、Scene 存檔之前；先記下會被改寫的 Prefab 檔案內容，失敗時寫回，後續步驟失敗時由計畫的還原一併復原。 |
+| `placeholder` | 測試失敗，確認是問題。沒有 placeholder 的輸入框類元件寫了 `placeholder` 或 `placeholderKey`，沒有任何錯誤。 | 已修正。套用前報錯，訊息指出畫面與元件。 |
+| `SetDefaultFont` | 測試失敗，確認是問題。專案已經改成別的字型的 placeholder 被換成新的預設字型。 | 已修正。只改輸入框自己記的字型欄位，文字與 placeholder 各自判斷。 |
+| Play Mode 的 Validate | 測試通過，**沒有重現**。 | 沒有改程式，測試留著當防護。 |
+
+第四點的確認方式：PlayMode 測試在 Play Mode 中呼叫 `UIValidation.Check`，工作區裡登記了三種沒有設定預設選取元件的畫面：從資產載入的 Popup Prefab 本體、在 Play Mode 用 `Instantiate` 複製出來並登記成審核畫面的實例、測試用程式直接建立的頁面。沒有任何一個被回報「已經遺失」。接著把預設選取元件指到一個物件再銷毀它，確實回報遺失，表示這個檢查在 Play Mode 仍然有效。**沒有涵蓋的情況：** 進入 Play Mode 之前就存在 Scene 裡、由 Unity 在進入 Play Mode 時重新載入的審核畫面（測試的畫面是在 Play Mode 裡建立的），以及關閉 Domain Reload 的 Play Mode。
+
+**規則沒寫到、實作時決定的地方**
+
+請複驗時一併判斷。
+
+1. **J2 的表格沒有列的情況：** 工作區的 Scene 沒有 EventSystem，其他載入的 Scene 有兩個以上。實作是 Warning（和第三列同樣的提醒），並且每一個的輸入模組都檢查。
+2. **J2 關回 Scene 的細節：** Scene 原本列在 Hierarchy 但沒有載入時，失敗後回到沒有載入的狀態，不從 Hierarchy 移除。目標 Scene 取代了唯一一個沒存過的空 Scene 時，失敗後換回一個新的未命名 Scene（原本有物件就建立帶預設物件的）。
+3. **J3 登記過的畫面：** 規則說「不論這個工作區有沒有登記過它」都以 Prefab 的內容為準。實作上登記過的畫面用審核實例，它是那個 Prefab 的實例，另外包含還沒套用回 Prefab 的修改，計畫實際寫入的對象也是它。
+4. **J5 也套用在新元件：** 元件 Prefab 自己帶有鍵值，計畫只寫了數量不同的 `options` 時同樣報錯。
+5. **J6 滑桿的 `value`：** 超出合併後範圍的 `value` 以前會被 Unity 安靜地夾住，現在是套用前報錯。起始滑桿是 0 到 1，計畫要寫更大的值必須同時寫 `max`。
+6. **J6 起始元件還沒安裝時：** 沒有 Prefab 可以看，預檢用起始元件的預設值（滑桿 0 到 1、下拉選單三個選項）。這些值改成常數，和建立起始元件的程式共用。
+7. **J6 的例外型別：** 元件 Prefab 遺失或缺少元件時，預檢丟出 `InvalidOperationException`，和原本套用時相同；其餘是 `ArgumentException`。
+8. **J4 不會更新已經安裝的專案：** 安裝只補上缺少的，既有的 `Dropdown.prefab` 不會被改。CHANGELOG 寫了手動修正的方式（把 `Template/Scrollbar` 的寬度改成 40）。
+9. **J8 的測試掛點：** `UIWidgets.ReplacingFont` 是 internal，只用來在測試裡模擬換字型換到一半失敗。
+
+**這一輪沒有驗證的：** 沒有重新打包執行檔（`Runtime` 沒有變動）；IL2CPP；互動 Editor 裡的操作，包含透過 Unity MCP 在開著的 Editor 對另一個 Scene 套用計畫；下拉選單選項超過展開範圍時捲軸的外觀與拖曳；J8 第四點上面列的兩種情況。
+
 ### 第六輪：Claude 對第三批的獨立驗證
 
 使用 Unity 6000.3.19f1，兩個全新的副本專案（有、無 DOTween），Active Input Handling 設為新的 Input System，套件內容取自 `43bbd51`。
@@ -727,7 +797,9 @@ PlayerSettings:
 - **IL2CPP Player。** 這台電腦沒有 6000.3.19f1 的 IL2CPP 模組。
 - **實體手把的按鍵對應。** 框架讀的是輸入模組上的動作，測試用的是預設動作與虛擬的標準手把。
 - **關閉 Domain Reload 的 Play Mode。** 沒有實測。
-- **多個 Scene 同時開著、各有 EventSystem 的情況。** Claude 已在第六輪實測，結果是 J2，修正後再複驗。
+- **多個 Scene 同時開著、各有 EventSystem 的情況。** Claude 已在第六輪實測，結果是 J2。J2 已修正，EditMode 測試涵蓋規則的四種情況與失敗後的還原；在開著的互動 Editor 實際操作（例如透過 Unity MCP）待複驗。
+- **下拉選單選項超過展開範圍時的捲軸。** J4 修正後只用 EditMode 檢查了 Prefab 裡的數值與算出來的矩形。請加八個以上的選項，確認捲軸看得到、拖得動。
+- **Play Mode 中按 Validate。** J8 的第四點用 PlayMode 測試沒有重現。進入 Play Mode 之前就存在 Scene 裡的審核畫面沒有另外測，請在有畫面沒設定預設選取元件的 Scene 進 Play 後按一次藍圖的 Validate，確認沒有「預設選取元件已經遺失」。
 
 第二批的藍圖儲存邏輯與錯誤計畫的預檢已由測試覆蓋。互動 Editor 待人工確認錯誤計畫的對話框、藍圖右欄「返回歷史」選單、「關閉結果」輸入框及拖線，以及 Add Component 中的 `UniGameUI/UI Element Id`。本次 Unity 安裝只有 Windows Mono 模組，IL2CPP Player 未執行。
 

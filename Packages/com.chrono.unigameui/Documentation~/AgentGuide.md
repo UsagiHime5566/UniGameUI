@@ -130,6 +130,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 
 - `views[].id`、`elements[].id` 和 `action` 使用 ASCII 字母、數字、底線或連字號。ID 是定位與接線用的鍵。Hierarchy 物件名稱可以調整。
 - `mode` 可用 `SingleScene` 或 `Prefab`。只有確定需要新 Scene 時才給 `createScene: true`。新工作區預設參考解析度 1920×1080、每排 3 格。
+- `scenePath` 指到的 Scene 還沒開啟時，計畫會自己開啟或建立它：只開著一個沒存過的空 Scene 時取代它，否則以附加方式開啟，套用成功後維持開著。所以開著一個有工作區的 Scene 時，也可以對另一個 Scene 套用計畫。計畫失敗時，為了套用而開啟的 Scene 會關回去，原本開著的 Scene 不動。
 - `startPage` 是可選的頁面 ID，指定空字串可清除起始頁。路由種類有 `ShowPage`、`OpenPopup`、`Back`、`ClosePopup`、`Emit`。前兩種需要 `target`。同一來源頁的一個 `action` 對應一條路由。
 - `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。將任一欄位寫在其他種類的路由上，計畫會在套用前指出路由與欄位。
 - `pageTransitionMode` 可用 `Sequential` 或 `Concurrent`。新工作區預設依序播放。要讓切頁的進場和退場重疊，設定 `Concurrent` 或在 `UIRoot` Inspector 修改「切頁動畫」。
@@ -172,8 +173,15 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 - 矩形座標是 Unity RectTransform 的 anchor 與參考解析度下的座標，Y 向上。新元件省略 `rect.size` 時，大小取自元件 Prefab 的根節點。
 - 元件之間沒有父子關係，全部放在 View 的 Content 底下。建立的先後順序就是繪製順序，要當底圖的 `Panel` 請寫在前面。
 - **欄位寫錯位置會報錯。** 欄位用在不支援它的元件上（例如 `Slider` 寫 `text`）、`kind` 不在元件集裡、更新時 `kind` 和原本不同，計畫都會在套用前失敗，訊息指出畫面、元件與欄位，而且不留下任何變更。
+- **數值和元件目前的內容對不上，也會在套用前報錯。** 更新時依既有的實例檢查，新元件依元件 Prefab 檢查（起始元件還沒安裝時依它的預設值）。
+  - `Slider` 的 `min`、`max`、`value` 和目前的值合併之後，`min` 必須小於 `max`，`value` 必須在範圍內。起始滑桿的範圍是 0 到 1，要寫更大的 `value` 請同時寫 `max`。
+  - `Dropdown` 的 `value` 不能超出選項的數量，`optionKeys` 的數量要和選項相同。
+  - `spacing` 只能用在內容物件有版面配置元件的清單。
+  - `placeholder`、`placeholderKey` 只能用在輸入框有 TMP placeholder 的元件。
+  - 元件 Prefab 缺少欄位需要的元件（例如比照 `Button` 的自訂元件沒有文字，計畫卻寫了 `text`），或元件集裡的 Prefab 已經遺失。
+- 畫面指到的 View Prefab 已經存在時（例如把起始確認框登記到另一個 Scene），上面這些檢查與 `defaultSelected` 都依 Prefab 裡的內容判斷，`updateExisting` 的規則也一樣適用。
 - `updateExisting` 只能用在由計畫建立的元件。手動加上 `UIElementId` 的物件沒有記錄元件名稱，請直接在 Editor 修改。
-- **計畫沒寫的欄位不會成為 Prefab 覆寫**，之後修改元件 Prefab 時這些實例會跟著變。計畫寫了的欄位會固定在該實例上，即使數值剛好和元件 Prefab 相同。
+- **計畫沒寫的欄位不會成為 Prefab 覆寫**，之後修改元件 Prefab 時這些實例會跟著變。計畫寫了的欄位會固定在該實例上，即使數值剛好和元件 Prefab 相同。固定的是整個欄位：顏色的四個分量、`options` 與 `optionKeys` 的數量和每一項，之後不論怎麼修改元件 Prefab 都維持計畫寫的值。
 - 首次建立元件時，工具會安裝 uGUI 附帶的 TMP Essential Resources。若專案曾匯入部分資源，先透過 **Window → TextMeshPro → Import TMP Essential Resources** 完成安裝。
 
 ### 元件集與起始元件
@@ -215,7 +223,8 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 
 - 元件集記錄一個預設字型（TMP Font Asset），可以是空的，空的時候使用 TMP 的預設字型。TMP 的預設字型沒有中文字，要顯示中文請先設定含有所需字元的字型；確認框的預設按鈕文字「確定」、「取消」也是中文。
 - 計畫最上層寫 `"defaultFontPath": "Assets/Fonts/Main SDF.asset"`，或呼叫 `UIWidgets.SetDefaultFont(path)`，也可以在元件集的 Inspector 指定。
-- 設定時會把元件集所有 Prefab 裡「目前使用舊預設字型」的文字換成新字型。已經被專案改成別的字型的文字不會動。
+- 設定時會把元件集所有 Prefab 裡「目前使用舊預設字型」的文字換成新字型。已經被專案改成別的字型的文字不會動。輸入框的文字與 placeholder 各自判斷。
+- 計畫的 `defaultFontPath` 在其他檢查都通過之後、Scene 存檔之前套用。換字型或存檔失敗時，元件 Prefab、元件集的預設字型與 Scene 檔案都維持套用前的狀態。
 - 個別元件的 `fontPath` 照舊可用，會成為該實例的覆寫。多語言的字元涵蓋請用 TMP 的 fallback 字型，框架不處理依語言切換字型。
 
 ## ID 常數
@@ -481,6 +490,8 @@ public sealed class LanguageSwitcher : MonoBehaviour
 
 - **重用**（計畫的 `"popupCache": "Reuse"`，或 View Inspector 的「關閉後保留並重用」）：關閉後不銷毀，停用並保留；下次開啟用同一個實例，並移到 Popup 層的最上面。生命週期方法、資料、等待結果的行為都和重新建立時相同，`TryGetView` 與 `Popups` 仍然只包含開著的 Popup。**重用的 Popup 會留著上次的狀態**，例如捲動位置、輸入內容、頁面腳本的欄位，要在 `OnShowing` 重設。預設是每次開啟都重新建立。
 - **點遮罩關閉**（計畫的 `"overlayClick": "Close"`，或 View Inspector 的「點遮罩關閉」）：點擊遮罩等同不帶結果的關閉。點在 Popup 的內容範圍內不算。只在該 Popup 是最上層而且沒有轉場進行時有效，和 `backKey` 互相獨立。
+  - **內容範圍是 `Content` 的矩形，不是看得見的美術。** 計畫建立的 Popup，`Content` 是畫面中央 60% 的範圍；對話框比它小時，範圍內的暗色區域點了不會關閉。要讓範圍貼齊對話框，請調整 `Motion` 的大小。
+  - 既有的 Popup 沒有遮罩物件時，計畫會在套用前報錯。
 
 ### 確認框
 

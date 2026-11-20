@@ -15,13 +15,20 @@
 - Validate 新增元件集、預設選取元件與 Popup 選項的檢查。`UIView`、`UIRoot` 與元件集的 Inspector 顯示新的設定。
 - View Prefab 以不同的畫面 ID 登記時，訊息改為說明畫面 ID 不符。
 - 測試在重設「只警告一次」的旗標後才檢查 UnityEvent 的備援警告。
+
+第三批審核後的修正（J1～J8，版本維持 0.4.0）：
+
+- 計畫寫出的欄位整個固定成覆寫：顏色的每一個分量、`options` 與 `optionKeys` 的數量和每一項。之前顏色只固定了和元件 Prefab 不同的分量，修改 Prefab 的顏色會讓畫面變成兩者混合的顏色。
 - EventSystem 的檢查改為依所在的 Scene 判斷：工作區的 Scene 有超過一個，或所有載入的 Scene 都沒有啟用的，才是錯誤；其他載入的 Scene 也有時只是警告；EventSystem 放在共用 Scene 可以通過。開著一個有工作區的 Scene 時，計畫可以套用到另一個 Scene。
 - 計畫失敗時，為了套用而開啟的 Scene 會關回去，載入的 Scene 清單和套用前相同。
+- 畫面指到的 View Prefab 已經存在時，預檢以 Prefab 裡的內容為準：`defaultSelected` 可以指到 Prefab 裡的元件，`updateExisting` 的規則（只能更新由計畫建立的元件、`kind` 必須相同）不再被繞過。
+- 修正起始下拉選單範本的捲軸寬度是 0。已經安裝過起始元件的專案不會自動更新，請把 `Dropdown.prefab` 裡 `Template/Scrollbar` 的寬度改成 40。
 - 更新既有的下拉選單時，套用後的選項數量和 `optionKeys` 數量不同會在套用前報錯。`"optionKeys": []` 表示清除所有鍵值。
 - 計畫的檢查提前：滑桿的 `min`、`max`、`value` 和既有的值合併後不合理（`min` 不小於 `max`，或 `value` 超出範圍）、下拉選單的 `value` 或 `optionKeys` 數量和選項不合、`spacing` 用在內容物件沒有版面配置元件的清單、元件 Prefab 缺少欄位需要的元件或已經遺失、`overlayClick: Close` 用在沒有遮罩的 Popup，都在套用前報錯，不會把 Scene 標成未儲存。
 - `placeholder`、`placeholderKey` 寫在沒有 TMP placeholder 的輸入框類元件上時，在套用前報錯，不再安靜地略過。
 - 計畫的 `defaultFontPath` 改在 Scene 存檔之前套用。換字型或存檔失敗時，元件 Prefab、元件集的預設字型與 Scene 檔案都回到套用前的狀態。
 - `SetDefaultFont` 對輸入框的文字與 placeholder 各自判斷，只換掉目前使用舊預設字型的那一個。
+- 藍圖與 Validate 不再把 TMP 自己衍生的文字顏色欄位當成待套用的覆寫。改過元件 Prefab 的文字顏色之後登記的畫面，不會再顯示不存在的「待套用」。
 
 ## 0.3.0（2026-11-20）
 
