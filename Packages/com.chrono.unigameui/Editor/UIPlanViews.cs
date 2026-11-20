@@ -13,8 +13,9 @@ namespace UniGameUI.Editor
         private enum PopupCache { Recreate, Reuse }
         private enum OverlayClick { Ignore, Close }
 
+        // registered：這個工作區已經登記過這個畫面。登記過的畫面要設 updateExisting 才會寫入選項。
         private static void PreflightViewOptions(ViewSpec view, UIEntryKind kind, UIView existingReview,
-            WidgetCatalog catalog)
+            bool registered, WidgetCatalog catalog)
         {
             PreflightDefaultSelected(view, existingReview, catalog);
             Parse(view.backKey, BackKeyMode.Back);
@@ -24,7 +25,21 @@ namespace UniGameUI.Editor
                     throw new ArgumentException($"畫面「{view.id}」是頁面，{field} 欄位只適用於 Popup。");
             }
             Parse(view.popupCache, PopupCache.Recreate);
-            Parse(view.overlayClick, OverlayClick.Ignore);
+            // 新建立的 Popup 一定有遮罩；既有的 Popup 沒有遮罩時無法設成 Close。
+            if (Parse(view.overlayClick, OverlayClick.Ignore) == OverlayClick.Close && existingReview &&
+                (!registered || view.updateExisting) && !FindOverlay(existingReview))
+                throw new ArgumentException(MissingOverlay(view.id));
+        }
+
+        // 0.4.0 之前建立的 Popup 沒有記錄遮罩，依名稱尋找。
+        private static RectTransform FindOverlay(UIView view)
+        {
+            return view.overlay ? view.overlay : view.transform.Find("Overlay") as RectTransform;
+        }
+
+        private static string MissingOverlay(string viewId)
+        {
+            return $"畫面「{viewId}」沒有遮罩物件，無法把 overlayClick 設成 Close。";
         }
 
         private static void PreflightDefaultSelected(ViewSpec view, UIView existingReview, WidgetCatalog catalog)
@@ -90,11 +105,10 @@ namespace UniGameUI.Editor
             if (!string.IsNullOrEmpty(spec.overlayClick))
             {
                 var closes = Parse(spec.overlayClick, OverlayClick.Ignore) == OverlayClick.Close;
-                // 0.4.0 之前建立的 Popup 沒有記錄遮罩，依名稱補上。
                 if (closes && !view.overlay)
-                    view.overlay = view.transform.Find("Overlay") as RectTransform;
+                    view.overlay = FindOverlay(view);
                 if (closes && !view.overlay)
-                    throw new ArgumentException($"畫面「{view.Id}」沒有遮罩物件，無法把 overlayClick 設成 Close。");
+                    throw new ArgumentException(MissingOverlay(view.Id));
                 view.closesOnOverlayClick = closes;
             }
             UIAuthoring.RecordOverride(view);

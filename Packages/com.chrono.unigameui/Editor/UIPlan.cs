@@ -361,7 +361,7 @@ namespace UniGameUI.Editor
                     ? entry.Review
                     : existingPrefab;
                 PreflightElements(view, existingContent, catalog);
-                PreflightViewOptions(view, kind, existingContent, catalog);
+                PreflightViewOptions(view, kind, existingContent, entries.ContainsKey(view.id), catalog);
             }
 
             if (!string.IsNullOrEmpty(plan.startPage) &&

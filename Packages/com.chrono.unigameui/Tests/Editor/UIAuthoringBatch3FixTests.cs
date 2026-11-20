@@ -527,6 +527,136 @@ namespace UniGameUI.Editor.Tests
             string[] Keys(string id) => UIPlan.FindElement(view, id).GetComponent<UILocalizedDropdown>().Keys.ToArray();
         }
 
+        [Test]
+        public void ChecksThatDependOnExistingValuesRunBeforeThePlanIsApplied()
+        {
+            RequireDOTween();
+            var widgets = UseIsolatedWidgets();
+
+            // 起始元件還沒安裝時用它的預設值判斷，而且失敗的計畫不會安裝元件集。
+            var empty = NewScene("Batch3Fix Preflight Empty");
+            SceneManager.SetActiveScene(empty);
+            foreach (var field in new[] { @"""kind"": ""Slider"", ""min"": 5", @"""kind"": ""Dropdown"", ""value"": 3" })
+            {
+                Assert.Throws<ArgumentException>(() => UIPlan.Apply(
+                    $@"{{ ""views"": [{{ ""id"": ""home"", ""elements"": [{{ ""id"": ""bad"", {field} }}] }}] }}"), field);
+                Assert.That(UIWidgets.Find(), Is.Null, field);
+                Assert.That(UIAuthoring.FindWorkspace(empty), Is.Null, field);
+                Assert.That(empty.isDirty, Is.False, field);
+            }
+
+            UIWidgets.Install();
+            // 比照 Button 但沒有文字的元件、內容物件沒有版面配置元件的清單。
+            var textless = $"{folder}/TextlessButton.prefab";
+            Assert.That(AssetDatabase.CopyAsset($"{widgets}/Button.prefab", textless), Is.True);
+            EditPrefab(textless, contents =>
+                Object.DestroyImmediate(contents.GetComponentInChildren<TMP_Text>(true).gameObject));
+            var flat = $"{folder}/FlatList.prefab";
+            Assert.That(AssetDatabase.CopyAsset($"{widgets}/ScrollList.prefab", flat), Is.True);
+            EditPrefab(flat, contents => Object.DestroyImmediate(
+                contents.GetComponent<UIList>().Content.GetComponent<HorizontalOrVerticalLayoutGroup>()));
+            UIWidgets.Register("TextlessButton", textless, UIWidgetKind.Button);
+            UIWidgets.Register("FlatList", flat, UIWidgetKind.ScrollList);
+
+            var root = WorkspaceWithHomePage("Batch3Fix Preflight");
+            var scene = root.gameObject.scene;
+            var tipPath = $"{folder}/Tip.prefab";
+            UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""home"", ""elements"": [
+                {{ ""id"": ""volume"", ""kind"": ""Slider"", ""min"": 0, ""max"": 10, ""value"": 5 }},
+                {{ ""id"": ""quality"", ""kind"": ""Dropdown"", ""options"": [""Low"", ""High""] }},
+                {{ ""id"": ""rows"", ""kind"": ""FlatList"" }}] }},
+                {{ ""id"": ""tip"", ""kind"": ""Popup"", ""prefabPath"": ""{tipPath}"" }}] }}");
+            // 拿掉 Popup 的遮罩。
+            EditPrefab(tipPath, contents =>
+                Object.DestroyImmediate(contents.GetComponent<UIView>().Overlay.gameObject));
+            var home = UIAuthoring.FindEntry(root, "home").Review;
+            Assert.That((bool)UIAuthoring.FindEntry(root, "tip").Review.Overlay, Is.False);
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            var sceneFile = File.ReadAllText(scene.path);
+            var laterPath = $"{folder}/Later.prefab";
+
+            var elementCases = new (string Element, Type Error, string Mentions)[]
+            {
+                // 滑桿：新元件依元件 Prefab，更新依既有的實例。
+                (@"{ ""id"": ""bad"", ""kind"": ""Slider"", ""min"": 5 }", typeof(ArgumentException), "min"),
+                (@"{ ""id"": ""bad"", ""kind"": ""Slider"", ""value"": 2 }", typeof(ArgumentException), "value"),
+                (@"{ ""id"": ""volume"", ""kind"": ""Slider"", ""updateExisting"": true, ""max"": -1 }",
+                    typeof(ArgumentException), "max"),
+                (@"{ ""id"": ""volume"", ""kind"": ""Slider"", ""updateExisting"": true, ""value"": 11 }",
+                    typeof(ArgumentException), "value"),
+                // 下拉選單的 value 與 optionKeys 數量。
+                (@"{ ""id"": ""bad"", ""kind"": ""Dropdown"", ""value"": 3 }", typeof(ArgumentException), "value"),
+                (@"{ ""id"": ""bad"", ""kind"": ""Dropdown"", ""optionKeys"": [""a"", ""b""] }",
+                    typeof(ArgumentException), "optionKeys"),
+                (@"{ ""id"": ""quality"", ""kind"": ""Dropdown"", ""updateExisting"": true, ""value"": 2 }",
+                    typeof(ArgumentException), "value"),
+                (@"{ ""id"": ""quality"", ""kind"": ""Dropdown"", ""updateExisting"": true,
+                     ""optionKeys"": [""a"", ""b"", ""c""] }", typeof(ArgumentException), "optionKeys"),
+                // 內容物件沒有版面配置元件的清單不能設定 spacing。
+                (@"{ ""id"": ""bad"", ""kind"": ""FlatList"", ""spacing"": 4 }", typeof(ArgumentException), "spacing"),
+                (@"{ ""id"": ""rows"", ""kind"": ""FlatList"", ""updateExisting"": true, ""spacing"": 4 }",
+                    typeof(ArgumentException), "spacing"),
+                // 元件 Prefab 缺少欄位需要的元件。
+                (@"{ ""id"": ""bad"", ""kind"": ""TextlessButton"", ""text"": ""Hi"" }",
+                    typeof(InvalidOperationException), "TMP_Text"),
+                (@"{ ""id"": ""bad"", ""kind"": ""TextlessButton"", ""textColor"": ""#FF0000"" }",
+                    typeof(InvalidOperationException), "TMP_Text")
+            };
+            foreach (var (element, errorType, mentions) in elementCases)
+            {
+                var plan = $@"{{ ""views"": [
+                    {{ ""id"": ""home"", ""elements"": [{{ ""id"": ""ok"", ""text"": ""OK"" }}, {element}] }},
+                    {{ ""id"": ""later"", ""kind"": ""Popup"", ""prefabPath"": ""{laterPath}"" }}] }}";
+                var error = Assert.Throws(errorType, () => UIPlan.Apply(plan), element);
+                Assert.That(error.Message, Does.Contain("home").And.Contain(mentions), element);
+                AssertUntouched(element);
+            }
+
+            // overlayClick: Close 用在沒有遮罩的 Popup。
+            var overlay = Assert.Throws<ArgumentException>(() => UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"", ""elements"": [{{ ""id"": ""ok"", ""text"": ""OK"" }}] }},
+                {{ ""id"": ""tip"", ""kind"": ""Popup"", ""updateExisting"": true, ""overlayClick"": ""Close"" }},
+                {{ ""id"": ""later"", ""kind"": ""Popup"", ""prefabPath"": ""{laterPath}"" }}] }}"));
+            Assert.That(overlay.Message, Does.Contain("tip").And.Contain("遮罩"));
+            AssertUntouched("overlayClick");
+
+            // 沒寫這些欄位的元件不受影響；範圍內的值可以套用。
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""elements"": [
+                { ""id"": ""plainButton"", ""kind"": ""TextlessButton"", ""action"": ""go"" },
+                { ""id"": ""volume"", ""kind"": ""Slider"", ""updateExisting"": true, ""min"": 2, ""value"": 10 },
+                { ""id"": ""quality"", ""kind"": ""Dropdown"", ""updateExisting"": true, ""value"": 1 }] }],
+                ""routes"": [{ ""source"": ""home"", ""action"": ""go"", ""kind"": ""Emit"" }] }");
+            var volume = UIPlan.FindElement(home, "volume").GetComponent<Slider>();
+            Assert.That(new[] { volume.minValue, volume.maxValue, volume.value }, Is.EqualTo(new[] { 2f, 10f, 10f }));
+            Assert.That(UIPlan.FindElement(home, "quality").GetComponent<TMP_Dropdown>().value, Is.EqualTo(1));
+            Assert.That(UIPlan.FindElement(home, "plainButton"), Is.Not.Null);
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            sceneFile = File.ReadAllText(scene.path);
+
+            // 元件集項目的 Prefab 遺失。放在最後：元件集壞掉之後，任何計畫都過不了套用完的檢查。
+            var lost = $"{folder}/Lost.prefab";
+            SavePrefab(lost, new GameObject("Lost", typeof(RectTransform)));
+            UIWidgets.Register("Lost", lost);
+            Assert.That(AssetDatabase.DeleteAsset(lost), Is.True);
+            var missing = Assert.Throws<InvalidOperationException>(() => UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""home"", ""elements"": [{{ ""id"": ""ok"", ""text"": ""OK"" }},
+                    {{ ""id"": ""bad"", ""kind"": ""Lost"" }}] }},
+                {{ ""id"": ""later"", ""kind"": ""Popup"", ""prefabPath"": ""{laterPath}"" }}] }}"));
+            Assert.That(missing.Message, Does.Contain("home").And.Contain("Lost").And.Contain("遺失"));
+            AssertUntouched("Lost");
+
+            void AssertUntouched(string what)
+            {
+                Assert.That(scene.isDirty, Is.False, what + "：Scene 不可以被標成未儲存");
+                Assert.That(File.ReadAllText(scene.path), Is.EqualTo(sceneFile), what);
+                Assert.That(root.Entries.Select(entry => entry.Id), Is.EqualTo(new[] { "home", "tip" }), what);
+                Assert.That(UIPlan.FindElement(home, "ok"), Is.Null, what);
+                Assert.That(UIPlan.FindElement(home, "bad"), Is.Null, what);
+                Assert.That(AssetDatabase.LoadMainAssetAtPath(laterPath), Is.Null, what);
+                Assert.That(UIAuthoring.FindEntry(root, "tip").Review.ClosesOnOverlayClick, Is.False, what);
+            }
+        }
+
         private static string[] LoadedScenes()
         {
             return Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)

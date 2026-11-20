@@ -195,27 +195,87 @@ namespace UniGameUI.Editor
                         throw new ArgumentException($"{label}原本是 {recorded}，不能用 updateExisting 改成 {name}。");
                 }
 
-                // 欄位寫進去之後的結果，更新時依既有的實例檢查，新元件依元件 Prefab 檢查。
-                // 內建元件還沒安裝時沒有 Prefab 可以看；起始元件本身符合這些條件。
-                var source = existing ? existing : prefab;
-                if (source)
-                    CheckElementAgainst(label, element, kind, source);
+                // 內建元件缺少時套用前會自動補上；其他元件的 Prefab 遺失就建不出實例。
+                if (!existing && !prefab && !UIWidgets.IsBuiltInName(name, out _))
+                    throw new InvalidOperationException(MissingWidgetPrefab(label, name));
+                CheckElementAgainst(label, name, element, kind, existing ? existing : prefab);
             }
         }
 
-        private static void CheckElementAgainst(string label, ElementSpec spec, UIWidgetKind kind, GameObject source)
+        private static string MissingWidgetPrefab(string label, string name)
         {
-            if (kind == UIWidgetKind.Dropdown)
-                CheckDropdown(label, spec, source.GetComponentInChildren<TMP_Dropdown>(true));
+            return $"{label}使用的元件「{name}」在元件集裡的 Prefab 遺失。" +
+                "請在元件集重新指定，內建元件可以用 Tools → UniGameUI → Install Starter Widgets 補回。";
+        }
+
+        // 欄位寫進去之後的結果，更新時依既有的實例檢查，新元件依元件 Prefab 檢查。
+        // 這些都能在套用前算出來，不必等到套用到一半才發現。
+        // source 是 null 表示內建元件還沒安裝，這時用起始元件的預設值。
+        private static void CheckElementAgainst(string label, string name, ElementSpec spec, UIWidgetKind kind,
+            GameObject source)
+        {
+            var required = UIWidgets.RequiredComponent(kind);
+            if (source && required != null && !source.GetComponentInChildren(required, true))
+                throw new InvalidOperationException($"{label}（{name}）的 Prefab 缺少 {required.Name}。");
+
+            switch (kind)
+            {
+                case UIWidgetKind.Button:
+                    if (!source)
+                        break;
+                    var writesImage = !string.IsNullOrEmpty(spec.color) || !string.IsNullOrEmpty(spec.spritePath);
+                    if (writesImage && !(source.GetComponentInChildren<Button>(true).targetGraphic as Image))
+                        Require<Image>(source, label, name);
+                    if (HasLabelFields(spec, spec.textColor))
+                        Require<TMP_Text>(source, label, name);
+                    break;
+                case UIWidgetKind.Toggle:
+                    if (source && HasLabelFields(spec, spec.textColor))
+                        Require<TMP_Text>(source, label, name);
+                    break;
+                case UIWidgetKind.Slider:
+                    CheckSlider(label, spec, source ? source.GetComponentInChildren<Slider>(true) : null);
+                    break;
+                case UIWidgetKind.Dropdown:
+                    CheckDropdown(label, spec, source ? source.GetComponentInChildren<TMP_Dropdown>(true) : null);
+                    break;
+                case UIWidgetKind.ScrollList:
+                    if (source && !float.IsNaN(spec.spacing))
+                        ListLayout(source.GetComponentInChildren<UIList>(true), label);
+                    break;
+            }
+        }
+
+        // slider 是 null 表示起始滑桿還沒安裝。
+        private static void CheckSlider(string label, ElementSpec spec, Slider slider)
+        {
+            if (float.IsNaN(spec.min) && float.IsNaN(spec.max) && float.IsNaN(spec.value))
+                return;
+            var min = Merge(slider ? slider.minValue : UIStarterWidgets.SliderMin, spec.min);
+            var max = Merge(slider ? slider.maxValue : UIStarterWidgets.SliderMax, spec.max);
+            if (min >= max)
+                throw new ArgumentException($"{label}套用後的 min（{min}）必須小於 max（{max}）。");
+            if (!float.IsNaN(spec.value) && (spec.value < min || spec.value > max))
+                throw new ArgumentException($"{label}的 value（{spec.value}）超出套用後的範圍（{min} 到 {max}）。");
+        }
+
+        private static HorizontalOrVerticalLayoutGroup ListLayout(UIList list, string label)
+        {
+            var layout = list && list.Content ? list.Content.GetComponent<HorizontalOrVerticalLayoutGroup>() : null;
+            if (!layout)
+                throw new ArgumentException($"{label}的內容物件沒有版面配置元件，無法設定 spacing。");
+            return layout;
         }
 
         // 選項和多語系鍵值是一對一的。只換掉其中一邊、數量對不上時，執行期會拿錯鍵值。
+        // dropdown 是 null 表示起始下拉選單還沒安裝。
         private static void CheckDropdown(string label, ElementSpec spec, TMP_Dropdown dropdown)
         {
-            if (!dropdown)
-                return;
-            var options = spec.options?.Length ?? dropdown.options.Count;
-            var localized = dropdown.GetComponent<UILocalizedDropdown>();
+            var options = spec.options?.Length ??
+                (dropdown ? dropdown.options.Count : UIStarterWidgets.DropdownOptions.Length);
+            if (!float.IsNaN(spec.value) && spec.value >= options)
+                throw new ArgumentException($"{label}的 value 超出選項的範圍（共 {options} 個）。");
+            var localized = dropdown ? dropdown.GetComponent<UILocalizedDropdown>() : null;
             var keys = spec.optionKeys?.Length ?? (localized && localized.keys != null ? localized.keys.Length : 0);
             if (keys == 0 || keys == options)
                 return;
@@ -323,10 +383,7 @@ namespace UniGameUI.Editor
             if (created)
             {
                 if (!entry.Prefab)
-                {
-                    throw new InvalidOperationException($"元件集裡「{name}」的 Prefab 遺失。" +
-                        "請在元件集重新指定，或執行 Tools → UniGameUI → Install Starter Widgets。");
-                }
+                    throw new InvalidOperationException(MissingWidgetPrefab(label, name));
                 gameObject = (GameObject)PrefabUtility.InstantiatePrefab(entry.Prefab, view.Content);
                 Undo.RegisterCreatedObjectUndo(gameObject, "Create UI element");
                 gameObject.name = spec.id;
@@ -512,10 +569,9 @@ namespace UniGameUI.Editor
             if (float.IsNaN(spec.min) && float.IsNaN(spec.max) && float.IsNaN(spec.value) &&
                 string.IsNullOrEmpty(spec.numberMode))
                 return;
+            CheckSlider(label, spec, slider);
             var min = Merge(slider.minValue, spec.min);
             var max = Merge(slider.maxValue, spec.max);
-            if (min >= max)
-                throw new ArgumentException($"{label}套用後的 min（{min}）必須小於 max（{max}）。");
 
             var pinned = new List<string>();
             Undo.RecordObject(slider, "Set UI slider");
@@ -557,8 +613,6 @@ namespace UniGameUI.Editor
             if (spec.options == null && spec.optionKeys == null && float.IsNaN(spec.value))
                 return;
             var count = spec.options?.Length ?? dropdown.options.Count;
-            if (!float.IsNaN(spec.value) && spec.value >= count)
-                throw new ArgumentException($"{label}的 value 超出選項的範圍（共 {count} 個）。");
             CheckDropdown(label, spec, dropdown);
             if (spec.optionKeys != null)
             {
@@ -666,9 +720,7 @@ namespace UniGameUI.Editor
             if (float.IsNaN(spec.spacing))
                 return;
 
-            var layout = list.Content ? list.Content.GetComponent<HorizontalOrVerticalLayoutGroup>() : null;
-            if (!layout)
-                throw new ArgumentException($"{label}的內容物件沒有版面配置元件，無法設定 spacing。");
+            var layout = ListLayout(list, label);
             Undo.RecordObject(layout, "Set UI list spacing");
             layout.spacing = spec.spacing;
             UIAuthoring.RecordOverride(layout, "m_Spacing");

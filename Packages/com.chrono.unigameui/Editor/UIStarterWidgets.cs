@@ -19,6 +19,11 @@ namespace UniGameUI.Editor
         private static readonly Color Track = new Color(0.20f, 0.23f, 0.28f, 1f);
         private static readonly Color Row = new Color32(58, 66, 82, 255);
 
+        // 起始元件的預設值。元件還沒安裝時，計畫的預檢用這些值判斷欄位合不合理。
+        internal const float SliderMin = 0f;
+        internal const float SliderMax = 1f;
+        internal static readonly string[] DropdownOptions = { "Option A", "Option B", "Option C" };
+
         internal static GameObject BuildWidget(UIWidgetKind kind, string path, UIWidgetSet set)
         {
             return Save(path, scene => kind switch
@@ -160,6 +165,8 @@ namespace UniGameUI.Editor
             slider.handleRect = handle;
             slider.targetGraphic = handleImage;
             slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = SliderMin;
+            slider.maxValue = SliderMax;
             slider.value = 0.5f;
             return root.gameObject;
         }
@@ -275,9 +282,8 @@ namespace UniGameUI.Editor
             dropdown.template = template;
             dropdown.captionText = caption;
             dropdown.itemText = itemText;
-            dropdown.options.Add(new TMP_Dropdown.OptionData("Option A"));
-            dropdown.options.Add(new TMP_Dropdown.OptionData("Option B"));
-            dropdown.options.Add(new TMP_Dropdown.OptionData("Option C"));
+            foreach (var option in DropdownOptions)
+                dropdown.options.Add(new TMP_Dropdown.OptionData(option));
             dropdown.RefreshShownValue();
             root.gameObject.AddComponent<UILocalizedDropdown>();
             template.gameObject.SetActive(false);
