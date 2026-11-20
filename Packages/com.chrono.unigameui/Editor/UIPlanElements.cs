@@ -162,7 +162,7 @@ namespace UniGameUI.Editor
 
                 var label = ElementLabel(view.id, element);
                 var name = KindName(element);
-                if (!catalog.TryGet(name, out var kind, out _))
+                if (!catalog.TryGet(name, out var kind, out var prefab))
                 {
                     throw new ArgumentException(
                         $"{label}使用了元件集裡沒有的名稱「{name}」。可用的名稱：{catalog.Names}。");
@@ -180,17 +180,49 @@ namespace UniGameUI.Editor
                 CheckElementValues(label, view.id, element, kind);
 
                 var existing = existingReview ? FindElement(existingReview, element.id) : null;
-                if (!existing || !element.updateExisting)
+                // 已經存在、又沒有要更新的元件，套用時會略過。
+                if (existing && !element.updateExisting)
                     continue;
-                var recorded = existing.GetComponent<UIElementId>().Kind;
-                if (string.IsNullOrEmpty(recorded))
+                if (existing)
                 {
-                    throw new ArgumentException(
-                        $"{label}不是由計畫建立的（沒有記錄元件名稱），不能使用 updateExisting。");
+                    var recorded = existing.GetComponent<UIElementId>().Kind;
+                    if (string.IsNullOrEmpty(recorded))
+                    {
+                        throw new ArgumentException(
+                            $"{label}不是由計畫建立的（沒有記錄元件名稱），不能使用 updateExisting。");
+                    }
+                    if (recorded != name)
+                        throw new ArgumentException($"{label}原本是 {recorded}，不能用 updateExisting 改成 {name}。");
                 }
-                if (recorded != name)
-                    throw new ArgumentException($"{label}原本是 {recorded}，不能用 updateExisting 改成 {name}。");
+
+                // 欄位寫進去之後的結果，更新時依既有的實例檢查，新元件依元件 Prefab 檢查。
+                // 內建元件還沒安裝時沒有 Prefab 可以看；起始元件本身符合這些條件。
+                var source = existing ? existing : prefab;
+                if (source)
+                    CheckElementAgainst(label, element, kind, source);
             }
+        }
+
+        private static void CheckElementAgainst(string label, ElementSpec spec, UIWidgetKind kind, GameObject source)
+        {
+            if (kind == UIWidgetKind.Dropdown)
+                CheckDropdown(label, spec, source.GetComponentInChildren<TMP_Dropdown>(true));
+        }
+
+        // 選項和多語系鍵值是一對一的。只換掉其中一邊、數量對不上時，執行期會拿錯鍵值。
+        private static void CheckDropdown(string label, ElementSpec spec, TMP_Dropdown dropdown)
+        {
+            if (!dropdown)
+                return;
+            var options = spec.options?.Length ?? dropdown.options.Count;
+            var localized = dropdown.GetComponent<UILocalizedDropdown>();
+            var keys = spec.optionKeys?.Length ?? (localized && localized.keys != null ? localized.keys.Length : 0);
+            if (keys == 0 || keys == options)
+                return;
+            if (spec.optionKeys != null)
+                throw new ArgumentException($"{label}的 optionKeys 有 {keys} 個，要和選項的 {options} 個一樣多。");
+            throw new ArgumentException($"{label}套用後有 {options} 個選項，但原本的 optionKeys 有 {keys} 個。" +
+                "請同時提供數量相同的 optionKeys，或寫 \"optionKeys\": [] 清除所有鍵值。");
         }
 
         private static IEnumerable<string> ProvidedFields(ElementSpec spec)
@@ -256,7 +288,9 @@ namespace UniGameUI.Editor
                 throw new ArgumentException($"{label}的 options 不可以包含 null。");
             if (spec.optionKeys != null && spec.optionKeys.Any(key => key == null))
                 throw new ArgumentException($"{label}的 optionKeys 不可以包含 null，不需要鍵值的選項請寫空字串。");
-            if (spec.options != null && spec.optionKeys != null && spec.options.Length != spec.optionKeys.Length)
+            // 空的 optionKeys 是清除所有鍵值，不必和選項一樣多。
+            if (spec.options != null && spec.optionKeys != null && spec.optionKeys.Length != 0 &&
+                spec.options.Length != spec.optionKeys.Length)
             {
                 throw new ArgumentException($"{label}的 optionKeys 有 {spec.optionKeys.Length} 個，" +
                     $"要和 options 的 {spec.options.Length} 個一樣多。");
@@ -525,17 +559,19 @@ namespace UniGameUI.Editor
             var count = spec.options?.Length ?? dropdown.options.Count;
             if (!float.IsNaN(spec.value) && spec.value >= count)
                 throw new ArgumentException($"{label}的 value 超出選項的範圍（共 {count} 個）。");
+            CheckDropdown(label, spec, dropdown);
             if (spec.optionKeys != null)
             {
-                if (spec.optionKeys.Length != count)
+                // 空陣列是清除所有鍵值；本來就沒有鍵值元件時不必為了清除而加上。
+                var localized = spec.optionKeys.Length == 0
+                    ? dropdown.GetComponent<UILocalizedDropdown>()
+                    : GetOrAdd<UILocalizedDropdown>(dropdown.gameObject);
+                if (localized)
                 {
-                    throw new ArgumentException(
-                        $"{label}的 optionKeys 有 {spec.optionKeys.Length} 個，要和選項的 {count} 個一樣多。");
+                    Undo.RecordObject(localized, "Set UI dropdown keys");
+                    localized.keys = spec.optionKeys.ToArray();
+                    UIAuthoring.RecordOverride(localized, "keys");
                 }
-                var localized = GetOrAdd<UILocalizedDropdown>(dropdown.gameObject);
-                Undo.RecordObject(localized, "Set UI dropdown keys");
-                localized.keys = spec.optionKeys.ToArray();
-                UIAuthoring.RecordOverride(localized, "keys");
             }
             if (spec.options == null && float.IsNaN(spec.value))
                 return;

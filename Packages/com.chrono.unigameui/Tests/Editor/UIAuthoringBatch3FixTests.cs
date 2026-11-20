@@ -462,6 +462,71 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        [Test]
+        public void UpdatedDropdownOptionsAndKeysMustStayTheSameLength()
+        {
+            RequireDOTween();
+            UseIsolatedWidgets();
+            UIWidgets.Install();
+            var root = WorkspaceWithHomePage("Batch3Fix Option Keys");
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"", ""elements"": [
+                { ""id"": ""quality"", ""kind"": ""Dropdown"", ""options"": [""Low"", ""Mid"", ""High""],
+                  ""optionKeys"": [""q.low"", ""q.mid"", ""q.high""] },
+                { ""id"": ""plain"", ""kind"": ""Dropdown"", ""options"": [""A"", ""B"", ""C""] }] }] }");
+            var view = UIAuthoring.FindEntry(root, "home").Review;
+            Assert.That(Keys("plain"), Is.Empty);
+
+            // 只換選項、數量和原本的鍵值不同：套用前報錯，請計畫同時提供 optionKeys。
+            var error = Assert.Throws<ArgumentException>(() => UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"",
+                ""elements"": [
+                    { ""id"": ""added"", ""text"": ""New"" },
+                    { ""id"": ""quality"", ""kind"": ""Dropdown"", ""updateExisting"": true,
+                      ""options"": [""On"", ""Off""] }] }] }"));
+            Assert.That(error.Message, Does.Contain("home").And.Contain("quality").And.Contain("optionKeys"));
+            Assert.That(UIPlan.FindElement(view, "added"), Is.Null);
+            Assert.That(Options("quality"), Is.EqualTo(new[] { "Low", "Mid", "High" }));
+            Assert.That(Keys("quality"), Is.EqualTo(new[] { "q.low", "q.mid", "q.high" }));
+
+            // 數量相同時可以只換選項，鍵值留著。
+            Update("quality", @"""options"": [""L"", ""M"", ""H""]");
+            Assert.That(Options("quality"), Is.EqualTo(new[] { "L", "M", "H" }));
+            Assert.That(Keys("quality"), Is.EqualTo(new[] { "q.low", "q.mid", "q.high" }));
+
+            // 同時提供新的鍵值。
+            Update("quality", @"""options"": [""On"", ""Off""], ""optionKeys"": [""s.on"", ""s.off""]");
+            Assert.That(Options("quality"), Is.EqualTo(new[] { "On", "Off" }));
+            Assert.That(Keys("quality"), Is.EqualTo(new[] { "s.on", "s.off" }));
+
+            // 用空陣列清除所有鍵值。
+            Update("quality", @"""options"": [""One"", ""Two"", ""Three""], ""optionKeys"": []");
+            Assert.That(Options("quality"), Is.EqualTo(new[] { "One", "Two", "Three" }));
+            Assert.That(Keys("quality"), Is.Empty);
+
+            // 沒有鍵值的下拉選單不受影響。
+            Update("plain", @"""options"": [""Only""]");
+            Assert.That(Options("plain"), Is.EqualTo(new[] { "Only" }));
+            Assert.That(Keys("plain"), Is.Empty);
+
+            // 只給鍵值、數量和既有的選項不同，也在套用前報錯。
+            error = Assert.Throws<ArgumentException>(() => Update("plain", @"""optionKeys"": [""a"", ""b""]"));
+            Assert.That(error.Message, Does.Contain("plain").And.Contain("optionKeys"));
+            Assert.That(Keys("plain"), Is.Empty);
+
+            void Update(string id, string fields)
+            {
+                UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""home"", ""elements"": [
+                    {{ ""id"": ""{id}"", ""kind"": ""Dropdown"", ""updateExisting"": true, {fields} }}] }}] }}");
+            }
+
+            string[] Options(string id)
+            {
+                return UIPlan.FindElement(view, id).GetComponent<TMP_Dropdown>().options
+                    .Select(option => option.text).ToArray();
+            }
+
+            string[] Keys(string id) => UIPlan.FindElement(view, id).GetComponent<UILocalizedDropdown>().Keys.ToArray();
+        }
+
         private static string[] LoadedScenes()
         {
             return Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)

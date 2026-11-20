@@ -168,7 +168,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 | `ScrollList` | 捲動區域與 `UIList` | `direction`、`spacing`、`itemPrefabPath` | `UIList` |
 
 - 字串列舉的值：`alignment` 為 `Left`、`Center`、`Right`；`state` 為 `On`、`Off`；`numberMode` 為 `Decimal`、`Whole`；`direction` 為 `Vertical`、`Horizontal`。
-- `textKey`、`spriteKey`、`placeholderKey`、`optionKeys` 是多語系鍵值，見「多語系」。`optionKeys` 的數量要和選項一樣多，不需要鍵值的選項寫空字串。
+- `textKey`、`spriteKey`、`placeholderKey`、`optionKeys` 是多語系鍵值，見「多語系」。`optionKeys` 的數量要和選項一樣多，不需要鍵值的選項寫空字串。用 `updateExisting` 更新既有的下拉選單時，套用後的選項數量和鍵值數量不同會在套用前報錯：換選項時請同時提供 `optionKeys`，或寫 `"optionKeys": []` 清除所有鍵值。本來就沒有鍵值的下拉選單不受影響。
 - 矩形座標是 Unity RectTransform 的 anchor 與參考解析度下的座標，Y 向上。新元件省略 `rect.size` 時，大小取自元件 Prefab 的根節點。
 - 元件之間沒有父子關係，全部放在 View 的 Content 底下。建立的先後順序就是繪製順序，要當底圖的 `Panel` 請寫在前面。
 - **欄位寫錯位置會報錯。** 欄位用在不支援它的元件上（例如 `Slider` 寫 `text`）、`kind` 不在元件集裡、更新時 `kind` 和原本不同，計畫都會在套用前失敗，訊息指出畫面、元件與欄位，而且不留下任何變更。
