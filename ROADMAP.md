@@ -1,11 +1,11 @@
 # UniGameUI 改進計畫
 
 - 定案日期：2026-11-20（使用者與 Claude 討論後決定）
-- 目前版本：0.4.0。三批都已通過審核：0.3.0（第二批與第二批修正）可以打 `v0.3.0` 標籤，0.4.0（第三批與第三批修正）可以打 `v0.4.0` 標籤，兩個標籤都還沒打。第四批只有範圍，尚未寫規格
+- 目前版本：0.4.0。三批都已通過審核，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第四批 0.5.0 規格已寫，待實作
 - 相關文件：`CODEX_REVIEW.md`（審核結果與 N、P、U、M、L 各項目的原始說明）、`AGENTS.md`（每一輪的工作規則）
 - 分工：2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，文件裡提到 codex 的地方是當時的紀錄。
 
-這份文件記錄已定案的方向、四批工作的範圍，以及**第一批、第二批、第二批修正與第三批的詳細規格**。第四批只列範圍，等前一批審核完才會補上詳細規格。沒有詳細規格的批次請不要先做。
+這份文件記錄已定案的方向、四批工作的範圍，以及**四批與各輪修正的詳細規格**。
 
 ## 使用情境
 
@@ -32,7 +32,9 @@
 | ID 常數 | 自動產生到專案的 `Assets` 底下。 |
 | 頁面腳本 | 用介面接收生命週期，`UIView` 維持 `sealed`。 |
 | 跨 Scene | 現在不做，之後做成可選功能。頁面腳本一律從自己的 View 取得 UIRoot，不做全域單例。 |
-| 自動走訪 | 要做。「送出事件」類的路由預設跳過。 |
+| 自動走訪 | 要做。「送出事件」類的路由預設跳過。走訪會執行頁面腳本、不傳資料、不模擬輸入（2026-11-20 寫第四批規格時補充）。 |
+| 驗收工具的嚴重度 | 第四批新增的檢查都是 Warning，命令列的嚴格模式才把 Warning 當成失敗（2026-11-20 決定）。 |
+| 由程式控制的畫面 | 不靠路由進出的畫面可以在藍圖標記，標記後不檢查走不走得到、有沒有出口；確認框自動視為由程式控制（2026-11-20 決定）。 |
 | 發佈 | GitHub repo，其他專案用 git URL 加 `?path=/Packages/com.chrono.unigameui` 安裝，用版本標籤鎖定。repo 尚未建立。 |
 | 版本 | 每批交付時升一個版號。標籤等審核通過後才打。 |
 | 事件出錯 | 「顯示前」出錯會取消這次導航；「顯示後」、「隱藏前」、「隱藏後」出錯只記錄，導航照常完成（2026-11-20 決定，原因見 `CODEX_REVIEW.md` 的 F1）。 |
@@ -51,7 +53,7 @@
 | 第一批 | 讓 agent 寫錯馬上知道 | 0.2.0 | 已實作並通過審核；互動操作待人工確認；後續項目 F1～F6 見 `CODEX_REVIEW.md` |
 | 第二批 | 遊戲程式的標準寫法 | 0.3.0 | 已實作並通過審核，G1～G5 的修正也已複驗通過；互動操作待人工確認；小提醒 I1 見 `CODEX_REVIEW.md`，併入第三批 |
 | 第三批 | 元件與輸入 | 0.4.0 | 已實作並通過審核，J1～J8 的修正也已複驗通過；互動操作待人工確認 |
-| 第四批 | 驗收工具 | 0.5.0 | 只有範圍 |
+| 第四批 | 驗收工具 | 0.5.0 | 規格已寫，待實作 |
 
 ### 第二批：遊戲程式的標準寫法
 
@@ -1068,3 +1070,285 @@ Validate 與套用計畫最後的檢查，EventSystem 的部分改成下表。�
 - AgentGuide 的 `optionKeys` 說明補上 J5 的規則。
 - `CHANGELOG.md` 的 0.4.0 補記這一輪的修正。
 - `CODEX_REVIEW.md` 更新狀態表與「未驗證」。
+
+# 第四批規格：驗收工具
+
+完成後版本為 0.5.0。交付時升版號，但不要打標籤，等審核通過再打。共六項。
+
+**狀態：** 規格已寫，待實作。
+
+- 請依編號順序實作，每完成一項就 commit 一次。
+- 驗收的共同條件與前三批相同：既有測試全數通過、每一項補上測試、測試在有 DOTween 的環境執行、文件與 `CHANGELOG.md` 同步更新。
+- 下面的型別、方法、欄位與代碼名稱是建議。實作時若發現更好的名稱可以調整，但請在交付說明列出與規格不同的地方。
+- 規格沒寫到、而且會影響公開 API 或使用方式的事，先問使用者，不要自己決定。
+
+**目標：** agent 做完 UI 之後，不必有人進 Editor 點過一遍，就能確認「藍圖沒有接錯、每條路由都走得通」。兩個工具都要能從命令列執行，用結束代碼表示結果，並輸出機器讀得懂的報告。
+
+**這一批的原則**
+
+- **新的檢查預設是 Warning。** 它們指出的是「看起來不對」，不是「一定壞掉」，專案可能有正當理由。命令列的嚴格模式會把 Warning 也當成失敗。
+- **每個 Warning 都要有正當的消除方式。** 一直消不掉的警告會讓人不再看警告。每一項檢查都要寫明什麼情況不算。
+- **工具不進 Player。** 走訪與報告的程式放在 Editor 組件，`Runtime` 組件不新增公開型別。真的需要時先提出討論。
+
+## 4-1. 問題代碼
+
+**目標：** agent 用穩定的代碼判斷問題種類，不必比對訊息文字。
+
+```csharp
+public readonly struct UIIssue
+{
+    public UIIssueSeverity Severity { get; }
+    public string Code { get; }         // 例如 "route.target-missing"
+    public string Message { get; }
+    public string ViewId { get; }       // 和畫面無關時是 null
+    public string ElementId { get; }    // 和元件無關時是 null
+}
+```
+
+- 既有與新增的每一種問題都要有代碼。代碼用小寫英文，以「主題.問題」命名，定下來之後不要更改。
+- 既有的英文訊息一併改成繁體中文。
+- `ToString()` 的格式是 `Error [route.target-missing] 訊息`。
+- AgentGuide 用一張表列出所有代碼、嚴重度、意思與處理方式。
+
+**驗收：** EditMode 測試確認每一個代碼至少被一個案例觸發，而且 AgentGuide 表格裡的代碼和程式裡的一致。
+
+## 4-2. 由程式控制的畫面
+
+**目標：** 有些畫面不靠路由進出，例如確認框是用 `ConfirmAsync` 開啟、自己關閉。這些畫面要能標記，4-3 的檢查才不會誤報。
+
+- 藍圖的每個畫面多一個設定「由程式控制進出」，預設關閉。
+  - 計畫的 View 欄位：`"navigation": "Routes" | "Code"`，預設 `Routes`。和其他 View 選項一樣，只在新建畫面或設了 `updateExisting` 時寫入。
+  - 藍圖視窗右欄可以勾選。
+  - C#：`UIEntry.NavigatedByCode`（唯讀）與 `UIAuthoring.SetNavigatedByCode(root, id, value)`。
+- 這個設定存在工作區的藍圖裡，不存在 View Prefab 裡。同一個 Popup Prefab 在不同 Scene 可以有不同的設定。
+- 根節點掛了 `UIConfirmPopup` 的畫面自動視為由程式控制，不必另外設定。
+- 這個設定只影響 4-3 的檢查與 4-5 的走訪，不影響執行期的行為。
+
+**驗收：** EditMode 測試涵蓋計畫欄位（新建、部分更新、寫錯值在套用前報錯）、藍圖設定的儲存，以及確認框自動視為由程式控制。
+
+## 4-3. Validate 新增的檢查
+
+以下都是 Warning。「由程式控制」指 4-2 的設定。
+
+| 代碼 | 會回報的情況 | 不算的情況 |
+|---|---|---|
+| `start.none` | 工作區沒有設定起始頁。 | 所有頁面都由程式控制。 |
+| `view.unreachable` | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到的頁面或 Popup。 | 起始頁本身；由程式控制的畫面。沒有起始頁時不逐一回報，只回報 `start.none`。 |
+| `view.no-exit` | 頁面沒有任何 `ShowPage` 或 `Back` 路由。Popup 沒有任何 `ClosePopup`、`Back` 或 `ShowPage` 路由，也沒有設定點遮罩關閉。 | 由程式控制的畫面；工作區只有一個頁面時的那個頁面。 |
+| `button.unbound` | View 裡的 `Button` 沒有 `UIButtonAction`（或動作是空的），`onClick` 也沒有在 Inspector 接任何監聽。 | 由程式控制的畫面裡的按鈕；清單項目裡的按鈕。 |
+| `text.missing-glyph` | View 裡 TMP 文字的預設內容，有字型和它的 fallback 都沒有的字元。 | 空白與控制字元。 |
+
+- `button.unbound` 的訊息要建議標準做法：給按鈕 `action` 並接一條路由，要由程式處理就用 `Emit`。
+- `text.missing-glyph` 的細節：
+  - 檢查範圍是審核實例裡所有的 TMP 文字，包含輸入框的 placeholder，以及下拉選單的每一個選項（用選項文字的字型判斷）。
+  - fallback 包含字型資產自己的 fallback 清單，以及 TMP Settings 的全域 fallback。
+  - 動態字型（Atlas Population Mode 是 Dynamic）以來源字型檔有沒有這個字為準。
+  - **檢查不可以改動任何字型資產。** 不要用會把字元加進圖集的 API。
+  - 只檢查預設內容。多語系翻譯後的文字不在範圍內。
+  - 訊息列出畫面、元件與缺少的字元（最多十個），並提示處理方式：設定預設字型（`defaultFontPath`），或修改預設文字。
+
+**驗收：** EditMode 測試。
+
+- 每一項檢查各有「會回報」的案例；表格「不算的情況」的每一種也各有案例。
+- `text.missing-glyph`：靜態字型缺字、fallback 補得到、動態字型的來源檔有這個字、下拉選單的選項；檢查前後字型資產的內容沒有改變。
+- 操作指南的示例計畫套用到沒有設定中文字型的專案之後，新的 Warning 只有確認框「確定」與「取消」的 `text.missing-glyph`。
+
+## 4-4. Validate 的命令列入口與報告
+
+```text
+Unity -batchmode -projectPath <專案> -logFile <記錄檔>
+  -executeMethod UniGameUI.Editor.UIValidation.RunFromCommandLine
+  [-unigameui-scene <Scene 路徑>]... [-unigameui-report <JSON 路徑>] [-unigameui-strict]
+```
+
+- `-unigameui-scene` 可以重複。省略時檢查 Build Settings 裡啟用的所有 Scene；沒有工作區的 Scene 略過，並在報告裡註明。
+- 不要加 `-quit`。工具自己結束 Editor 並設定結束代碼。
+
+| 結束代碼 | 意思 |
+|---|---|
+| 0 | 沒有 Error。嚴格模式下也沒有 Warning。 |
+| 1 | 有 Error，或嚴格模式下有 Warning。 |
+| 2 | 沒辦法執行：參數錯誤、Scene 不存在，或沒有任何 Scene 有工作區。 |
+
+- 報告是 JSON，預設寫到 `Library/UniGameUI/validate.json`。摘要同時印到記錄檔。
+
+```json
+{
+  "tool": "UniGameUI.Validate",
+  "version": "0.5.0",
+  "strict": false,
+  "passed": false,
+  "errorCount": 1,
+  "warningCount": 1,
+  "scenes": [
+    {
+      "scenePath": "Assets/Scenes/Workshop.unity",
+      "hasWorkspace": true,
+      "issues": [
+        {
+          "severity": "Error", "code": "route.target-missing",
+          "viewId": "workshop", "elementId": "", "message": "…"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- C# 入口：`UIValidation.CheckScenes(scenePaths, strict)` 回傳同一份報告的物件（`UIValidationReport`，有 `Passed`、`ErrorCount`、`WarningCount`、`ToJson()`），不會結束 Editor。
+  - 它會依序開啟各個 Scene，結束後回到原本開著的 Scene。
+  - 目前開著的 Scene 有未儲存的修改時丟出例外，不會自動存檔。
+- 藍圖視窗的 Validate 按鈕照舊檢查目前的工作區。對話框顯示 Error 與 Warning 的數量；每一筆問題連同代碼記到 Console，點擊可以定位到畫面物件。
+
+**驗收**
+
+- EditMode 測試 `CheckScenes` 與報告的 JSON。結束代碼的判斷要抽成可以測試的函式，三種結果各一個案例。
+- 實作者在副本專案實際執行命令列，確認三種結束代碼與報告檔案，結果寫進交付說明。
+
+## 4-5. 自動走訪
+
+**目標：** 在 Play Mode 裡把藍圖上的每條路由實際觸發一次，確認走得通，並輸出報告。
+
+```csharp
+public sealed class UIWalkOptions
+{
+    public bool IncludeEmit;                    // 預設 false
+    public float StepTimeoutSeconds = 10f;
+    public string ReportPath;                   // null 時使用預設位置
+}
+
+public static class UIWalk
+{
+    public static void Start(UIWalkOptions options = null);    // 對目前開著的 Scene 走訪
+    public static UIWalkReport LastReport { get; }             // 這個 Editor 工作階段最後一次的結果
+    public static event Action<UIWalkReport> Finished;
+    public static void RunFromCommandLine();
+}
+```
+
+**流程**
+
+1. 先對這個 Scene 執行 Validate。有 Error 就不進 Play Mode，結果是 `NotRun`，報告附上 Validate 的結果。
+2. 進入 Play Mode。有待套用到 Prefab 的覆寫時不詢問，直接使用已儲存的 Prefab，並在報告記一筆說明。
+3. 等起始頁顯示完成，記為第一步「起始」。沒有起始頁時這一步略過。
+4. 依藍圖的順序，每條路由走一步。
+5. 離開 Play Mode，寫出報告，觸發 `Finished`。
+
+開啟或關閉 Domain Reload 的專案都要能用。
+
+**每一步**
+
+1. **準備：** 關掉所有 Popup、清空歷史，讓來源畫面成為最上層。準備時不傳資料。
+   - 來源是頁面：先顯示另一個頁面，再顯示來源頁，讓歷史裡有一筆，`Back` 路由才有地方回去。另一個頁面優先選有路由通到來源頁的，沒有就用起始頁。工作區只有一個頁面時不必。
+   - 來源是 Popup：先顯示一個頁面，再開啟這個 Popup。頁面優先選有 `OpenPopup` 路由指到它的，沒有就用起始頁。
+2. **觸發：** `root.TriggerAsync(來源, 動作)`。
+3. **判定：** 依下表。另外，這一步從準備到穩定的期間，Console 不可以出現 Error 或 Exception。
+4. **等待穩定：** 連續幾個影格沒有導航在進行，才開始下一步。頁面腳本可能在 `OnShown` 之後接著導航，這不算失敗，下一步的準備要能把狀態拉回來。
+5. **逾時：** 超過 `StepTimeoutSeconds` 沒有結束，這一步失敗，原因是逾時，接著繼續下一步。
+
+| 路由種類 | 通過條件 |
+|---|---|
+| `ShowPage` | 回傳 `Completed`，完成時目前頁是目標頁。 |
+| `OpenPopup` | 回傳 `Completed`，完成時最上層的 Popup 是目標。 |
+| `ClosePopup` | 回傳 `Completed`，來源 Popup 不再開著。 |
+| `Back` | 回傳 `Completed`。來源是頁面時回到準備時的上一頁，來源是 Popup 時 Popup 關閉。工作區只有一個頁面而來源是頁面時，這一步略過。 |
+| `Emit` | 預設略過。`IncludeEmit` 開啟時觸發，回傳 `Completed` 即通過。 |
+
+**每一步的結果**
+
+- `Passed`、`Failed` 或 `Skipped`，加上原因。
+- 準備來源畫面失敗時：
+  - 來源是由程式控制的畫面（4-2）：記為 `Skipped`，原因是需要由程式提供資料。
+  - 其他情況：記為 `Failed`。靠路由到得了的畫面本來就收不到資料，沒有資料就顯示不出來是真的問題。
+- 這一步期間 Console 的 Error、Exception 與 Warning 都收進報告。Warning 不影響結果。
+- 一步失敗不影響後面的步驟。
+
+**不在走訪範圍**
+
+- 由程式控制、而且沒有任何路由以它為來源的畫面不會被開啟。它們列在報告的畫面清單裡，註明沒有走訪。
+- 走訪不模擬滑鼠、鍵盤或手把輸入，不檢查畫面的外觀，不截圖。
+- 走訪會執行頁面腳本的生命週期方法，和實際遊玩相同。`Emit` 預設略過，所以 `OnAction` 預設不會被呼叫。
+
+**報告**
+
+預設寫到 `Library/UniGameUI/walk-<Scene 名稱>.json`。
+
+```json
+{
+  "tool": "UniGameUI.Walk",
+  "version": "0.5.0",
+  "scenePath": "Assets/Scenes/Workshop.unity",
+  "outcome": "Failed",
+  "passedCount": 4,
+  "failedCount": 1,
+  "skippedCount": 1,
+  "steps": [
+    {
+      "source": "workshop", "action": "openSettings", "kind": "ShowPage", "target": "settings",
+      "status": "Passed", "result": "Completed", "reason": "", "seconds": 0.42, "logs": []
+    }
+  ],
+  "views": [
+    { "id": "confirm", "kind": "Popup", "visited": false, "reason": "由程式控制" }
+  ],
+  "validation": { "errorCount": 0, "warningCount": 2, "issues": [] }
+}
+```
+
+- `outcome` 是 `Passed`（沒有失敗的步驟）、`Failed`，或 `NotRun`（Validate 有 Error、沒有工作區、整體逾時）。
+- `logs` 的每一筆有種類與訊息。
+- `views` 列出每一個畫面在走訪期間有沒有顯示過。
+
+**命令列**
+
+```text
+Unity -batchmode -projectPath <專案> -logFile <記錄檔>
+  -executeMethod UniGameUI.Editor.UIWalk.RunFromCommandLine
+  -unigameui-scene <Scene 路徑> [-unigameui-report <JSON 路徑>]
+  [-unigameui-include-emit] [-unigameui-step-timeout <秒>] [-unigameui-timeout <秒>]
+```
+
+- 一次走訪一個 Scene，`-unigameui-scene` 必填。
+- 不要加 `-quit`。工具會在回到 Edit Mode 之後自己結束 Editor。
+- `-unigameui-timeout` 是整體的時間上限，預設 300 秒。超過就結束，結果是 `NotRun`，避免批次工作卡住。
+
+| 結束代碼 | 意思 |
+|---|---|
+| 0 | `Passed`。可以有略過的步驟。 |
+| 1 | `Failed`。 |
+| 2 | `NotRun`，或參數錯誤、Scene 不存在。 |
+
+**藍圖視窗**
+
+- 工具列新增「走訪」按鈕，對目前的 Scene 執行。結束後顯示摘要：通過、失敗、略過各幾步，以及失敗步驟的來源、動作與原因。
+- 失敗的步驟同時記到 Console。
+
+**驗收**
+
+- 自動測試（實際進入 Play Mode）涵蓋：
+  - 全部正常的工作區。五種路由的判定各一個案例；`Emit` 預設略過，開啟選項後會觸發。
+  - 目標頁的 `OnShowing` 丟例外：這一步 `Failed`，報告裡有例外訊息，後面的步驟照常。
+  - 步驟期間有 `Debug.LogError`：`Failed`。只有 `Debug.LogWarning`：`Passed`，警告在報告裡。
+  - 頁面腳本在 `OnShown` 之後接著導航（操作指南 `LaunchPage` 的寫法）：不影響其他步驟的結果。
+  - 來源是 Popup；來源是頁面的 `Back`；只有一個頁面時的 `Back`。
+  - 由程式控制的來源畫面準備失敗：`Skipped`。
+  - 單步逾時。
+  - Validate 有 Error 時不進 Play Mode，`outcome` 是 `NotRun`。
+- 實作者在副本專案用命令列實際執行，結果寫進交付說明：
+  - 操作指南的示例計畫加上範例腳本：`Passed`、結束代碼 0，五條路由有四步通過、一步（`Emit`）略過。
+  - 一個會失敗的例子：結束代碼 1。
+  - Scene 不存在：結束代碼 2。
+
+## 4-6. 文件
+
+- AgentGuide 新增「驗收」一節，寫成 agent 交付前的固定步驟：
+  1. 執行 Validate。Error 要全部解決，Warning 逐筆確認是有意的還是要修。
+  2. 執行走訪，結果要是 `Passed`。
+  3. 在交付說明附上兩份報告的摘要。
+- 同一節說明兩個工具的命令列、C# 入口、報告格式與結束代碼。
+- 問題代碼表（4-1）。
+- 「由程式控制的畫面」的設定方式與用途（4-2）。
+- 走訪的範圍與限制：不傳資料、不模擬輸入、不看外觀、`Emit` 預設略過。
+- `README.md` 補上驗收工具的簡介。`CHANGELOG.md` 新增 0.5.0。
+
+**需要人工確認的項目請列在交付說明：** 藍圖視窗的「走訪」按鈕與結果摘要、Validate 的對話框與 Console 定位、右欄「由程式控制進出」的勾選。
