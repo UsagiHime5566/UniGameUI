@@ -440,13 +440,12 @@ namespace UniGameUI.Editor
             private async Awaitable<Prepared> PrepareSignal(UIRoute route, StepClock clock)
             {
                 var avoid = route.Kind == UIRouteKind.ShowPage ? route.Target : null;
-                // 起始頁優先，其次是靠路由進出的頁面，最後才是由程式控制的頁面（它們可能需要資料）。
-                var candidates = new[] { root.StartPageId }
-                    .Concat(pages.Where(page => !byCode.Contains(page.Id)).Select(page => page.Id))
+                // 起始頁優先，其次是其他頁面。由程式控制的頁面可能需要資料，沒有其他候選時才用。
+                var candidates = PreferRouted(new[] { root.StartPageId }
                     .Concat(pages.Select(page => page.Id))
                     .Where(id => !string.IsNullOrEmpty(id) && id != avoid &&
                         entries.TryGetValue(id, out var entry) && entry.Kind == UIEntryKind.Page)
-                    .Distinct().ToArray();
+                    .Distinct().ToArray(), true);
                 if (candidates.Length == 0)
                 {
                     if (route.Kind == UIRouteKind.ShowPage)
@@ -458,12 +457,15 @@ namespace UniGameUI.Editor
                 string reason = null;
                 foreach (var id in candidates)
                 {
+                    var attempt = logs.Mark();
                     var prepared = await Prepare(entries[id], route, clock);
                     if (prepared.Ok || prepared.Busy)
                         return prepared;
                     reason ??= prepared.Reason;
                     if (clock.TimedOut)
                         return Prepared.Failed(reason);
+                    // 這個頁面當不成出發點，改試下一個。它記的訊息不算進這一步的判定。
+                    logs.Abandon(attempt, AbandonedNote(id));
                 }
                 // 能當出發點的頁面全部由程式控制、沒有資料開不起來：不算失敗。
                 return candidates.All(byCode.Contains)
@@ -486,9 +488,11 @@ namespace UniGameUI.Editor
                     // history 是 Clear 的路由也盡量先放一筆，才看得出歷史真的被清空了。
                     var needsPrevious = route.Kind == UIRouteKind.Back;
                     var wantsPrevious = needsPrevious || route.History == UIHistoryMode.Clear;
+                    var others = OtherPages(source, wantsPrevious, needsPrevious);
                     string previous = null;
-                    foreach (var candidate in OtherPages(source, wantsPrevious, needsPrevious))
+                    foreach (var candidate in others)
                     {
+                        var attempt = logs.Mark();
                         var shownCandidate = await Show(candidate, UIHistoryMode.Clear, clock);
                         if (shownCandidate == UINavResult.Busy)
                             return Prepared.Interrupted();
@@ -499,9 +503,20 @@ namespace UniGameUI.Editor
                         }
                         if (clock.TimedOut)
                             return Prepared.Failed($"顯示頁面「{candidate}」逾時。");
+                        // 這個候選顯示不出來，改試下一個。它記的訊息留在報告裡，但不算進這一步的判定：
+                        // 那是那個頁面的問題，以它為來源或目標的步驟會回報。
+                        logs.Abandon(attempt, AbandonedNote(candidate));
                     }
-                    if (previous == null && route.Kind == UIRouteKind.Back)
+                    if (previous == null && needsPrevious)
+                    {
+                        // 能當上一頁的只有由程式控制、沒有資料開不起來的頁面：不是這條路由的問題。
+                        if (others.Length > 0 && others.All(byCode.Contains))
+                        {
+                            return Prepared.Skipped("能當上一頁的頁面都由程式控制，需要由程式提供資料才能顯示，" +
+                                "Back 沒有上一頁可以回去。");
+                        }
                         return Prepared.Failed("沒有其他頁面可以先顯示，Back 沒有上一頁可以回去。");
+                    }
 
                     var shownSource = await Show(source.Id, previous == null ? UIHistoryMode.Clear : UIHistoryMode.Push,
                         clock);
@@ -518,6 +533,7 @@ namespace UniGameUI.Editor
                 // 頁面優先選有 OpenPopup 路由指到它的，沒有就用起始頁。
                 foreach (var candidate in PagesUnder(source, route))
                 {
+                    var attempt = logs.Mark();
                     var shownCandidate = await Show(candidate, UIHistoryMode.Clear, clock);
                     if (shownCandidate == UINavResult.Busy)
                         return Prepared.Interrupted();
@@ -525,6 +541,7 @@ namespace UniGameUI.Editor
                         break;
                     if (clock.TimedOut)
                         return Prepared.Failed($"顯示頁面「{candidate}」逾時。");
+                    logs.Abandon(attempt, AbandonedNote(candidate));
                 }
                 var opened = await root.OpenPopupAsync(source.Id, null, clock.Token);
                 if (opened == UINavResult.Busy)
@@ -548,24 +565,36 @@ namespace UniGameUI.Editor
                 return await root.ShowPageAsync(pageId, null, history, clock.Token);
             }
 
+            private static string AbandonedNote(string pageId)
+            {
+                return $"準備時被放棄的候選頁面「{pageId}」，不算進這一步的判定。";
+            }
+
+            // 候選頁面先排除由程式控制的頁面：它們可能要資料才顯示得出來。
+            // 沒有其他候選時，allowByCode 才把它們拿來用。
+            private string[] PreferRouted(string[] candidates, bool allowByCode)
+            {
+                var routed = candidates.Where(id => !byCode.Contains(id)).ToArray();
+                return routed.Length > 0 || !allowByCode ? routed : candidates;
+            }
+
+            // 準備來源頁之前先顯示的「另一個頁面」：有路由通到來源頁的頁面，再來是起始頁。
             // anyPage：想要有上一頁時，前兩種都沒有，其餘的頁面也拿來試。
-            // includeByCode：由程式控制的頁面可能要資料才顯示得出來，只有非有上一頁不可（Back）時才拿來試。
-            private IEnumerable<string> OtherPages(UIEntry source, bool anyPage, bool includeByCode)
+            // needed：非有上一頁不可（Back）。這時沒有其他候選，才會用由程式控制的頁面。
+            private string[] OtherPages(UIEntry source, bool anyPage, bool needed)
             {
                 var candidates = routes
                     .Where(route => route.Kind == UIRouteKind.ShowPage && route.Target == source.Id)
                     .Select(route => route.Source)
                     .Append(root.StartPageId);
                 if (anyPage)
-                {
-                    candidates = candidates.Concat(pages
-                        .Where(page => includeByCode || !byCode.Contains(page.Id)).Select(page => page.Id));
-                }
-                return candidates.Where(id => !string.IsNullOrEmpty(id) && id != source.Id &&
-                    entries.TryGetValue(id, out var entry) && entry.Kind == UIEntryKind.Page).Distinct().ToArray();
+                    candidates = candidates.Concat(pages.Select(page => page.Id));
+                return PreferRouted(candidates.Where(id => !string.IsNullOrEmpty(id) && id != source.Id &&
+                    entries.TryGetValue(id, out var entry) && entry.Kind == UIEntryKind.Page).Distinct().ToArray(),
+                    needed);
             }
 
-            private IEnumerable<string> PagesUnder(UIEntry popup, UIRoute route)
+            private string[] PagesUnder(UIEntry popup, UIRoute route)
             {
                 var candidates = routes
                     .Where(candidate => candidate.Kind == UIRouteKind.OpenPopup && candidate.Target == popup.Id)
@@ -576,7 +605,8 @@ namespace UniGameUI.Editor
                         entry.Kind == UIEntryKind.Page).Distinct().ToArray();
                 // 這一步如果是從 Popup 切到某一頁，底下先不要放那一頁，否則切頁會因為「已經在那一頁」而無法執行。
                 var avoid = route.Kind == UIRouteKind.ShowPage ? route.Target : null;
-                return candidates.Where(id => id != avoid).Concat(candidates.Where(id => id == avoid)).ToArray();
+                return PreferRouted(candidates.Where(id => id != avoid).ToArray(), true)
+                    .Concat(candidates.Where(id => id == avoid)).ToArray();
             }
 
             // 等到連續幾個影格沒有導航在進行。頁面腳本可能在 OnShown 之後接著導航，這不算失敗。
@@ -642,6 +672,9 @@ namespace UniGameUI.Editor
             {
                 public LogType Type;
                 public string Message;
+                // 不算進判定的訊息會註明原因，例如準備時被放棄的候選頁面。
+                public string Note = "";
+                public bool Counted = true;
                 public bool IsError => Type != LogType.Warning;
             }
 
@@ -652,8 +685,27 @@ namespace UniGameUI.Editor
             // 超過記憶體上限、沒有留下內容的 Error。
             private int unkeptErrors;
 
-            /// <summary>這一步期間有沒有 Error、Exception 或 Assert。</summary>
-            public bool HasError => keptErrors > 0 || unkeptErrors > 0;
+            /// <summary>這一步期間有沒有算進判定的 Error、Exception 或 Assert。</summary>
+            public bool HasError => unkeptErrors > 0 || entries.Any(entry => entry.IsError && entry.Counted);
+
+            /// <summary>記下目前的位置，之後可以用 <see cref="Abandon"/> 把這之後收到的訊息排除在判定之外。</summary>
+            public (int Index, int UnkeptErrors) Mark()
+            {
+                return (entries.Count, unkeptErrors);
+            }
+
+            /// <summary>
+            /// 從 <paramref name="mark"/> 之後收到的訊息不算進這一步的判定。它們仍然留在報告裡，並註明原因。
+            /// </summary>
+            public void Abandon((int Index, int UnkeptErrors) mark, string note)
+            {
+                for (var index = mark.Index; index < entries.Count; index++)
+                {
+                    entries[index].Counted = false;
+                    entries[index].Note = note;
+                }
+                unkeptErrors = mark.UnkeptErrors;
+            }
 
             public void Clear()
             {
@@ -689,7 +741,7 @@ namespace UniGameUI.Editor
             /// <summary>第一筆 Error 的說明，給失敗原因用。沒有 Error 時是空字串。</summary>
             public string ErrorText()
             {
-                var error = entries.FirstOrDefault(entry => entry.IsError);
+                var error = entries.FirstOrDefault(entry => entry.IsError && entry.Counted);
                 if (error == null)
                     return HasError ? "這一步期間 Console 出現錯誤。" : "";
                 var line = error.Message.IndexOf('\n');
@@ -697,16 +749,19 @@ namespace UniGameUI.Editor
                     (line < 0 ? error.Message : error.Message.Substring(0, line));
             }
 
-            // 寫進報告：Error、Exception 優先，剩下的位置給 Warning；留下來的照原本的順序。
+            // 寫進報告：算進判定的 Error、Exception 優先，再來是其他的 Error，剩下的位置給 Warning；
+            // 留下來的照原本的順序。
             public void WriteTo(UIWalkStep step)
             {
                 var keep = new bool[entries.Count];
                 var slots = MaxReported;
-                for (var pass = 0; pass < 2 && slots > 0; pass++)
+                for (var pass = 0; pass < 3 && slots > 0; pass++)
                 {
                     for (var index = 0; index < entries.Count && slots > 0; index++)
                     {
-                        if (keep[index] || entries[index].IsError != (pass == 0))
+                        var entry = entries[index];
+                        var rank = !entry.IsError ? 2 : entry.Counted ? 0 : 1;
+                        if (keep[index] || rank != pass)
                             continue;
                         keep[index] = true;
                         slots--;
@@ -720,7 +775,8 @@ namespace UniGameUI.Editor
                         continue;
                     step.logs.Add(new UIWalkLog
                     {
-                        type = entries[index].Type.ToString(), message = entries[index].Message
+                        type = entries[index].Type.ToString(), message = entries[index].Message,
+                        note = entries[index].Note
                     });
                 }
                 step.logsOmitted = total - step.logs.Count;

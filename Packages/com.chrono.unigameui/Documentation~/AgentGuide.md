@@ -1041,6 +1041,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 **每一步**
 
 1. 準備：關掉所有 Popup、清空歷史，讓來源畫面成為最上層。來源是頁面時，先顯示一個有路由通到它的頁面（沒有就用起始頁），再顯示來源頁，`Back` 才有地方回去。來源是 Popup 時，先顯示有 `OpenPopup` 路由指到它的頁面（沒有就用起始頁），再開啟它。訊號路由沒有來源畫面，準備時顯示起始頁；`ShowPage` 的目標剛好是起始頁時，改從別的頁面出發。`history` 是 `Clear` 的路由會盡量先讓歷史裡有一筆，才看得出歷史真的被清空了。
+   - 準備時先顯示的這些頁面是候選：先排除由程式控制的頁面（它們可能要資料才顯示得出來），沒有其他候選時才用。候選顯示不出來時改試下一個；它記的訊息留在報告裡，`note` 會註明是準備時被放棄的候選，**不算進這一步的判定**。那個頁面的問題由以它為來源或目標的步驟回報。
 2. 觸發：一般路由是 `root.TriggerAsync(來源, 動作)`，訊號路由是 `root.SignalAsync(動作)`，不傳資料。
 3. 判定：依下表。另外，這一步從準備到穩定的期間，Console 不可以出現 Error 或 Exception；只有 Warning 不影響結果。Unity Editor 自己的錯誤（堆疊全部在 `UnityEditor` 命名空間裡，例如 Editor 建立搜尋索引失敗）和專案的 UI 無關，不算。
 4. 等待穩定：連續幾個影格沒有導航在進行，才開始下一步。頁面腳本在 `OnShown` 之後接著導航（上面 `LaunchPage` 的寫法）不算失敗。
@@ -1064,6 +1065,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 每一步的結果是 `Passed`、`Failed` 或 `Skipped`，加上原因。需要由程式提供資料的情況記為 `Skipped`，不算失敗：
 
 - 準備來源畫面失敗，而來源是由程式控制的畫面。
+- 來源是頁面的 `Back`，而能當上一頁的只有由程式控制、沒有資料顯示不出來的頁面。
 - 目標畫面是由程式控制的畫面，而觸發的結果是 `Failed`（顯示不出來）。這一步的 `result` 仍然照實記為 `Failed`。
 
 其他情況記為 `Failed`，因為靠路由到得了的畫面本來就收不到資料，沒有資料就顯示不出來是真的問題。
@@ -1112,7 +1114,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 - 三個數量包含起始那一步。
 - `result` 是觸發路由得到的導航結果；沒有觸發時是空字串。
 - 訊號路由那一步的 `source` 是 `"*"`。
-- `logs` 是這一步期間 Console 的 Error、Exception、Assert 與 Warning，每一筆有 `type` 與 `message`。最多列 50 筆，Error、Exception 與 Assert 優先保留；沒有列出來的筆數是 `logsOmitted`。**步驟的結果看的是全部的訊息，不受這個上限影響**：警告再多，只要有一筆 Error，這一步就是失敗。
+- `logs` 是這一步期間 Console 的 Error、Exception、Assert 與 Warning，每一筆有 `type` 與 `message`。`note` 平常是空字串；這筆訊息不算進這一步的判定時，它是原因（準備時被放棄的候選頁面）。最多列 50 筆，Error、Exception 與 Assert 優先保留；沒有列出來的筆數是 `logsOmitted`。**步驟的結果看的是全部的訊息，不受這個上限影響**：警告再多，只要有一筆 Error，這一步就是失敗。
 - `views` 列出藍圖上每一個畫面在走訪期間有沒有顯示過，沒有的話 `reason` 是原因。
 - `validation.issues` 的格式和 Validate 報告的 `issues` 相同。
 

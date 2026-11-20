@@ -43,11 +43,17 @@ namespace UniGameUI.Editor
     {
         [SerializeField] internal string type;
         [SerializeField] internal string message;
+        [SerializeField] internal string note = "";
 
         /// <summary>Error、Exception、Assert 或 Warning。</summary>
         public string Type => type;
 
         public string Message => message;
+
+        /// <summary>
+        /// 這筆訊息不算進這一步的判定時，這裡是原因，例如它來自準備時被放棄的候選頁面。平常是空字串。
+        /// </summary>
+        public string Note => note;
     }
 
     /// <summary>

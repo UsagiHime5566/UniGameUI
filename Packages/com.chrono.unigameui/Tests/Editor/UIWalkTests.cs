@@ -501,6 +501,93 @@ namespace UniGameUI.Editor.Tests
             Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"logsOmitted\": 11"));
         }
 
+        // K2：準備時先顯示的頁面不選由程式控制的；顯示不出來而被放棄的候選，它記的錯誤不算在這一步上。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator PreparationCandidatesDoNotFailUnrelatedSteps()
+        {
+            var root = NewWorkspace();
+            Page(root, "title");
+            Page(root, "game");
+            // 靠路由進出、但顯示不出來的頁面：以它為來源的步驟會失敗，別的步驟拿它當候選時不受影響。
+            Page(root, "broken", UIWalkTestPage.Behaviour.ThrowOnShowing);
+            // 由程式控制、需要資料的頁面：不會被拿來當候選。
+            Page(root, "result", UIWalkTestPage.Behaviour.ThrowOnShowing);
+            UIAuthoring.SetNavigatedByCode(root, "result", true);
+            Popup(root, "pause");
+            UIAuthoring.SetStartPage(root, "title");
+            UIAuthoring.Connect(root, "broken", "go", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "result", "retry", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "result", "openPause", UIRouteKind.OpenPopup, "pause");
+            UIAuthoring.Connect(root, "title", "play", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "game", "toTitle", UIRouteKind.ShowPage, "title");
+            UIAuthoring.Connect(root, "game", "openPause", UIRouteKind.OpenPopup, "pause");
+            UIAuthoring.Connect(root, "pause", "resume", UIRouteKind.ClosePopup);
+            UIAuthoring.Connect(root, "game", "back", UIRouteKind.Back);
+            AssertNoValidationErrors(root);
+
+            SessionState.SetFloat(UIWalk.WarmUpSecondsKey, 5f);
+            LogAssert.ignoreFailingMessages = true;
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            LogAssert.ignoreFailingMessages = true;
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "broken/go=Failed", "result/retry=Skipped", "result/openPause=Skipped",
+                "title/play=Passed", "game/toTitle=Passed", "game/openPause=Passed", "pause/resume=Passed",
+                "game/back=Passed"
+            }), Describe(report));
+
+            // 來源是 game 的步驟：候選是 broken（有路由通到 game）與 title（起始頁），result 不在候選裡。
+            // broken 顯示不出來，改用 title；broken 記的錯誤留在報告裡並註明，但這一步通過。
+            foreach (var index in new[] { 5, 6, 8 })
+            {
+                var step = report.Steps[index];
+                Assert.That(step.Reason, Is.Empty, Describe(report));
+                Assert.That(step.Logs, Is.Not.Empty, Describe(report));
+                Assert.That(step.Logs.Select(log => log.Note), Is.All.Contains("被放棄的候選頁面「broken」"));
+                Assert.That(step.Logs.Any(log => log.Type == "Exception"), Is.True);
+                Assert.That(step.Logs.Any(log => log.Message.Contains("「result」")), Is.False,
+                    "由程式控制的頁面不應該被拿來試");
+            }
+            // 來源是 Popup 的步驟：底下的頁面選 game，不選由程式控制的 result。
+            Assert.That(report.Steps[7].Logs.Any(log => log.Message.Contains("「result」")), Is.False);
+            // 沒有用到候選的步驟，訊息沒有註記。
+            Assert.That(report.Steps[1].Logs.Select(log => log.Note), Is.All.Empty);
+            Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"note\": \"準備時被放棄的候選頁面"));
+        }
+
+        // K2：來源是一般頁面的 Back，唯一的另一個頁面是開不起來的由程式控制頁面：略過，不是失敗。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator BackIsSkippedWhenTheOnlyOtherPageNeedsDataFromCode()
+        {
+            var root = NewWorkspace();
+            Page(root, "home");
+            Page(root, "result", UIWalkTestPage.Behaviour.ThrowOnShowing);
+            UIAuthoring.SetNavigatedByCode(root, "result", true);
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, "home", "back", UIRouteKind.Back);
+            AssertNoValidationErrors(root);
+
+            SessionState.SetFloat(UIWalk.WarmUpSecondsKey, 5f);
+            LogAssert.ignoreFailingMessages = true;
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            LogAssert.ignoreFailingMessages = true;
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Passed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "home/back=Skipped"
+            }), Describe(report));
+            Assert.That(report.Steps[1].Reason, Does.Contain("由程式控制").And.Contain("Back"));
+            Assert.That(report.Steps[1].Logs.Select(log => log.Note), Is.All.Contains("被放棄的候選頁面「result」"));
+        }
+
         private static void RecordFinished(UIWalkReport report)
         {
             SessionState.SetBool(FinishedKey, !EditorApplication.isPlaying && !UIWalk.IsRunning &&
