@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -109,7 +110,7 @@ namespace UniGameUI.Editor
                 CheckBindings(entry, entry.Review, routes, issues, false);
             }
 
-            CheckInput(issues);
+            CheckInput(root, issues);
             CheckWidgets(views.Values, issues);
             UIIdConstants.Check(root, scenePath, checkConstantsFile, issues);
             return issues;
@@ -187,17 +188,52 @@ namespace UniGameUI.Editor
         // 測試用：模擬 Player Settings 的 Active Input Handling（0 舊、1 新、2 兩者）。
         internal static int? ActiveInputHandlingOverride;
 
-        private static void CheckInput(List<UIIssue> issues)
+        // EventSystem 可以放在工作區自己的 Scene，也可以放在執行期一起載入的共用 Scene。
+        private static void CheckInput(UIRoot root, List<UIIssue> issues)
         {
-            var eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsSortMode.None);
-            if (eventSystems.Length != 1)
+            var scene = root.gameObject.scene;
+            var all = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            var active = all.Where(eventSystem => eventSystem.enabled && eventSystem.gameObject.activeInHierarchy)
+                .ToArray();
+            var own = active.Where(eventSystem => eventSystem.gameObject.scene == scene).ToArray();
+            var others = active.Where(eventSystem => eventSystem.gameObject.scene != scene).ToArray();
+            // 輸入模組只檢查執行期會用到的那一個：工作區的 Scene 有就是它，沒有就是其他 Scene 的。
+            var used = own.Length == 1 ? own : own.Length == 0 ? others : Array.Empty<EventSystem>();
+
+            if (own.Length > 1)
             {
-                issues.Add(Error($"載入的 Scene 裡要有剛好一個啟用的 EventSystem（目前 {eventSystems.Length} 個）。" +
-                    "建立工作區時會自動加上；多個 Scene 同時開啟時請只保留一個。"));
+                issues.Add(Error($"工作區所在的 Scene「{SceneLabel(scene)}」有 {own.Length} 個啟用的 EventSystem" +
+                    $"（{Names(own)}），請只保留一個。"));
             }
-            else if (eventSystems[0].GetComponent<BaseInputModule>() is not InputSystemUIInputModule)
+            else if (all.Length == 0)
             {
-                issues.Add(Error($"EventSystem「{eventSystems[0].name}」的輸入模組必須是 InputSystemUIInputModule。" +
+                issues.Add(Error("載入的 Scene 裡沒有 EventSystem。建立工作區時會自動加上；被刪掉時請在工作區的 Scene " +
+                    "或執行期一起載入的共用 Scene 加回一個，輸入模組使用 Input System UI Input Module。"));
+            }
+            else if (active.Length == 0)
+            {
+                issues.Add(Error($"載入的 Scene 裡有 EventSystem（{Names(all)}），但沒有啟用。" +
+                    "請啟用它的 GameObject 與 EventSystem 元件。"));
+            }
+            else if (own.Length == 1 && others.Length > 0)
+            {
+                issues.Add(Warning($"工作區的 Scene「{SceneLabel(scene)}」和其他載入的 Scene 都有啟用的 EventSystem" +
+                    $"（{Names(others)}）。執行期同時載入這些 Scene 時只能留一個。"));
+            }
+            else if (own.Length == 0 && others.Length > 1)
+            {
+                issues.Add(Warning($"工作區的 Scene「{SceneLabel(scene)}」沒有 EventSystem，其他載入的 Scene 有 " +
+                    $"{others.Length} 個啟用的 EventSystem（{Names(others)}）。執行期同時載入這些 Scene 時只能留一個。"));
+            }
+
+            foreach (var eventSystem in used)
+            {
+                if (eventSystem.GetComponent<BaseInputModule>() is InputSystemUIInputModule)
+                    continue;
+                var where = eventSystem.gameObject.scene == scene
+                    ? ""
+                    : $"（在 Scene「{SceneLabel(eventSystem.gameObject.scene)}」）";
+                issues.Add(Error($"EventSystem「{eventSystem.name}」{where}的輸入模組必須是 InputSystemUIInputModule。" +
                     "請移除其他輸入模組，再加上 Input System UI Input Module。"));
             }
 
@@ -206,6 +242,17 @@ namespace UniGameUI.Editor
                 issues.Add(Error("Player Settings 的 Active Input Handling 只啟用舊的 Input Manager。" +
                     "請改成 Input System Package (New) 或 Both，並重新啟動 Editor。"));
             }
+        }
+
+        private static string Names(IEnumerable<EventSystem> eventSystems)
+        {
+            return string.Join("、", eventSystems.Select(eventSystem =>
+                $"「{eventSystem.name}」在「{SceneLabel(eventSystem.gameObject.scene)}」"));
+        }
+
+        private static string SceneLabel(UnityEngine.SceneManagement.Scene scene)
+        {
+            return string.IsNullOrEmpty(scene.name) ? "未儲存的 Scene" : scene.name;
         }
 
         private static int ActiveInputHandling()

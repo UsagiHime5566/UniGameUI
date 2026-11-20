@@ -8,7 +8,11 @@
 2. 預設採用 `SingleScene`。頁面、參考解析度、節點位置與路由都存於 Scene 的 UniGameUI 工作區。所有 Popup 都是 Prefab。若使用者要共用頁面資產，建立工作區時可以明確指定 `Prefab` 模式。
 3. 已存在的工作區沿用原模式與穩定 ID。記錄場景是否有尚未存檔的修改，並查看 `UIAuthoring.HasReviewOverrides(entry)`。有開啟中的 Editor 時，優先在其 Edit Mode 使用公開 C# API 或 **Apply JSON Plan…**。CLI 在該專案已由另一個 Editor 開啟時無法取得專案鎖，使用隔離副本測試。
 4. 使用 `UIDOTweenSetup.IsReady` 或 `UIDOTweenSetup.Status` 確認 DOTween。狀態依序區分已就緒、已匯入但待 Setup、未安裝。請在 Edit Mode 完成安裝或 Setup，再套用 JSON 計畫或驗收。未就緒時，Validate 回報一項工作區錯誤，`UIPlan.Apply` 與 `ApplyAsync` 會直接回報安裝說明。執行期保留瞬間切換和一次性警告。
-5. 只支援新的 Input System。**Project Settings → Player → Active Input Handling** 要選 `Input System Package (New)` 或 `Both`，改完要重新啟動 Editor。載入的 Scene 裡要有剛好一個 EventSystem，輸入模組是 `InputSystemUIInputModule`；建立工作區時會自動加上。這三點不符合時 Validate 都會回報錯誤，JSON 計畫也套不進去。
+5. 只支援新的 Input System。**Project Settings → Player → Active Input Handling** 要選 `Input System Package (New)` 或 `Both`，改完要重新啟動 Editor。EventSystem 的輸入模組要是 `InputSystemUIInputModule`；建立工作區時，目標 Scene 沒有 EventSystem 就會自動加上。Active Input Handling 或輸入模組不對時 Validate 會回報錯誤，JSON 計畫也套不進去。EventSystem 的數量依下列規則檢查：
+   - 工作區所在的 Scene 有超過一個啟用的 EventSystem：錯誤。
+   - 所有載入的 Scene 加起來沒有啟用的 EventSystem：錯誤。訊息會說明是完全沒有，還是有但沒有啟用。
+   - 工作區的 Scene 有一個，其他載入的 Scene 也有：只是警告。執行期同時載入這些 Scene 時只能留一個。
+   - 工作區的 Scene 沒有，其他載入的 Scene 剛好有一個：通過。這是把 EventSystem 放在共用 Scene 的做法，輸入模組檢查的是那一個。
 
 ## 安裝 DOTween
 

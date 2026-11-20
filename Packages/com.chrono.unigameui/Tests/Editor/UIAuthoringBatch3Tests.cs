@@ -91,7 +91,9 @@ namespace UniGameUI.Editor.Tests
             var extra = new GameObject("Second EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             try
             {
-                Assert.That(InputErrors(root).Single(), Does.Contain("剛好一個").And.Contain("2 個"));
+                SceneManager.MoveGameObjectToScene(extra, scene);
+                Assert.That(InputErrors(root).Single(),
+                    Does.Contain("2 個").And.Contain("Second EventSystem").And.Contain("只保留一個"));
             }
             finally
             {
@@ -99,7 +101,7 @@ namespace UniGameUI.Editor.Tests
             }
 
             eventSystem.gameObject.SetActive(false);
-            Assert.That(InputErrors(root).Single(), Does.Contain("剛好一個").And.Contain("0 個"));
+            Assert.That(InputErrors(root).Single(), Does.Contain(eventSystem.name).And.Contain("沒有啟用"));
             eventSystem.gameObject.SetActive(true);
 
             UIValidation.ActiveInputHandlingOverride = 0;

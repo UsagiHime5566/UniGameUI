@@ -2,7 +2,7 @@
 
 ## 0.4.0（2026-11-20）
 
-- 新增相依 `com.unity.inputsystem`，只支援新的 Input System。新工作區的 EventSystem 直接使用 `InputSystemUIInputModule`；EventSystem 數量不對、輸入模組不對，或 Active Input Handling 只啟用舊的 Input Manager 時，Validate 回報錯誤。
+- 新增相依 `com.unity.inputsystem`，只支援新的 Input System。新工作區的 EventSystem 直接使用 `InputSystemUIInputModule`；輸入模組不對，或 Active Input Handling 只啟用舊的 Input Manager 時，Validate 回報錯誤。
 - 新增元件集 `UIWidgetSet` 與 `UIWidgets`。畫面上的元件改為專案 `Assets/UniGameUI/Widgets` 裡元件 Prefab 的實例，修改 Prefab 的美術會反映到所有畫面。起始元件有文字、圖片、面板、按鈕、開關、滑桿、進度條、下拉選單、輸入框、捲動清單，另附清單項目與確認框；安裝可以重複執行，只補上缺少的。
 - JSON 計畫的 `kind` 改為元件集裡的名稱，新增各元件的欄位、最上層的 `widgets`（登記自訂元件）與 `defaultFontPath`（預設字型）。欄位寫在不支援它的元件上、`kind` 不存在、更新時 `kind` 不同，都會在套用前報錯。只有計畫寫出的欄位會成為 Prefab 覆寫。`updateExisting` 只能用在由計畫建立的元件。
 - `UIElementId` 新增 `Kind`。新元件的預設大小取自元件 Prefab，不再是固定的 240×72。
@@ -15,6 +15,8 @@
 - Validate 新增元件集、預設選取元件與 Popup 選項的檢查。`UIView`、`UIRoot` 與元件集的 Inspector 顯示新的設定。
 - View Prefab 以不同的畫面 ID 登記時，訊息改為說明畫面 ID 不符。
 - 測試在重設「只警告一次」的旗標後才檢查 UnityEvent 的備援警告。
+- EventSystem 的檢查改為依所在的 Scene 判斷：工作區的 Scene 有超過一個，或所有載入的 Scene 都沒有啟用的，才是錯誤；其他載入的 Scene 也有時只是警告；EventSystem 放在共用 Scene 可以通過。開著一個有工作區的 Scene 時，計畫可以套用到另一個 Scene。
+- 計畫失敗時，為了套用而開啟的 Scene 會關回去，載入的 Scene 清單和套用前相同。
 
 ## 0.3.0（2026-11-20）
 

@@ -148,7 +148,8 @@ namespace UniGameUI.Editor
             if (saveScene && string.IsNullOrEmpty(plan.scenePath))
                 throw new ArgumentException("A saving plan must name the exact Scene asset path.");
 
-            var scene = FindScene(plan, originalActiveScene, out var createdScene);
+            var scene = FindScene(plan, originalActiveScene, out var opening);
+            var createdScene = opening.Created;
             var createdPrefabs = new List<string>();
             Undo.IncrementCurrentGroup();
             var group = Undo.GetCurrentGroup();
@@ -219,8 +220,7 @@ namespace UniGameUI.Editor
                 }
                 foreach (var path in createdPrefabs)
                     AssetDatabase.DeleteAsset(path);
-                if (createdScene && scene.IsValid() && scene.isLoaded)
-                    EditorSceneManager.CloseScene(scene, true);
+                CloseOpenedScene(scene, opening, originalActiveScene);
                 throw;
             }
 
@@ -244,9 +244,22 @@ namespace UniGameUI.Editor
                 .Where(element => !UIList.IsInsideListItem(element.transform, view.transform));
         }
 
-        private static Scene FindScene(Plan plan, Scene originalActiveScene, out bool created)
+        // 目標 Scene 是不是這次套用才開啟的，以及失敗時要怎麼關回去。
+        private struct SceneOpening
         {
-            created = false;
+            // 這次才開啟，包含新建的。
+            public bool Opened;
+            // 新建的，套用成功才會存檔。
+            public bool Created;
+            // 原本列在 Hierarchy 裡但沒有載入。
+            public bool WasListed;
+            // 取代了唯一開著、沒存過也沒改過的 Scene；值是那個 Scene 原本的內容。
+            public NewSceneSetup? Replaced;
+        }
+
+        private static Scene FindScene(Plan plan, Scene originalActiveScene, out SceneOpening opening)
+        {
+            opening = default;
             if (string.IsNullOrEmpty(plan.scenePath))
                 return originalActiveScene;
             UIAuthoring.CheckAssetPath(plan.scenePath, ".unity");
@@ -258,14 +271,38 @@ namespace UniGameUI.Editor
             var untitled = SceneManager.sceneCount == 1 && string.IsNullOrEmpty(active.path);
             if (untitled && active.isDirty)
                 throw new InvalidOperationException("Save the open untitled Scene before applying a plan to a different Scene.");
-            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(plan.scenePath))
-                return EditorSceneManager.OpenScene(plan.scenePath, untitled ? OpenSceneMode.Single : OpenSceneMode.Additive);
-            if (!plan.createScene)
+            var exists = AssetDatabase.LoadAssetAtPath<SceneAsset>(plan.scenePath);
+            if (!exists && !plan.createScene)
                 throw new FileNotFoundException("Scene asset does not exist. Set createScene to create it.", plan.scenePath);
+
+            opening.Opened = true;
+            opening.WasListed = scene.IsValid();
+            if (untitled)
+                opening.Replaced = active.rootCount == 0 ? NewSceneSetup.EmptyScene : NewSceneSetup.DefaultGameObjects;
+            if (exists)
+                return EditorSceneManager.OpenScene(plan.scenePath, untitled ? OpenSceneMode.Single : OpenSceneMode.Additive);
             UIAuthoring.EnsureAssetFolder(plan.scenePath);
-            created = true;
+            opening.Created = true;
             return EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,
                 untitled ? NewSceneMode.Single : NewSceneMode.Additive);
+        }
+
+        // 計畫失敗時，這次為了套用而開啟的 Scene 要關回去，載入的 Scene 清單和套用前相同。
+        // 留著的話，裡面的工作區與 EventSystem 會影響之後每一份計畫的檢查。
+        private static void CloseOpenedScene(Scene scene, SceneOpening opening, Scene originalActiveScene)
+        {
+            if (!opening.Opened)
+                return;
+            if (scene.IsValid() && scene.isLoaded)
+            {
+                if (opening.Replaced.HasValue || SceneManager.sceneCount == 1)
+                    EditorSceneManager.NewScene(opening.Replaced ?? NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                else
+                    EditorSceneManager.CloseScene(scene, !opening.WasListed);
+            }
+            if (originalActiveScene.IsValid() && originalActiveScene.isLoaded &&
+                SceneManager.GetActiveScene() != originalActiveScene)
+                SceneManager.SetActiveScene(originalActiveScene);
         }
 
         private static void Preflight(Plan plan, UIRoot root, UIAuthoringMode mode)

@@ -147,6 +147,191 @@ namespace UniGameUI.Editor.Tests
             string[] Keys(string id) => UIPlan.FindElement(view, id).GetComponent<UILocalizedDropdown>().Keys.ToArray();
         }
 
+        [Test]
+        public void EventSystemRulesDependOnWhichLoadedSceneHoldsIt()
+        {
+            var scene = NewScene("Batch3Fix Input Own");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            var own = scene.GetRootGameObjects()
+                .Select(gameObject => gameObject.GetComponentInChildren<EventSystem>(true)).Single(found => found);
+            Assert.That(InputIssues(root), Is.Empty);
+
+            // 第一列：工作區自己的 Scene 有兩個。
+            var second = InScene(scene, "Second EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+            var issue = InputIssues(root).Single();
+            Assert.That(issue.Severity, Is.EqualTo(UIIssueSeverity.Error));
+            Assert.That(issue.Message, Does.Contain(scene.name).And.Contain("2 個").And.Contain("Second EventSystem"));
+            Object.DestroyImmediate(second);
+            Assert.That(InputIssues(root), Is.Empty);
+
+            // 第三列：其他載入的 Scene 也有一個，只是提醒。
+            var other = NewScene("Batch3Fix Input Shared");
+            var shared = InScene(other, "Shared EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+            issue = InputIssues(root).Single();
+            Assert.That(issue.Severity, Is.EqualTo(UIIssueSeverity.Warning));
+            Assert.That(issue.Message, Does.Contain("Shared EventSystem").And.Contain(other.name)
+                .And.Contain("只能留一個"));
+            // 輸入模組檢查的是工作區自己的那一個，另一個 Scene 的模組不對不算錯誤。
+            Assert.That(InputErrors(root), Is.Empty);
+
+            // 第四列：工作區的 Scene 沒有，其他 Scene 剛好一個；這時檢查的是那一個的輸入模組。
+            own.gameObject.SetActive(false);
+            issue = InputIssues(root).Single();
+            Assert.That(issue.Severity, Is.EqualTo(UIIssueSeverity.Error));
+            Assert.That(issue.Message, Does.Contain("Shared EventSystem").And.Contain(other.name)
+                .And.Contain("InputSystemUIInputModule"));
+            Object.DestroyImmediate(shared.GetComponent<StandaloneInputModule>());
+            shared.AddComponent<InputSystemUIInputModule>();
+            Assert.That(InputIssues(root), Is.Empty, "EventSystem 放在共用 Scene 是允許的做法");
+
+            // 沒有寫在表格裡：工作區的 Scene 沒有，其他 Scene 有兩個，同樣提醒只能留一個。
+            var third = InScene(other, "Third EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+            issue = InputIssues(root).Single();
+            Assert.That(issue.Severity, Is.EqualTo(UIIssueSeverity.Warning));
+            Assert.That(issue.Message, Does.Contain("Third EventSystem").And.Contain("只能留一個"));
+            Object.DestroyImmediate(third);
+
+            // 第二列：全部加起來沒有啟用的。訊息要分清楚「沒有啟用」和「沒有」。
+            shared.GetComponent<EventSystem>().enabled = false;
+            issue = InputIssues(root).Single();
+            Assert.That(issue.Severity, Is.EqualTo(UIIssueSeverity.Error));
+            Assert.That(issue.Message, Does.Contain("沒有啟用").And.Contain("Shared EventSystem")
+                .And.Contain(own.name));
+            Object.DestroyImmediate(shared);
+            Object.DestroyImmediate(own.gameObject);
+            issue = InputIssues(root).Single();
+            Assert.That(issue.Severity, Is.EqualTo(UIIssueSeverity.Error));
+            Assert.That(issue.Message, Does.Contain("沒有 EventSystem").And.Not.Contain("沒有啟用"));
+
+            static GameObject InScene(Scene target, string name, params Type[] components)
+            {
+                var gameObject = new GameObject(name, components);
+                SceneManager.MoveGameObjectToScene(gameObject, target);
+                return gameObject;
+            }
+        }
+
+        [Test]
+        public void PlanReachesAnotherSceneWhileAWorkspaceSceneIsOpen()
+        {
+            RequireDOTween();
+            var first = NewScene("Batch3Fix First Scene");
+            SceneManager.SetActiveScene(first);
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"" }] }");
+
+            // 建立第二個有 UI 的 Scene：它有自己的 EventSystem，檢查只是提醒。
+            var createdPath = $"{folder}/Batch3Fix Created Scene.unity";
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("只能留一個"));
+            var created = UIPlan.Apply($@"{{ ""scenePath"": ""{createdPath}"", ""createScene"": true,
+                ""views"": [{{ ""id"": ""menu"" }}] }}", true);
+            var createdScene = created.gameObject.scene;
+            scenes.Add(createdScene);
+            Assert.That(createdScene.path, Is.EqualTo(createdPath));
+            Assert.That(File.Exists(createdPath), Is.True);
+            Assert.That(first.isLoaded && createdScene.isLoaded, Is.True);
+            Assert.That(createdScene.GetRootGameObjects()
+                .Count(gameObject => gameObject.GetComponentInChildren<EventSystem>(true)), Is.EqualTo(1));
+            Assert.That(created.Entries.Select(entry => entry.Id), Is.EqualTo(new[] { "menu" }));
+
+            // 既有的另一個 Scene 也一樣：套用成功之後它維持附加開啟。
+            Assert.That(EditorSceneManager.CloseScene(createdScene, true), Is.True);
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("只能留一個"));
+            var reopened = UIPlan.Apply($@"{{ ""scenePath"": ""{createdPath}"",
+                ""views"": [{{ ""id"": ""settings"" }}] }}", true);
+            scenes.Add(reopened.gameObject.scene);
+            Assert.That(reopened.gameObject.scene.path, Is.EqualTo(createdPath));
+            Assert.That(reopened.Entries.Select(entry => entry.Id), Is.EqualTo(new[] { "menu", "settings" }));
+            Assert.That(LoadedScenes(), Is.EqualTo(new[] { first.path, createdPath }));
+            Assert.That(SceneManager.GetActiveScene(), Is.EqualTo(first));
+        }
+
+        [Test]
+        public void FailedPlanClosesTheScenesItOpened()
+        {
+            RequireDOTween();
+            // 另一個既有的 Scene：裡面有兩個 EventSystem，套用完的檢查一定失敗。
+            var brokenScene = NewScene("Batch3Fix Broken Scene");
+            UIAuthoring.CreateWorkspace(brokenScene);
+            SceneManager.MoveGameObjectToScene(
+                new GameObject("Second EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule)), brokenScene);
+            Assert.That(EditorSceneManager.SaveScene(brokenScene), Is.True);
+            var brokenPath = brokenScene.path;
+
+            var first = NewScene("Batch3Fix Kept Scene");
+            SceneManager.SetActiveScene(first);
+            Assert.That(EditorSceneManager.CloseScene(brokenScene, true), Is.True);
+            UIPlan.Apply(@"{ ""views"": [{ ""id"": ""home"" }] }");
+            Assert.That(EditorSceneManager.SaveScene(first), Is.True);
+            var before = LoadedScenes();
+            Assert.That(before, Is.EqualTo(new[] { first.path }));
+
+            // 套用到最後的檢查才失敗。
+            var error = Assert.Throws<InvalidOperationException>(() => UIPlan.Apply(
+                $@"{{ ""scenePath"": ""{brokenPath}"", ""views"": [{{ ""id"": ""menu"" }}] }}"));
+            Assert.That(error.Message, Does.Contain("Second EventSystem"));
+            Assert.That(LoadedScenes(), Is.EqualTo(before));
+            Assert.That(SceneManager.GetActiveScene(), Is.EqualTo(first));
+
+            // 預檢就失敗。
+            Assert.Throws<ArgumentException>(() => UIPlan.Apply(
+                $@"{{ ""scenePath"": ""{brokenPath}"", ""startPage"": ""missing"" }}"));
+            Assert.That(LoadedScenes(), Is.EqualTo(before));
+
+            // 新建的 Scene 失敗時也關掉，而且沒有留下檔案。
+            var newPath = $"{folder}/Batch3Fix Never Saved.unity";
+            Assert.Throws<ArgumentException>(() => UIPlan.Apply(
+                $@"{{ ""scenePath"": ""{newPath}"", ""createScene"": true, ""startPage"": ""missing"" }}", true));
+            Assert.That(LoadedScenes(), Is.EqualTo(before));
+            Assert.That(File.Exists(newPath), Is.False);
+            Assert.That(SceneManager.GetActiveScene(), Is.EqualTo(first));
+
+            // 原本就開著的 Scene 沒有被動到，接著對它套用計畫可以成功。
+            Assert.That(first.isDirty, Is.False);
+            var root = UIPlan.Apply($@"{{ ""scenePath"": ""{first.path}"", ""views"": [{{ ""id"": ""next"" }}] }}");
+            Assert.That(root.gameObject.scene, Is.EqualTo(first));
+            Assert.That(root.Entries.Select(entry => entry.Id), Is.EqualTo(new[] { "home", "next" }));
+            Assert.That(FunctionalErrors(root), Is.Empty);
+        }
+
+        [Test]
+        public void FailedPlanPutsBackTheUntitledSceneItReplaced()
+        {
+            RequireDOTween();
+            var brokenScene = NewScene("Batch3Fix Broken Single");
+            UIAuthoring.CreateWorkspace(brokenScene);
+            SceneManager.MoveGameObjectToScene(
+                new GameObject("Second EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule)), brokenScene);
+            Assert.That(EditorSceneManager.SaveScene(brokenScene), Is.True);
+            var brokenPath = brokenScene.path;
+
+            // 只開著一個沒存過的空 Scene 時，目標 Scene 會取代它。
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            Assert.Throws<InvalidOperationException>(() => UIPlan.Apply(
+                $@"{{ ""scenePath"": ""{brokenPath}"", ""views"": [{{ ""id"": ""menu"" }}] }}"));
+            Assert.That(LoadedScenes(), Is.EqualTo(new[] { "" }));
+            Assert.That(SceneManager.GetActiveScene().rootCount, Is.EqualTo(0));
+            Assert.That(SceneManager.GetActiveScene().isDirty, Is.False);
+
+            // 之後還是可以正常建立別的 Scene。
+            var path = $"{folder}/Batch3Fix After Failure.unity";
+            var root = UIPlan.Apply($@"{{ ""scenePath"": ""{path}"", ""createScene"": true,
+                ""views"": [{{ ""id"": ""home"" }}] }}", true);
+            scenes.Add(root.gameObject.scene);
+            Assert.That(LoadedScenes(), Is.EqualTo(new[] { path }));
+        }
+
+        private static string[] LoadedScenes()
+        {
+            return Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)
+                .Where(scene => scene.isLoaded).Select(scene => scene.path).ToArray();
+        }
+
+        // 和輸入有關的檢查結果，包含提醒。
+        private static UIIssue[] InputIssues(UIRoot root)
+        {
+            return UIValidation.Check(root).Where(issue => issue.Message.Contains("EventSystem")).ToArray();
+        }
+
         private static Color Html(string value)
         {
             Assert.That(ColorUtility.TryParseHtmlString(value, out var color), Is.True, value);
