@@ -13,9 +13,10 @@
 - 第六輪：2026-11-20，commit `43bbd51`（Claude 審核第三批，發現 J1～J8，待修正）
 - 第三批修正：2026-11-20，commit `b29b305`（Claude 子 session 修正 J1～J8）
 - 第七輪：2026-11-20，commit `ea61890`（Claude 複驗第三批修正，通過）
+- 第四批改進：2026-11-20，commit `d0e395f`（0.5.0，Claude 子 session 實作，尚未打標籤）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 三批都已通過獨立審核。第二批的 G1～G5、第三批的 J1～J8 都已修正並由 Claude 複驗通過，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第三批的複驗結果見「第七輪審核」，剩下的互動操作見「未驗證」。第六輪「與規格不同的地方」第 7 點（複製確認框換畫面 ID 的工具），使用者在 2026-11-20 決定不加。第四批（0.5.0，驗收工具）的詳細規格已寫進 `ROADMAP.md`，待實作。
+**現況：** 三批都已通過獨立審核。第二批的 G1～G5、第三批的 J1～J8 都已修正並由 Claude 複驗通過，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第三批的複驗結果見「第七輪審核」，剩下的互動操作見「未驗證」。第六輪「與規格不同的地方」第 7 點（複製確認框換畫面 ID 的工具），使用者在 2026-11-20 決定不加。第四批（0.5.0，驗收工具）的六項已由實作者完成，紀錄見驗證紀錄的「第四批改進（0.5.0）」，**等 Claude 審核；審核通過之前不要打 `v0.5.0` 標籤**。
 
 **分工：** 2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，這份文件裡提到 codex 的地方是當時的紀錄。
 
@@ -68,6 +69,7 @@
 | J4 | 起始下拉選單的捲軸寬度是 0 | 已修正。Claude 確認產生的 Prefab 寬度是 40；外觀待人工確認 |
 | J5～J7 | 選項的鍵值殘留、套用到一半才報錯、不存在的「待套用」 | 已修正。Claude 用第六輪的步驟複驗，三項都已改正 |
 | J8 | 讀程式碼發現的四點 | 前三點確認是問題並已修正，由實作者的測試覆蓋，Claude 讀過修正的程式碼。第四點沒有重現 |
+| 4-1～4-6 | 第四批：驗收工具（0.5.0） | 已實作，待審核。四組測試通過；Validate 與走訪的命令列在副本專案實際執行，十八種情況的結束代碼都符合預期，沒有卡住。藍圖視窗的按鈕與對話框待人工確認 |
 
 ## 第七輪審核：第三批修正（0.4.0）
 
@@ -454,6 +456,127 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 
 ## 驗證紀錄
 
+### 第四批改進（0.5.0）
+
+以下是實作者（Claude 的子 session）自己的紀錄，等主 session 獨立審核。六項各一個 commit，分支 `feat/batch-4` 已快轉合併回 `main`。
+
+| 項目 | commit | 做了什麼 |
+|---|---|---|
+| 4-1 | `d587709` | `UIIssue` 加上 `Code`、`ViewId`、`ElementId`，`ToString()` 是 `Error [代碼] 訊息`。39 個代碼列在 `UIIssueCode`，嚴重度由代碼決定。Validate 原本的英文訊息改成繁體中文。AgentGuide 有代碼表。 |
+| 4-2 | `088edcb` | `UIEntry.NavigatedByCode`、`UIAuthoring.SetNavigatedByCode`、計畫的 `navigation`、藍圖右欄的勾選。設定存在工作區。掛了 `UIConfirmPopup` 的畫面自動算。 |
+| 4-3 | `e5f577b` | 五項 Warning：`start.none`、`view.unreachable`、`view.no-exit`、`button.unbound`、`text.missing-glyph`。 |
+| 4-4 | `77ace71` | `UIValidation.RunFromCommandLine`、`CheckScenes`、`UIValidationReport`、JSON 報告與結束代碼。藍圖的 Validate 顯示數量並把每一筆記到 Console。 |
+| 4-5 | `0bdd783` | `UIWalk`（`Start`、`IsRunning`、`LastReport`、`Finished`、`RunFromCommandLine`）、`UIWalkOptions`、`UIWalkReport`，藍圖工具列的「走訪」。 |
+| 4-6 | `d0e395f` | AgentGuide 的「驗收」一節、README、CHANGELOG、版本 0.5.0。 |
+
+**四組測試**
+
+使用 Unity 6000.3.19f1，和前幾輪同一組副本專案（有、無 DOTween），Active Input Handling 是新的 Input System。EditMode 啟用圖形裝置，PlayMode 使用批次模式。測試的程式碼和 commit 的內容逐檔相同。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 131 | 0 | 0 |
+| 有 DOTween | PlayMode | 68 | 0 | 1 |
+| 無 DOTween | EditMode | 74 | 0 | 57 |
+| 無 DOTween | PlayMode | 64 | 0 | 5 |
+
+- 改動前的基準是 70、68 加 1 略過、23 加 47 略過、64 加 5 略過。既有案例全部保留並通過。
+- 新增 EditMode 61 個：問題代碼 41 個（每個代碼各一個案例，共 39 個，加上兩個檢查格式與指南表格的案例）、由程式控制的畫面 3 個、新的檢查 5 個、報告與命令列參數 5 個、走訪 7 個。PlayMode 沒有新增案例；`Tests/Runtime` 多了一個走訪測試用的頁面腳本。
+- 既有案例只改了篩選問題的方式：兩個輔助函式與一個案例在挑出 DOTween 與 EventSystem 的問題時改用代碼，不再比對訊息文字。
+- 無 DOTween 時多略過 10 個：需要套用計畫或實際走訪的案例。
+- 走訪的案例是 EditMode 測試，會**實際進出 Play Mode**，包含進入時的 Domain 重新載入；另有一個案例把 Domain Reload 關掉再走一次。
+- 跑完後兩個副本專案的 `Assets` 沒有留下測試用的資料夾，`ProjectSettings` 的 Enter Play Mode 設定也還原了。
+
+**各項的測試涵蓋什麼**
+
+- 4-1：每一個代碼各有一個最小的重現案例，確認回報的代碼、嚴重度，以及訊息是中文。另一個案例讀 AgentGuide 的表格，確認代碼與嚴重度和程式裡的完全一致。新增代碼而沒有補案例或沒有寫進指南，測試會失敗。
+- 4-2：計畫欄位的新建、沒有 `updateExisting` 時不寫入、部分更新、寫錯值在套用前報錯；設定不在 Popup 的 Prefab 檔案裡；藍圖右欄的勾選存進工作區、可以 Undo、存檔重開後還在；確認框自動視為由程式控制，而且勾選是唯讀。
+- 4-3：五項各有「會回報」的案例，表格「不算的情況」每一種也各有案例。缺字的案例涵蓋靜態字型缺字、字型自己的 fallback 補得到、TMP Settings 的全域 fallback 補得到、動態字型的來源檔有這個字、輸入框的 placeholder、下拉選單的選項、超過十個字元；檢查前後字型資產的 JSON、字元表與字符表的數量、有沒有被標成已修改、存檔後的檔案內容都相同，TMP 的預設字型與它的 fallback 也一起比對。另一個案例把 AgentGuide 的示例計畫原文套用到沒有中文字型的專案，Validate 的結果只有確認框「確定」與「取消」兩筆 `text.missing-glyph`。
+- 4-4：`CheckScenes` 依序檢查有 Error、只有 Warning、沒有問題、沒有工作區的四個 Scene，結束後回到原本開著的 Scene；嚴格模式；省略時用 Build Settings；Scene 不存在；開著的 Scene 有未儲存的修改時丟出例外而且不存檔。報告的 JSON 欄位名稱、順序與內容。結束代碼的三種結果。參數的解析與錯誤。
+- 4-5：見下面的表格。另有參數解析、結束代碼、Editor 內部錯誤的判斷三個不進 Play Mode 的案例。
+
+| 走訪的案例 | 確認的內容 |
+|---|---|
+| 全部正常的工作區 | 起始加六條路由。`ShowPage`、頁面的 `Back`、`OpenPopup`、`ClosePopup`、Popup 的 `Back` 都通過，`Emit` 略過而且頁面腳本沒有收到動作。報告檔案和 `LastReport` 相同，欄位名稱與文件一致。同一個 Scene 再走一次並開啟 `IncludeEmit`：`Emit` 觸發，頁面腳本收到動作。 |
+| 會失敗的工作區 | 目標頁的 `OnShowing` 丟例外：`Failed`，報告裡有例外訊息。`OnShown` 記 `Debug.LogError`：導航是 `Completed`，這一步仍然 `Failed`。只記 `Debug.LogWarning`：`Passed`，警告在報告裡。照 `LaunchPage` 的寫法在 `OnShown` 之後接著導航：這一步與下一步都通過。由程式控制、沒有資料就開不起來的來源畫面：`Skipped`。進場動畫 60 秒而單步上限 3 秒：`Failed`、原因是逾時，下一步照常通過。結果是 `Failed`，畫面清單正確。 |
+| 只有一個頁面、沒有起始頁 | 起始那一步略過，頁面的 `Back` 略過，Popup 的開與關通過。由程式控制而且不是任何路由來源的 Popup 沒有被開啟，列在畫面清單裡。 |
+| 關閉 Domain Reload | 走訪通過，`Finished` 在回到 Edit Mode 之後觸發一次。 |
+| Validate 有 Error | 不進 Play Mode，`NotRun`，報告附上 Validate 的結果，`Finished` 觸發。沒有工作區的 Scene 也是 `NotRun`。 |
+
+**命令列的實際執行**
+
+在另一個全新的副本專案執行，內容是：用命令列套用 AgentGuide 的示例計畫（原文抽出），把指南的範例腳本 `WorkshopPage`、`SettingsPage`、`UnsavedChangesGuard`、`ShopPage` 原文掛到對應的頁面，另外用指南的 `LaunchPage` 做一個 `Launch.unity`；再建立四個示範用的 Scene：`Broken`（起始頁指到不存在的畫面）、`Failing`（目標頁的 `OnShowing` 丟例外）、`Slow`（進場動畫 60 秒）、`Plain`（沒有工作區）。Build Settings 啟用 `Workshop` 與 `Plain`。這個專案沒有設定中文字型。
+
+每一次都是下面的形式，沒有 `-quit`，套件版本 0.5.0：
+
+```text
+Unity.exe -batchmode -projectPath <專案> -logFile <記錄檔> -executeMethod <入口> <參數>
+```
+
+Validate 的入口是 `UniGameUI.Editor.UIValidation.RunFromCommandLine`：
+
+| 參數 | 結束代碼 | 秒數 | 報告摘要 |
+|---|---:|---:|---|
+| `-unigameui-scene Assets/Scenes/Workshop.unity` | 0 | 7 | `passed: true`，Error 0、Warning 2：確認框 `confirm` 與 `cancel` 的 `text.missing-glyph`，沒有其他問題。 |
+| 同上加 `-unigameui-strict` | 1 | 5 | `strict: true`、`passed: false`，同樣兩筆 Warning。 |
+| `-unigameui-scene Assets/Scenes/Broken.unity -unigameui-scene Assets/Scenes/Workshop.unity` | 1 | 5 | Error 1（`Broken` 的 `start.unknown`），Warning 2。兩個 Scene 都在報告裡。 |
+| `-unigameui-scene Assets/Scenes/Nowhere.unity` | 2 | 5 | `error` 是「找不到 Scene」。 |
+| `-unigameui-scene Assets/Scenes/Plain.unity` | 2 | 5 | `Plain` 的 `hasWorkspace` 是 false，`error` 是「指定的 Scene 都沒有 UniGameUI 工作區」。 |
+| （沒有參數） | 0 | 6 | 檢查 Build Settings 的 `Workshop` 與 `Plain`，報告寫到預設的 `Library/UniGameUI/validate.json`，`Plain` 註明沒有工作區。 |
+| `-unigameui-scene -unigameui-report <路徑>`（少了值） | 2 | 5 | `error` 是「參數後面要接一個值」，報告仍然寫到指定的路徑。 |
+| `Workshop`，另外加 `-nographics` | 0 | 5 | 和第一列相同。 |
+
+走訪的入口是 `UniGameUI.Editor.UIWalk.RunFromCommandLine`：
+
+| 參數 | 結束代碼 | 秒數 | 報告摘要 |
+|---|---:|---:|---|
+| `-unigameui-scene Assets/Scenes/Workshop.unity` | 0 | 9 | `Passed`。通過 5 步（起始加四條路由）、略過 1 步（`Emit`）。確認框列在畫面清單，註明由程式控制、不在走訪範圍。 |
+| `-unigameui-scene Assets/Scenes/Failing.unity` | 1 | 9 | `Failed`。通過 3、失敗 2：切到會丟例外的頁面是 `Failed`；以那一頁為來源的 `Back` 在準備時失敗。其餘兩條路由通過。 |
+| `-unigameui-scene Assets/Scenes/Nowhere.unity` | 2 | 5 | `NotRun`，原因是找不到 Scene。 |
+| `-unigameui-scene Assets/Scenes/Broken.unity` | 2 | 7 | `NotRun`，原因是 Validate 有 1 筆 Error，沒有進 Play Mode。 |
+| `Slow.unity` 加 `-unigameui-step-timeout 3` | 1 | 14 | `Failed`。兩條路由都是逾時，各花 3 秒，起始那一步通過。 |
+| `Slow.unity` 加 `-unigameui-step-timeout 100 -unigameui-timeout 12` | 2 | 19 | `NotRun`，原因是超過整體的時間上限 12 秒。已經走完的起始那一步留在報告裡。Editor 自己結束，沒有卡住。 |
+| `Workshop.unity` 加 `-unigameui-include-emit` | 0 | 9 | `Passed`，6 步全部通過。`Emit` 觸發後 `WorkshopPage` 開啟確認框，下一步的準備把它關掉。 |
+| `-unigameui-scene Assets/Scenes/Launch.unity`（沒有指定報告） | 0 | 9 | `Passed`。起始頁顯示後自己切到主選單，兩個頁面都顯示過。報告寫到預設的 `Library/UniGameUI/walk-Launch.json`。 |
+| 只有 `-unigameui-report <路徑>`（沒有 Scene） | 2 | 5 | `NotRun`，原因是要用 `-unigameui-scene` 指定 Scene。 |
+| `Workshop.unity`，另外加 `-nographics` | 0 | 8 | 和第一列相同。 |
+
+- 秒數是整個 Unity 程序從啟動到結束的時間。十八次執行都由工具自己結束 Editor，沒有任何一次需要從外面終止。
+- **第一次實際執行時發現一個測試沒抓到的問題：** 每一次走訪的「起始」那一步都失敗，原因是 Unity Editor 自己在啟動時丟了一個例外（`UnityEditor.Search.SearchInit.IndexationOnStartup` 的 `ArgumentOutOfRangeException`），被算在這一步上。它和專案的 UI 無關，也不會出現在測試執行器的環境裡。修正後，堆疊全部在 `UnityEditor` 命名空間裡的 Console 訊息不算在步驟上，另有測試。上表是修正之後的結果。
+- 同一次也發現參數寫錯時報告只寫到預設位置，已改成盡量寫到 `-unigameui-report` 指定的路徑。
+
+**與規格不同、或規格沒寫到而由實作者決定的地方**
+
+請審核時一併判斷。
+
+1. **`UIIssueCode` 是公開的類別。** 規格只說每種問題要有代碼。實作提供每個代碼的常數、`All` 與 `SeverityOf(code)`。`UIIssue` 另有一個 internal 的定位物件，給 Console 點擊定位用。
+2. **只有 Validate 的訊息改成中文。** `UIAuthoring` 與 `UIPlan` 丟出的例外訊息還有一部分是英文，不在 4-1 的範圍，沒有動。
+3. **`view.unreachable` 把由程式控制的畫面也當成出發點。** 規格寫的是從起始頁出發。實作上，由程式控制的畫面是程式打開的，從它出發的路由通到的畫面也算走得到；否則只能靠它進入的畫面會被誤報，或被迫也標成由程式控制。
+4. **動作是空的 `UIButtonAction` 會有兩筆問題：** 既有的 `button.action-unrouted`（Error）與新的 `button.unbound`（Warning）。
+5. **缺字的檢查多查一層 TMP 的預設字型。** 規格列的是字型自己的 fallback 與 TMP Settings 的全域 fallback。TMP 實際顯示時最後還會用預設字型，所以一起查，否則會誤報。`DynamicOS` 的字型向作業系統查；動態字型讀不到來源字型檔時只看圖集。
+6. **Validate 的報告多一個 `error` 欄位**，平常是空字串，結束代碼是 2 時是原因。參數錯誤或 Scene 不存在時也會寫出報告。
+7. **命令列與 `CheckScenes` 把每個 Scene 單獨開啟來檢查。** EventSystem 放在另一個共用 Scene 的專案，單獨檢查會回報 `input.event-system-missing`，走訪也一樣只載入一個 Scene。這是目前的限制，已寫進 AgentGuide。要支援的話需要新的參數，沒有擅自加。
+8. **命令列與 `CheckScenes` 不會產生 ID 常數**，只回報 `constants.outdated`。藍圖的 Validate 按鈕照舊會先更新常數。
+9. **走訪多了 `UIWalk.IsRunning`（公開）。** 進入 Play Mode 時 Domain 重新載入，`Finished` 的訂閱會消失，從另一段程式等待結果要靠它。
+10. **走訪的報告多了 `reason` 與 `notes` 兩個欄位。** `reason` 是 `NotRun` 的原因；`notes` 記「有待套用的覆寫，使用已儲存的 Prefab」這類說明。起始那一步的 `kind` 是 `Start`，三個數量包含它。
+11. **走訪的報告型別：** `UIWalkReport`、`UIWalkStep`、`UIWalkView`、`UIWalkLog`、`UIWalkValidation`，列舉 `UIWalkOutcome`、`UIWalkStepStatus`；Validate 另有 `UIValidationSceneReport`。全部在 Editor 組件。
+12. **準備頁面時，只有 `Back` 一定要有上一頁。** 規格寫來源是頁面時先顯示另一個頁面（有路由通到來源頁的，沒有就用起始頁）。這兩種都沒有時，`Back` 會再試其他頁面，其餘種類的路由就直接顯示來源頁。來源是 Popup 而這一步是 `ShowPage` 時，底下的頁面會避開目標頁，否則切頁會因為「已經在那一頁」而無法執行。
+13. **Unity Editor 自己的錯誤不算在步驟上**，原因見上面命令列的說明。沒有堆疊的訊息、專案的程式或這個套件記的訊息照常計算。
+14. **命令列的走訪在啟動後等五次 Editor 更新才開始**，讓 Editor 排在啟動時的工作先做完。
+15. **不是命令列時也有整體的時間上限**：（路由數 + 2）×（單步上限 + 5）+ 60 秒，避免頁面腳本卡住時永遠不結束。
+16. **走訪中斷時的結果是 `NotRun`**（手動停止 Play Mode、整體逾時），已經走完的步驟保留在報告裡。
+17. **`Runtime` 組件的變動只有 `UIEntry` 多一個欄位與唯讀屬性 `NavigatedByCode`**（規格指定的），沒有新增公開型別。走訪與報告的程式都在 Editor 組件，不會進 Player。
+18. **測試組件：** `UniGameUI.Runtime.Tests` 多了走訪測試用的頁面腳本，`UniGameUI.Editor.Tests` 因此多引用它。`UIWalk` 有一個只給測試用的 internal 掛點（進 Play Mode 之後先等幾秒），因為 Domain 重新載入之後測試要一點時間才接得上。
+
+**沒有驗證的**
+
+- 藍圖視窗的「走訪」按鈕與結束後的摘要對話框、Validate 的對話框與 Console 的點擊定位、右欄「由程式控制進出」的實際勾選。自動測試只確認它們呼叫的函式與產生的文字。
+- 在開著視窗的互動 Editor 裡走訪。自動測試與命令列都是批次模式。
+- 關閉 Scene Reload 的 Enter Play Mode 設定。測試只涵蓋關閉 Domain Reload。
+- `DynamicOS` 字型的缺字檢查。測試用的是 TMP 附的字型檔。
+- 有待套用的 Prefab 覆寫時走訪的行為。程式會在報告的 `notes` 記一筆，沒有測試。
+- 這一批沒有改 `Runtime` 的行為，沒有重新打包執行檔。IL2CPP 照舊沒有驗證。
+
 ### 第七輪：Claude 對第三批修正的獨立驗證
 
 使用 Unity 6000.3.19f1，沿用第六輪的兩個副本專案，套件內容換成 `ea61890`。
@@ -831,6 +954,13 @@ PlayerSettings:
 使用者的 Editor 開著專案時，CLI 拿不到專案鎖，所以一律在副本上驗證。
 
 ## 未驗證
+
+第四批（0.5.0）以下項目需要在互動 Editor 人工確認：
+
+- **藍圖工具列的「走訪」。** 按下後進入 Play Mode、走完自己回到 Edit Mode，跳出摘要：通過、失敗、略過各幾步，以及失敗步驟的來源、動作與原因；失敗的步驟同時出現在 Console。
+- **藍圖的 Validate。** 對話框顯示 Error 與 Warning 各幾筆；Console 裡每一筆帶代碼，點擊可以定位到相關的畫面物件（例如沒有動作的按鈕、缺字的文字）。
+- **藍圖右欄的「由程式控制進出」。** 勾選、取消、Undo；確認框是勾選而且不能改；節點上顯示「程式控制」。
+- **有待套用的覆寫時走訪。** 不應該跳出「套用並進入」的詢問，報告的 `notes` 應該有一筆說明。
 
 第三批（0.4.0）以下項目沒有驗證，需要在互動 Editor 或實機人工確認。其中選取、返回鍵、輸入框搭配手把的**邏輯**，Claude 已在第六輪用虛擬裝置於 Windows Player 驗證過；下面要確認的是外觀、手感與實體裝置。
 
