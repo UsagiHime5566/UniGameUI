@@ -323,12 +323,20 @@ namespace UniGameUI.Editor
 
             var modifications = PrefabUtility.GetPropertyModifications(instance);
             return (modifications != null && modifications.Any(modification =>
-                       !PrefabUtility.IsDefaultOverride(modification) &&
-                       !(modification.target is TMP_Text && modification.propertyPath == "m_TextStyleHashCode"))) ||
+                       !PrefabUtility.IsDefaultOverride(modification) && !IsDerivedByTmp(modification))) ||
                    PrefabUtility.GetAddedGameObjects(instance).Count > 0 ||
                    PrefabUtility.GetRemovedGameObjects(instance).Count > 0 ||
                    PrefabUtility.GetAddedComponents(instance).Count > 0 ||
                    PrefabUtility.GetRemovedComponents(instance).Count > 0;
+        }
+
+        // TMP 自己算出來的欄位：樣式的雜湊值，以及產生網格時從 m_fontColor 複製過去的 m_fontColor32。
+        // 它們會被記成覆寫，但不是使用者或計畫做的修改。真的改了文字顏色時，m_fontColor 也會是覆寫。
+        private static bool IsDerivedByTmp(PropertyModification modification)
+        {
+            return modification.target is TMP_Text &&
+                (modification.propertyPath == "m_TextStyleHashCode" ||
+                 modification.propertyPath.StartsWith("m_fontColor32", StringComparison.Ordinal));
         }
 
         public static void ApplyReviewOverrides(UIRoot root, string id)

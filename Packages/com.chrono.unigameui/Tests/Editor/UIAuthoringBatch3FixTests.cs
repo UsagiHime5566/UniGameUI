@@ -419,6 +419,49 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        [Test]
+        public void ColorDerivedByTmpIsNotAPendingReviewOverride()
+        {
+            RequireDOTween();
+            var widgets = UseIsolatedWidgets();
+            UIWidgets.Install();
+            foreach (var name in new[] { "Text", "Button" })
+            {
+                EditPrefab($"{widgets}/{name}.prefab",
+                    contents => contents.GetComponentInChildren<TMP_Text>(true).color = Color.black);
+            }
+            SceneManager.SetActiveScene(NewScene("Batch3Fix Derived Color"));
+            var root = UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""confirm"", ""kind"": ""Popup"",
+                ""prefabPath"": ""{widgets}/Confirm.prefab"" }}] }}");
+            var entry = UIAuthoring.FindEntry(root, "confirm");
+
+            // TMP 產生網格時把 m_fontColor32 更新成 m_fontColor 的值。它和 Prefab 檔案裡的舊值不同，所以被記成覆寫。
+            foreach (var text in entry.Review.GetComponentsInChildren<TMP_Text>(true))
+            {
+                text.ForceMeshUpdate(true);
+                PrefabUtility.RecordPrefabInstancePropertyModifications(text);
+            }
+            var derived = Overrides();
+            Assert.That(derived, Is.Not.Empty, "要先重現第六輪審核的情況");
+            Assert.That(derived, Is.All.EqualTo("m_fontColor32.rgba"));
+            Assert.That(UIAuthoring.HasReviewOverrides(entry), Is.False);
+
+            // 真的改了審核實例的文字顏色，仍然算待套用。
+            var title = UIPlan.FindElement(entry.Review, "title").GetComponentInChildren<TMP_Text>(true);
+            title.color = Color.red;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(title);
+            Assert.That(Overrides(), Has.Some.StartsWith("m_fontColor."));
+            Assert.That(UIAuthoring.HasReviewOverrides(entry), Is.True);
+
+            string[] Overrides()
+            {
+                return PrefabUtility.GetPropertyModifications(entry.Review.gameObject)
+                    .Where(modification => !PrefabUtility.IsDefaultOverride(modification) &&
+                        modification.propertyPath != "m_TextStyleHashCode")
+                    .Select(modification => modification.propertyPath).ToArray();
+            }
+        }
+
         private static string[] LoadedScenes()
         {
             return Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)
