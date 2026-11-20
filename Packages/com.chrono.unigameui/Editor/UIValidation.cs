@@ -131,6 +131,7 @@ namespace UniGameUI.Editor
                 CheckBindings(root, entry, entry.Review, routes, issues, false);
             }
 
+            CheckBlueprint(root, views, issues);
             CheckInput(root, issues);
             CheckWidgets(views.Values, issues);
             UIIdConstants.Check(root, scenePath, checkConstantsFile, issues);

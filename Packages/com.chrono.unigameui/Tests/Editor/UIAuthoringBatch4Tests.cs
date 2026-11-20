@@ -368,6 +368,31 @@ namespace UniGameUI.Editor.Tests
                     root.startPageId = "ghost";
                     break;
 
+                case UIIssueCode.StartNone:
+                    Home();
+                    break;
+
+                case UIIssueCode.ViewUnreachable:
+                    Home();
+                    UIAuthoring.SetStartPage(root, "home");
+                    UIAuthoring.CreatePage(root, "orphan", "Orphan");
+                    break;
+
+                case UIIssueCode.ViewNoExit:
+                    Home();
+                    UIAuthoring.CreatePage(root, "other", "Other");
+                    break;
+
+                case UIIssueCode.ButtonUnbound:
+                    Home();
+                    Child(home, "Bare", typeof(Image), typeof(Button));
+                    break;
+
+                case UIIssueCode.TextMissingGlyph:
+                    Home();
+                    Child(home, "Label", typeof(TextMeshProUGUI)).GetComponent<TMP_Text>().text = "確定";
+                    break;
+
                 case UIIssueCode.RouteInvalid:
                     Home();
                     root.routes.Add(new UIRoute { source = "ghost", action = "go", kind = UIRouteKind.Emit });

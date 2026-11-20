@@ -59,8 +59,11 @@ namespace UniGameUI.Editor
         public const string ViewDefaultSelectedOutside = "view.default-selected-outside";
         public const string ViewPopupOptionOnPage = "view.popup-option-on-page";
         public const string ViewOverlayMissing = "view.overlay-missing";
+        public const string ViewUnreachable = "view.unreachable";
+        public const string ViewNoExit = "view.no-exit";
 
         public const string StartUnknown = "start.unknown";
+        public const string StartNone = "start.none";
 
         public const string RouteInvalid = "route.invalid";
         public const string RouteTargetMissing = "route.target-missing";
@@ -68,6 +71,8 @@ namespace UniGameUI.Editor
         public const string ElementIdDuplicate = "element.id-duplicate";
         public const string ElementKindUnknown = "element.kind-unknown";
         public const string ButtonActionUnrouted = "button.action-unrouted";
+        public const string ButtonUnbound = "button.unbound";
+        public const string TextMissingGlyph = "text.missing-glyph";
 
         public const string InputEventSystemMultiple = "input.event-system-multiple";
         public const string InputEventSystemMissing = "input.event-system-missing";
@@ -103,12 +108,17 @@ namespace UniGameUI.Editor
                 [ViewDefaultSelectedOutside] = UIIssueSeverity.Error,
                 [ViewPopupOptionOnPage] = UIIssueSeverity.Error,
                 [ViewOverlayMissing] = UIIssueSeverity.Error,
+                [ViewUnreachable] = UIIssueSeverity.Warning,
+                [ViewNoExit] = UIIssueSeverity.Warning,
                 [StartUnknown] = UIIssueSeverity.Error,
+                [StartNone] = UIIssueSeverity.Warning,
                 [RouteInvalid] = UIIssueSeverity.Error,
                 [RouteTargetMissing] = UIIssueSeverity.Error,
                 [ElementIdDuplicate] = UIIssueSeverity.Error,
                 [ElementKindUnknown] = UIIssueSeverity.Error,
                 [ButtonActionUnrouted] = UIIssueSeverity.Error,
+                [ButtonUnbound] = UIIssueSeverity.Warning,
+                [TextMissingGlyph] = UIIssueSeverity.Warning,
                 [InputEventSystemMultiple] = UIIssueSeverity.Error,
                 [InputEventSystemMissing] = UIIssueSeverity.Error,
                 [InputEventSystemDisabled] = UIIssueSeverity.Error,

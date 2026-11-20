@@ -683,12 +683,17 @@ Player 建置處理器會從複製的 Scene 中移除審核框與 Prefab 審核�
 | `view.default-selected-outside` | Error | 預設選取元件不在這個畫面裡。 | 改指到這個畫面裡的元件。 |
 | `view.popup-option-on-page` | Error | 頁面開啟了只對 Popup 有意義的選項。 | 在 Inspector 關掉「關閉後保留並重用」與「點遮罩關閉」。 |
 | `view.overlay-missing` | Error | Popup 設定了點遮罩關閉，但沒有遮罩物件。 | 關掉這個選項，或補回遮罩。 |
+| `view.unreachable` | Warning | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到這個頁面或 Popup。起始頁本身與由程式控制的畫面不算；沒有起始頁時只回報 `start.none`。 | 補上通往它的路由。由程式開啟的畫面標記為由程式控制。 |
+| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉。由程式控制的畫面不算；工作區只有一個頁面時那個頁面不算。 | 補上離開的路由。由程式切換或關閉的畫面標記為由程式控制。 |
 | `start.unknown` | Error | 起始頁不存在，或不是頁面。 | 用計畫的 `startPage` 或藍圖重新指定。 |
+| `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式控制時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式控制。 |
 | `route.invalid` | Error | 路由的來源畫面不存在、動作是空的，或同一個來源有重複的動作。 | 用計畫或藍圖重新建立這條路由。 |
 | `route.target-missing` | Error | `ShowPage` 或 `OpenPopup` 路由的目的地不存在，或種類不符。 | 修正路由的 `target`，或補上目的地的畫面。 |
 | `element.id-duplicate` | Error | 同一個畫面裡有空的或重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
 | `element.kind-unknown` | Error | 元件記錄的元件名稱不在元件集裡。 | 把元件登記回元件集，或刪掉這個元件重新建立。 |
 | `button.action-unrouted` | Error | 按鈕的動作找不到對應的路由。 | 補上路由，或修改按鈕的 `action`。訊息提到 Prefab 本體時，請修正審核實例並套用覆寫。 |
+| `button.unbound` | Warning | 畫面裡的 `Button` 沒有動作（沒有 `UIButtonAction`，或動作是空的），`onClick` 也沒有在 Inspector 接監聽。由程式控制的畫面與清單項目裡的按鈕不算。 | 給按鈕 `action` 並接一條路由；要由程式處理時用 `Emit` 路由，在頁面腳本的 `OnAction` 接收。 |
+| `text.missing-glyph` | Warning | TMP 文字的預設內容（包含輸入框的 placeholder 與下拉選單的選項）有字型和它的 fallback 都沒有的字元。空白與控制字元不算。訊息列出缺少的字元，最多十個。 | 設定含有這些字元的預設字型（`defaultFontPath`），或修改預設文字。 |
 | `input.event-system-multiple` | Error | 工作區所在的 Scene 有超過一個啟用的 EventSystem。 | 只保留一個。 |
 | `input.event-system-missing` | Error | 載入的 Scene 裡沒有 EventSystem。 | 在工作區的 Scene 或共用的 Scene 加回一個。 |
 | `input.event-system-disabled` | Error | 載入的 Scene 裡有 EventSystem，但沒有啟用。 | 啟用它的 GameObject 與元件。 |
