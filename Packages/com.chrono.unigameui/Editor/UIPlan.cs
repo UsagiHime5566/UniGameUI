@@ -157,6 +157,7 @@ namespace UniGameUI.Editor
             UIRoot root;
             UIWidgetSet widgetSet = null;
             string widgetSnapshot = null;
+            Action undoFont = null;
             try
             {
                 root = UIAuthoring.FindWorkspace(scene);
@@ -201,17 +202,19 @@ namespace UniGameUI.Editor
                 foreach (var issue in issues)
                     Debug.LogWarning($"UniGameUI {issue}", root);
 
+                // 預設字型會改寫元件 Prefab，Undo 還原不了，所以留到檢查都通過之後、Scene 存檔之前。
+                // 換到一半失敗時它會自己把 Prefab 寫回原樣；存檔失敗時由下面的 catch 還原。
+                if (plan.defaultFontPath != null)
+                    UIWidgets.SetDefaultFont(plan.defaultFontPath, out undoFont);
+
                 if ((saveScene || createdScene) && !EditorSceneManager.SaveScene(scene, plan.scenePath))
                     throw new IOException($"Could not save Scene '{plan.scenePath}'.");
-
-                // 預設字型會改到元件 Prefab，留到其他步驟都成功之後才套用。
-                if (plan.defaultFontPath != null)
-                    UIWidgets.SetDefaultFont(plan.defaultFontPath);
                 Undo.CollapseUndoOperations(group);
             }
             catch
             {
                 Undo.RevertAllDownToGroup(group);
+                undoFont?.Invoke();
                 if (widgetSet && widgetSnapshot != null && EditorJsonUtility.ToJson(widgetSet) != widgetSnapshot)
                 {
                     EditorJsonUtility.FromJsonOverwrite(widgetSnapshot, widgetSet);

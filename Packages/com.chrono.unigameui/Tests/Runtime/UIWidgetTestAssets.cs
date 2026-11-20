@@ -28,6 +28,20 @@ namespace UniGameUI.Tests
             try
             {
                 widgets.GetMethod("Install", BindingFlags.Static | BindingFlags.Public).Invoke(null, null);
+
+                // 一個沒有設定預設選取元件的 View Prefab，給 Play Mode 的 Validate 案例用。
+                var authoring = Type.GetType("UniGameUI.Editor.UIAuthoring, UniGameUI.Editor", true);
+                var plain = new GameObject("PlainView", typeof(RectTransform));
+                try
+                {
+                    authoring.GetMethod("BuildView", BindingFlags.Static | BindingFlags.NonPublic)
+                        .Invoke(null, new object[] { plain.transform, "plain", UIEntryKind.Popup });
+                    UnityEditor.PrefabUtility.SaveAsPrefabAsset(plain, $"{Folder}/PlainView.prefab");
+                }
+                finally
+                {
+                    UnityEngine.Object.DestroyImmediate(plain);
+                }
             }
             finally
             {

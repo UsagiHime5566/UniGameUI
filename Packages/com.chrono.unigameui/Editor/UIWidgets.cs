@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using TMPro;
 using UnityEditor;
@@ -20,6 +21,9 @@ namespace UniGameUI.Editor
 
         // 測試用：把安裝位置與搜尋範圍限制在指定資料夾，避免動到專案自己的元件集。
         internal static string FolderOverride;
+
+        // 測試用：換字型處理每個 Prefab 之前呼叫，用來模擬換到一半失敗。
+        internal static Action<string> ReplacingFont;
 
         internal static readonly UIWidgetKind[] BuiltIn =
         {
@@ -151,21 +155,61 @@ namespace UniGameUI.Editor
         /// </summary>
         public static void SetDefaultFont(string fontAssetPath)
         {
+            SetDefaultFont(fontAssetPath, out _);
+        }
+
+        /// <summary>
+        /// 換字型會直接改寫元件 Prefab，Undo 還原不了。換到一半失敗時這裡會把已經改過的 Prefab 寫回原樣；
+        /// <paramref name="undo"/> 讓呼叫端在自己後續的步驟失敗時，把這一次的變更整個還原。
+        /// </summary>
+        internal static void SetDefaultFont(string fontAssetPath, out Action undo)
+        {
             var font = LoadFont(fontAssetPath);
             var set = Install();
-            var previous = set.defaultFont ? set.defaultFont : TMP_Settings.defaultFontAsset;
+            var previousDefault = set.defaultFont;
+            var previous = previousDefault ? previousDefault : TMP_Settings.defaultFontAsset;
             var next = font ? font : TMP_Settings.defaultFontAsset;
-            if (previous != next && next)
+            var backups = new List<(string Path, byte[] Bytes)>();
+
+            void Restore()
             {
-                foreach (var path in PrefabPaths(set))
-                    ReplaceFont(path, previous, next);
+                foreach (var (path, bytes) in backups)
+                {
+                    File.WriteAllBytes(path, bytes);
+                    AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                }
+                backups.Clear();
+                if (!set || set.defaultFont == previousDefault)
+                    return;
+                set.defaultFont = previousDefault;
+                EditorUtility.SetDirty(set);
+                AssetDatabase.SaveAssetIfDirty(set);
             }
 
-            if (set.defaultFont == font)
-                return;
-            set.defaultFont = font;
-            EditorUtility.SetDirty(set);
-            AssetDatabase.SaveAssetIfDirty(set);
+            undo = Restore;
+            try
+            {
+                if (previous != next && next)
+                {
+                    foreach (var path in PrefabPaths(set))
+                    {
+                        var bytes = File.ReadAllBytes(path);
+                        if (ReplaceFont(path, previous, next))
+                            backups.Add((path, bytes));
+                    }
+                }
+
+                if (set.defaultFont == font)
+                    return;
+                set.defaultFont = font;
+                EditorUtility.SetDirty(set);
+                AssetDatabase.SaveAssetIfDirty(set);
+            }
+            catch
+            {
+                Restore();
+                throw;
+            }
         }
 
         internal static TMP_FontAsset LoadFont(string fontAssetPath)
@@ -284,8 +328,10 @@ namespace UniGameUI.Editor
                 .Where(path => !string.IsNullOrEmpty(path)).Distinct().ToArray();
         }
 
-        private static void ReplaceFont(string path, TMP_FontAsset previous, TMP_FontAsset next)
+        // 回傳這個 Prefab 有沒有被改寫。
+        private static bool ReplaceFont(string path, TMP_FontAsset previous, TMP_FontAsset next)
         {
+            ReplacingFont?.Invoke(path);
             var root = PrefabUtility.LoadPrefabContents(path);
             try
             {
@@ -295,7 +341,11 @@ namespace UniGameUI.Editor
                     // 巢狀 Prefab 的內容由它自己的 Prefab 處理，這裡改了會變成固定住字型的覆寫。
                     if (PrefabUtility.IsPartOfPrefabInstance(field) || field.fontAsset != previous)
                         continue;
-                    field.fontAsset = next;
+                    // 不用 field.fontAsset 的 setter：它會連輸入的文字和 placeholder 一起換，
+                    // 包含專案已經改成別的字型的那一個。這裡只換輸入框自己記的字型，兩個文字由下面各自判斷。
+                    var serialized = new SerializedObject(field);
+                    serialized.FindProperty("m_GlobalFontAsset").objectReferenceValue = next;
+                    serialized.ApplyModifiedPropertiesWithoutUndo();
                     changed = true;
                 }
                 foreach (var text in root.GetComponentsInChildren<TMP_Text>(true))
@@ -307,6 +357,7 @@ namespace UniGameUI.Editor
                 }
                 if (changed)
                     PrefabUtility.SaveAsPrefabAsset(root, path);
+                return changed;
             }
             finally
             {

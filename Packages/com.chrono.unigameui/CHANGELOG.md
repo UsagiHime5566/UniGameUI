@@ -19,6 +19,9 @@
 - 計畫失敗時，為了套用而開啟的 Scene 會關回去，載入的 Scene 清單和套用前相同。
 - 更新既有的下拉選單時，套用後的選項數量和 `optionKeys` 數量不同會在套用前報錯。`"optionKeys": []` 表示清除所有鍵值。
 - 計畫的檢查提前：滑桿的 `min`、`max`、`value` 和既有的值合併後不合理（`min` 不小於 `max`，或 `value` 超出範圍）、下拉選單的 `value` 或 `optionKeys` 數量和選項不合、`spacing` 用在內容物件沒有版面配置元件的清單、元件 Prefab 缺少欄位需要的元件或已經遺失、`overlayClick: Close` 用在沒有遮罩的 Popup，都在套用前報錯，不會把 Scene 標成未儲存。
+- `placeholder`、`placeholderKey` 寫在沒有 TMP placeholder 的輸入框類元件上時，在套用前報錯，不再安靜地略過。
+- 計畫的 `defaultFontPath` 改在 Scene 存檔之前套用。換字型或存檔失敗時，元件 Prefab、元件集的預設字型與 Scene 檔案都回到套用前的狀態。
+- `SetDefaultFont` 對輸入框的文字與 placeholder 各自判斷，只換掉目前使用舊預設字型的那一個。
 
 ## 0.3.0（2026-11-20）
 

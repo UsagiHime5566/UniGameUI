@@ -239,11 +239,27 @@ namespace UniGameUI.Editor
                 case UIWidgetKind.Dropdown:
                     CheckDropdown(label, spec, source ? source.GetComponentInChildren<TMP_Dropdown>(true) : null);
                     break;
+                case UIWidgetKind.InputField:
+                    if (source)
+                        InputPlaceholder(source.GetComponentInChildren<TMP_InputField>(true), spec, label, name);
+                    break;
                 case UIWidgetKind.ScrollList:
                     if (source && !float.IsNaN(spec.spacing))
                         ListLayout(source.GetComponentInChildren<UIList>(true), label);
                     break;
             }
+        }
+
+        // 計畫寫了 placeholder 的欄位，輸入框就要有 TMP 的 placeholder 可以寫，否則欄位會被安靜地略過。
+        private static TMP_Text InputPlaceholder(TMP_InputField field, ElementSpec spec, string label, string name)
+        {
+            var placeholder = field.placeholder as TMP_Text;
+            if (!placeholder && (spec.placeholder != null || spec.placeholderKey != null))
+            {
+                throw new ArgumentException($"{label}（{name}）沒有可以寫入的 placeholder，" +
+                    "不能使用 placeholder 與 placeholderKey 欄位。請在元件 Prefab 的輸入框指定 TMP 文字當作 Placeholder。");
+            }
+            return placeholder;
         }
 
         // slider 是 null 表示起始滑桿還沒安裝。
@@ -421,7 +437,7 @@ namespace UniGameUI.Editor
                     ApplyDropdown(Require<TMP_Dropdown>(gameObject, label, name), spec, label);
                     break;
                 case UIWidgetKind.InputField:
-                    ApplyInputField(Require<TMP_InputField>(gameObject, label, name), spec);
+                    ApplyInputField(Require<TMP_InputField>(gameObject, label, name), spec, label, name);
                     break;
                 case UIWidgetKind.ScrollList:
                     ApplyScrollList(Require<UIList>(gameObject, label, name), spec, label);
@@ -650,9 +666,9 @@ namespace UniGameUI.Editor
                 UIAuthoring.RecordOverride(dropdown.captionText);
         }
 
-        private static void ApplyInputField(TMP_InputField field, ElementSpec spec)
+        private static void ApplyInputField(TMP_InputField field, ElementSpec spec, string label, string name)
         {
-            var placeholder = field.placeholder as TMP_Text;
+            var placeholder = InputPlaceholder(field, spec, label, name);
             if (spec.placeholderKey != null && placeholder)
                 SetKey<UILocalizedText>(placeholder, spec.placeholderKey);
             if (spec.placeholder != null && placeholder)
