@@ -223,6 +223,37 @@
     background-color: #3d4a54;
 }
 
+/* 訊號路由的標籤：比較淡，滑鼠移上去或選取「任何畫面」時變清楚。 */
+.edge-signal {
+    border-left-color: #f0b35a;
+    opacity: 0.55;
+}
+
+.edge-signal:hover,
+.edge-signal.edge-emphasized,
+.edge-signal.edge-flash {
+    opacity: 1;
+}
+
+/* 「任何畫面」節點上的「線已隱藏」標示。 */
+.node-hidden-signals {
+    font-size: 10px;
+    color: #f0d9b0;
+    background-color: #5c5346;
+    margin-left: 0;
+    margin-right: 4px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-left: 5px;
+    padding-right: 5px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
 /* 執行中的藍圖：不能拖曳節點，也沒有連接點。 */
 .blueprint-live .blueprint-node {
     cursor: arrow;

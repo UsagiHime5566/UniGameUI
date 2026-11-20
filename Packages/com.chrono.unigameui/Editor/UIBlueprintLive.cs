@@ -151,6 +151,21 @@ namespace UniGameUI.Editor
         }
     }
 
+    /// <summary>藍圖上一條線的樣式。</summary>
+    internal readonly struct UIBlueprintEdgeStyle
+    {
+        public UIBlueprintEdgeStyle(Color color, float width, bool dashed)
+        {
+            Color = color;
+            Width = width;
+            Dashed = dashed;
+        }
+
+        public Color Color { get; }
+        public float Width { get; }
+        public bool Dashed { get; }
+    }
+
     internal static class UIBlueprintLive
     {
         /// <summary>剛走過的路由亮起來的時間（秒），之後回到原本的樣子。</summary>

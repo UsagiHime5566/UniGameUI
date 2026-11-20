@@ -129,6 +129,20 @@ namespace UniGameUI.Editor
         }
 
         private const string SidebarWidthKey = "UniGameUI.Blueprint.SidebarWidth";
+        private const string HideSignalsKey = "UniGameUI.Blueprint.HideSignalRoutes";
+
+        /// <summary>藍圖要不要畫訊號路由的線與標籤。預設要。</summary>
+        public static bool ShowSignalRoutes
+        {
+            get => !SessionState.GetBool(HideSignalsKey, false);
+            set
+            {
+                if (value)
+                    SessionState.EraseBool(HideSignalsKey);
+                else
+                    SessionState.SetBool(HideSignalsKey, true);
+            }
+        }
         private const string CollapsedPrefix = "UniGameUI.Blueprint.Collapsed.";
 
         /// <summary>右欄的寬度。這個工作階段還沒有拖過時回傳 <paramref name="fallback"/>。</summary>

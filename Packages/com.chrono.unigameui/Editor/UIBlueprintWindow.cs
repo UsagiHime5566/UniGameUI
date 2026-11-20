@@ -27,6 +27,8 @@ namespace UniGameUI.Editor
         private const string GuidePath = "Packages/com.chrono.unigameui/Documentation~/AgentGuide.md";
         private static readonly Color PageColor = new Color32(109, 184, 238, 255);
         private static readonly Color PopupColor = new Color32(195, 156, 237, 255);
+        // 訊號路由的線：和「任何畫面」節點同色。
+        private static readonly Color SignalColor = new Color32(240, 179, 90, 255);
         private static readonly Color GridMinorColor = new Color(1f, 1f, 1f, 0.04f);
         private static readonly Color GridMajorColor = new Color(1f, 1f, 1f, 0.09f);
         private static readonly Color FrameColor = new Color(1f, 1f, 1f, 0.38f);
@@ -63,6 +65,8 @@ namespace UniGameUI.Editor
         private bool panning;
         private Vector2 panPointer;
         private bool releasing;
+        // 滑鼠所在的那條線或標籤。
+        private UIRoute hoveredRoute;
 
         /// <summary>畫布區域還沒有排版時（例如測試裡），計算「顯示全部」用的大小。</summary>
         internal Vector2 FallbackViewSize = new Vector2(960, 600);
@@ -192,6 +196,7 @@ namespace UniGameUI.Editor
             wireTip = null;
             dragId = null;
             panning = false;
+            hoveredRoute = null;
             canvas = null;
             content = null;
             sidebar = null;
@@ -273,6 +278,16 @@ namespace UniGameUI.Editor
             }
 
             // 藍圖畫布的視角。
+            // 訊號路由的線很多時會蓋過畫面之間的流程，可以關掉。
+            var signals = new ToolbarToggle
+            {
+                name = "show-signals",
+                text = "顯示訊號路由",
+                value = ShowSignalRoutes,
+                tooltip = "畫出「任何畫面」節點拉出去的訊號路由。關掉之後線與標籤都不畫，節點上標出有幾條。",
+            };
+            signals.RegisterValueChangedCallback(evt => ShowSignalRoutes = evt.newValue);
+            toolbar.Add(signals);
             var frameAll = AddToolbarButton(toolbar, "顯示全部", ShowAllNodes);
             frameAll.name = "frame-all";
             frameAll.tooltip = "調整平移與縮放，讓所有節點都在視窗裡。焦點在畫布上時也可以按 F。";
@@ -357,6 +372,15 @@ namespace UniGameUI.Editor
                 };
                 label.AddToClassList("edge-label");
                 label.AddToClassList(route.Kind == UIRouteKind.OpenPopup ? "edge-popup" : "edge-page");
+                // 訊號路由的標籤比較淡，滑鼠移上去或選取「任何畫面」時才變清楚。
+                label.EnableInClassList("edge-signal", route.IsSignal);
+                var hovered = route;
+                label.RegisterCallback<PointerEnterEvent>(_ => SetHoveredRoute(hovered));
+                label.RegisterCallback<PointerLeaveEvent>(_ =>
+                {
+                    if (hoveredRoute == hovered)
+                        SetHoveredRoute(null);
+                });
                 label.RegisterCallback<PointerDownEvent>(evt =>
                 {
                     if (evt.button != 0 || evt.altKey)
@@ -393,7 +417,12 @@ namespace UniGameUI.Editor
             canvas.RegisterCallback<PointerMoveEvent>(evt =>
             {
                 if (!panning || !canvas.HasPointerCapture(evt.pointerId))
+                {
+                    // 沒有在平移或拖曳時：滑鼠靠近訊號路由的線，那條線變清楚。
+                    if (evt.pressedButtons == 0 && dragId == null && wireSource == null)
+                        SetHoveredRoute(RouteNear(WindowPoint(evt.position)));
                     return;
+                }
                 var point = WindowPoint(evt.position);
                 PanBy(point - panPointer);
                 panPointer = point;
@@ -407,6 +436,7 @@ namespace UniGameUI.Editor
                 evt.StopPropagation();
             });
             canvas.RegisterCallback<PointerCaptureOutEvent>(_ => panning = false);
+            canvas.RegisterCallback<PointerLeaveEvent>(_ => SetHoveredRoute(null));
             canvas.RegisterCallback<KeyDownEvent>(evt =>
             {
                 if (evt.keyCode != KeyCode.F || evt.actionKey || evt.altKey)
@@ -584,7 +614,17 @@ namespace UniGameUI.Editor
         private void CreateAnySourceCard()
         {
             var card = NewCard("any-source-node", UIRoot.AnySource, "signal-node");
-            AddBadge(AddBadgeRow(card), "訊號", "badge-signal");
+            var badges = AddBadgeRow(card);
+            AddBadge(badges, "訊號", "badge-signal");
+            // 訊號路由的線關掉時，在節點上標出有幾條。
+            // 它不是種類或狀態，所以不算徽章，只是長得像徽章的標示。
+            var hidden = new Label($"{workspace.Routes.Count(route => route.IsSignal)} 條路由（線已隱藏）")
+            {
+                name = "any-source-hidden",
+            };
+            hidden.AddToClassList("node-hidden-signals");
+            badges.Add(hidden);
+            hidden.tooltip = "工具列的「顯示訊號路由」關掉了。選取這個節點可以在右欄看到每一條。";
             AddNodeText(card, AnySourceTitle, "node-title");
             AddNodeText(card, "SignalAsync(動作, 資料)", "node-id").tooltip =
                 "從這裡拉出去的是訊號路由：不論目前顯示哪個畫面都成立，由遊戲程式用 SignalAsync 送出。";
@@ -803,6 +843,8 @@ namespace UniGameUI.Editor
                 pair.Value.EnableInClassList("selected-node", pair.Key == selectedId);
             ClearRouteErrors();
             DrawSidebar();
+            // 選取「任何畫面」時訊號路由的線變清楚。
+            ApplyEdgeStates(EditorApplication.timeSinceStartup);
         }
 
         /// <summary>開始拖曳節點。<paramref name="windowPoint"/> 是按下的位置（視窗座標）。</summary>
@@ -1020,36 +1062,211 @@ namespace UniGameUI.Editor
         // 連線畫在不跟著縮放的那一層，所以端點要從畫布座標換成視窗座標。
         private void DrawEdges(MeshGenerationContext context)
         {
-            var outlet = new Vector2(NodeWidth, NodeHeight * 0.5f);
-            var inlet = new Vector2(0, NodeHeight * 0.5f);
             var now = EditorApplication.timeSinceStartup;
-            foreach (var route in workspace.Routes)
+            // 先畫訊號路由，畫面之間的流程畫在上面。
+            foreach (var route in EdgesToDraw(now).OrderBy(route => route.IsSignal ? 0 : 1))
             {
-                if (!UIRoute.TargetsEntry(route.Kind) || !positions.TryGetValue(route.Source, out var from) ||
-                    !positions.TryGetValue(route.Target, out var to))
-                    continue;
-                // 剛走過的路由亮起來，約 2 秒內淡回原本的顏色與粗細。
-                var color = route.Kind == UIRouteKind.OpenPopup ? PopupColor : PageColor;
-                var flash = RouteFlash(route, now);
-                PaintEdge(context.painter2D, view.CanvasToWindow(from + outlet), view.CanvasToWindow(to + inlet),
-                    Color.Lerp(color, FlashColor, flash), Mathf.Lerp(2f, 4.5f, flash));
+                var (from, to) = EdgeEnds(route);
+                PaintEdge(context.painter2D, from, to, EdgeStyle(route, now));
             }
             if (wireTip.HasValue && wireSource != null && positions.TryGetValue(wireSource, out var start))
             {
-                PaintEdge(context.painter2D, view.CanvasToWindow(start + outlet), view.CanvasToWindow(wireTip.Value),
-                    Color.white, 2f);
+                PaintEdge(context.painter2D, view.CanvasToWindow(start + EdgeOutlet),
+                    view.CanvasToWindow(wireTip.Value), new UIBlueprintEdgeStyle(Color.white, 2f, false));
             }
         }
 
-        private void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, Color color, float width)
+        private static readonly Vector2 EdgeOutlet = new Vector2(NodeWidth, NodeHeight * 0.5f);
+        private static readonly Vector2 EdgeInlet = new Vector2(0, NodeHeight * 0.5f);
+
+        // 線的兩端（視窗座標）：來源節點的右邊到目標節點的左邊。
+        private (Vector2 From, Vector2 To) EdgeEnds(UIRoute route)
+        {
+            return (view.CanvasToWindow(positions[route.Source] + EdgeOutlet),
+                view.CanvasToWindow(positions[route.Target] + EdgeInlet));
+        }
+
+        // 線的貝茲曲線控制點。畫線與判斷滑鼠有沒有靠近線都用這一組。
+        private (Vector2 C1, Vector2 C2) EdgeControls(Vector2 from, Vector2 to)
         {
             var curve = Mathf.Max(60f * view.Zoom, Mathf.Abs(from.x - to.x) * 0.45f);
+            return (from + Vector2.right * curve, to - Vector2.right * curve);
+        }
+
+        private static Vector2 Bezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+        {
+            var u = 1f - t;
+            return u * u * u * p0 + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * p3;
+        }
+
+        /// <summary>
+        /// 要畫線的路由：切頁與開啟 Popup。訊號路由在「顯示訊號路由」關掉時不畫，剛走過、還亮著的例外。
+        /// </summary>
+        internal IReadOnlyList<UIRoute> EdgesToDraw(double now)
+        {
+            return workspace.Routes.Where(route => UIRoute.TargetsEntry(route.Kind) &&
+                    positions.ContainsKey(route.Source) && !string.IsNullOrEmpty(route.Target) &&
+                    positions.ContainsKey(route.Target) &&
+                    (!route.IsSignal || ShowSignalRoutes || RouteFlash(route, now) > 0f))
+                .ToList();
+        }
+
+        /// <summary>
+        /// 線的樣式。一般路由是實線；訊號路由是比較淡的虛線，和「任何畫面」節點同色，
+        /// 滑鼠移到線或標籤上、選取「任何畫面」或選取這條路由時變清楚。剛走過的路由亮起來，約 2 秒內淡回原本的樣子。
+        /// </summary>
+        internal UIBlueprintEdgeStyle EdgeStyle(UIRoute route, double now)
+        {
+            Color color;
+            float width;
+            var dashed = route.IsSignal;
+            if (route.IsSignal)
+            {
+                var emphasized = IsEmphasized(route);
+                color = SignalColor;
+                color.a = emphasized ? 1f : 0.42f;
+                width = emphasized ? 2f : 1.5f;
+            }
+            else
+            {
+                color = route.Kind == UIRouteKind.OpenPopup ? PopupColor : PageColor;
+                width = 2f;
+            }
+            var flash = RouteFlash(route, now);
+            if (flash > 0f)
+            {
+                var alpha = Mathf.Lerp(color.a, 1f, flash);
+                color = Color.Lerp(color, FlashColor, flash);
+                color.a = alpha;
+                width = Mathf.Lerp(width, 4.5f, flash);
+            }
+            return new UIBlueprintEdgeStyle(color, width, dashed);
+        }
+
+        private bool IsEmphasized(UIRoute route)
+        {
+            return route == hoveredRoute || selectedId == UIRoot.AnySource ||
+                (route.Source == selectedId && route.Action == selectedAction);
+        }
+
+        /// <summary>視窗座標的這一點附近（6 像素內）有線時，回傳最近的那一條路由。</summary>
+        internal UIRoute RouteNear(Vector2 windowPoint)
+        {
+            const float reach = 6f;
+            UIRoute nearest = null;
+            var best = reach;
+            foreach (var route in EdgesToDraw(EditorApplication.timeSinceStartup))
+            {
+                var (from, to) = EdgeEnds(route);
+                var (c1, c2) = EdgeControls(from, to);
+                var previous = from;
+                for (var step = 1; step <= 32; step++)
+                {
+                    var next = Bezier(from, c1, c2, to, step / 32f);
+                    var distance = DistanceToSegment(windowPoint, previous, next);
+                    if (distance < best)
+                    {
+                        best = distance;
+                        nearest = route;
+                    }
+                    previous = next;
+                }
+            }
+            return nearest;
+        }
+
+        private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
+        {
+            var segment = b - a;
+            var length = segment.sqrMagnitude;
+            var t = length <= 0f ? 0f : Mathf.Clamp01(Vector2.Dot(point - a, segment) / length);
+            return Vector2.Distance(point, a + segment * t);
+        }
+
+        /// <summary>滑鼠移到線或標籤上：那條線變清楚。傳入 null 表示滑鼠離開了。</summary>
+        internal void SetHoveredRoute(UIRoute route)
+        {
+            if (hoveredRoute == route)
+                return;
+            hoveredRoute = route;
+            ApplyEdgeStates(EditorApplication.timeSinceStartup);
+        }
+
+        /// <summary>要不要畫訊號路由的線與標籤。在這個 Editor 工作階段內記住。</summary>
+        internal bool ShowSignalRoutes
+        {
+            get => UIBlueprintSession.ShowSignalRoutes;
+            set
+            {
+                UIBlueprintSession.ShowSignalRoutes = value;
+                rootVisualElement.Q<ToolbarToggle>("show-signals")?.SetValueWithoutNotify(value);
+                ApplyEdgeStates(EditorApplication.timeSinceStartup);
+            }
+        }
+
+        // 線上的標籤：訊號路由關掉時不顯示（剛走過的例外），變清楚時加上樣式。節點上的「已隱藏」標示也在這裡更新。
+        private void ApplyEdgeStates(double now)
+        {
+            var show = ShowSignalRoutes;
+            foreach (var (route, label) in edgeLabels)
+            {
+                var placed = positions.ContainsKey(route.Source) && !string.IsNullOrEmpty(route.Target) &&
+                    positions.ContainsKey(route.Target);
+                var visible = placed && (!route.IsSignal || show || RouteFlash(route, now) > 0f);
+                label.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+                label.EnableInClassList("edge-emphasized", route.IsSignal && IsEmphasized(route));
+            }
+            var hidden = content?.Q<Label>("any-source-hidden");
+            if (hidden != null)
+            {
+                hidden.style.display = !show && workspace.Routes.Any(route => route.IsSignal)
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+            }
+            edges?.MarkDirtyRepaint();
+        }
+
+        private void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, UIBlueprintEdgeStyle style)
+        {
+            var (c1, c2) = EdgeControls(from, to);
             var arrow = 8f * Mathf.Clamp(view.Zoom, 0.6f, 1.25f);
-            painter.strokeColor = color;
-            painter.lineWidth = width;
+            painter.strokeColor = style.Color;
+            painter.lineWidth = style.Width;
             painter.BeginPath();
-            painter.MoveTo(from);
-            painter.BezierCurveTo(from + Vector2.right * curve, to - Vector2.right * curve, to);
+            if (style.Dashed)
+            {
+                // Painter2D 沒有虛線：把曲線切成約 2.5 像素的小段，依走過的長度畫一段、跳一段。
+                var approximate = 0f;
+                var sample = from;
+                for (var step = 1; step <= 16; step++)
+                {
+                    var point = Bezier(from, c1, c2, to, step / 16f);
+                    approximate += Vector2.Distance(sample, point);
+                    sample = point;
+                }
+                var steps = Mathf.Clamp(Mathf.CeilToInt(approximate / 2.5f), 16, 512);
+                const float dash = 7f;
+                const float gap = 5f;
+                var travelled = 0f;
+                var previous = from;
+                for (var step = 1; step <= steps; step++)
+                {
+                    var next = Bezier(from, c1, c2, to, step / (float)steps);
+                    var length = Vector2.Distance(previous, next);
+                    if (travelled % (dash + gap) < dash)
+                    {
+                        painter.MoveTo(previous);
+                        painter.LineTo(next);
+                    }
+                    travelled += length;
+                    previous = next;
+                }
+            }
+            else
+            {
+                painter.MoveTo(from);
+                painter.BezierCurveTo(c1, c2, to);
+            }
             painter.Stroke();
             painter.BeginPath();
             painter.MoveTo(to + new Vector2(-arrow, -arrow * 0.5f));
@@ -1069,14 +1286,13 @@ namespace UniGameUI.Editor
             }
             foreach (var (route, label) in edgeLabels)
             {
-                if (!positions.TryGetValue(route.Source, out var from) || !positions.TryGetValue(route.Target, out var to))
-                {
-                    label.style.display = DisplayStyle.None;
+                if (!positions.TryGetValue(route.Source, out var from) || string.IsNullOrEmpty(route.Target) ||
+                    !positions.TryGetValue(route.Target, out var to))
                     continue;
-                }
                 label.style.left = (from.x + NodeWidth + to.x) / 2;
                 label.style.top = (from.y + to.y + NodeHeight) / 2 - 16;
             }
+            ApplyEdgeStates(EditorApplication.timeSinceStartup);
 
             // 範圍框跟著節點：節點移動、新增、刪除之後都重新計算。
             var frameRect = FrameRect;

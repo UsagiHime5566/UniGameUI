@@ -379,7 +379,8 @@ namespace UniGameUI.Editor
                 else
                     label.style.backgroundColor = StyleKeyword.Null;
             }
-            edges?.MarkDirtyRepaint();
+            // 訊號路由關掉時，剛走過的那一條要短暫畫出來，淡掉之後再收起來。
+            ApplyEdgeStates(now);
         }
 
         private void LiveViewShowing(UIView shown)
