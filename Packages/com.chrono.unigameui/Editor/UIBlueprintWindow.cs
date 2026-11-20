@@ -10,31 +10,54 @@ using UnityEngine.UIElements;
 
 namespace UniGameUI.Editor
 {
-    public sealed class UIBlueprintWindow : EditorWindow
+    public sealed partial class UIBlueprintWindow : EditorWindow
     {
-        private const float NodeWidth = 210;
-        private const float NodeHeight = 94;
+        internal const float NodeWidth = 210;
+        internal const float NodeHeight = 94;
+        // 「顯示全部」時，節點和畫布邊緣之間留的距離（視窗的像素）。
+        private const float FramePadding = 48;
+        // 背景格線的間距（畫布的單位）。
+        private const float GridStep = 24;
+        // 滑鼠移動超過這個距離（視窗的像素）才算拖曳，否則是點擊。
+        private const float DragThreshold = 4;
         private const string GuidePath = "Packages/com.chrono.unigameui/Documentation~/AgentGuide.md";
         private static readonly Color PageColor = new Color32(109, 184, 238, 255);
         private static readonly Color PopupColor = new Color32(195, 156, 237, 255);
+        private static readonly Color GridMinorColor = new Color(1f, 1f, 1f, 0.04f);
+        private static readonly Color GridMajorColor = new Color(1f, 1f, 1f, 0.09f);
         internal const string AnySourceTitle = "任何畫面";
 
         [SerializeField] private UIRoot workspace;
         [SerializeField] private string selectedId;
         [SerializeField] private string selectedAction;
         private readonly Dictionary<string, VisualElement> cards = new Dictionary<string, VisualElement>();
+        // 節點在畫布上的位置（畫布座標）。拖曳途中先改這裡，放開才寫回工作區。
         private readonly Dictionary<string, Vector2> positions = new Dictionary<string, Vector2>();
         private readonly List<(UIRoute Route, Label Label)> edgeLabels = new List<(UIRoute, Label)>();
         private VisualElement sidebar;
-        private VisualElement stage;
+        private VisualElement canvas;
+        private VisualElement grid;
         private VisualElement edges;
-        private ScrollView scroll;
+        private VisualElement content;
+        private ToolbarButton zoomButton;
         private TextField actionField;
-        private Vector2 scrollOffset;
+        private UIBlueprintViewport view = UIBlueprintViewport.Default;
+        private string viewKey;
+        private bool frameWhenSized;
+        // 拖線的終點，畫布座標。
         private Vector2? wireTip;
         private string wireSource;
         private string wireAction;
         private string wireOriginalAction;
+        private string dragId;
+        private Vector2 dragPointerStart;
+        private Vector2 dragNodeStart;
+        private bool dragMoved;
+        private bool panning;
+        private Vector2 panPointer;
+
+        /// <summary>畫布區域還沒有排版時（例如測試裡），計算「顯示全部」用的大小。</summary>
+        internal Vector2 FallbackViewSize = new Vector2(960, 600);
 
         [MenuItem("Tools/UniGameUI/Blueprint", priority = 1)]
         public static void Open()
@@ -115,8 +138,6 @@ namespace UniGameUI.Editor
             {
                 selectedId = null;
                 selectedAction = null;
-                scrollOffset = Vector2.zero;
-                scroll = null;
             }
             workspace = next;
             Rebuild();
@@ -131,16 +152,18 @@ namespace UniGameUI.Editor
         private void Rebuild()
         {
             selectedAction = SelectedRouteAction();
-            if (scroll != null)
-                scrollOffset = scroll.scrollOffset;
             rootVisualElement.Clear();
             cards.Clear();
             positions.Clear();
             edgeLabels.Clear();
             wireSource = null;
             wireTip = null;
-            scroll = null;
+            dragId = null;
+            panning = false;
+            canvas = null;
+            content = null;
             sidebar = null;
+            zoomButton = null;
 
             var toolbar = new Toolbar();
             rootVisualElement.Add(toolbar);
@@ -183,7 +206,8 @@ namespace UniGameUI.Editor
                 return;
             }
 
-            AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace));
+            AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace))
+                .tooltip = "在 Scene 視窗框選所有審核畫面。";
             AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace));
             AddToolbarButton(toolbar, "Validate", ShowValidation);
             AddToolbarButton(toolbar, "走訪", StartWalk);
@@ -191,18 +215,50 @@ namespace UniGameUI.Editor
                 (UIAuthoring.NeedsViewCanvas(entry.Review) || UIAuthoring.NeedsViewCanvas(entry.Prefab))))
                 AddToolbarButton(toolbar, "補上子 Canvas", () => TryEdit(() => UIAuthoring.RepairViewCanvases(workspace)));
 
+            // 藍圖畫布的視角。
+            var frameAll = AddToolbarButton(toolbar, "顯示全部", ShowAllNodes);
+            frameAll.name = "frame-all";
+            frameAll.tooltip = "調整平移與縮放，讓所有節點都在視窗裡。焦點在畫布上時也可以按 F。";
+            zoomButton = AddToolbarButton(toolbar, "100%", ResetZoom);
+            zoomButton.name = "zoom-level";
+            zoomButton.tooltip = "目前的縮放比例。點一下回到 100%。滾輪縮放，按住中鍵（或 Alt 加左鍵）拖曳平移。";
+
             var split = new TwoPaneSplitView(1, 308, TwoPaneSplitViewOrientation.Horizontal);
             split.style.flexGrow = 1;
             rootVisualElement.Add(split);
-            scroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
-            split.Add(scroll);
-            stage = new VisualElement();
-            stage.AddToClassList("blueprint-stage");
-            scroll.Add(stage);
-            edges = new VisualElement { pickingMode = PickingMode.Ignore };
-            edges.AddToClassList("blueprint-edges");
+            BuildCanvas();
+            split.Add(canvas);
+
+            sidebar = new ScrollView();
+            sidebar.AddToClassList("blueprint-sidebar");
+            split.Add(sidebar);
+            UpdateStage();
+            LoadView();
+            DrawSidebar();
+        }
+
+        private void Create(UIAuthoringMode mode)
+        {
+            workspace = UIAuthoring.CreateWorkspace(SceneManager.GetActiveScene(), mode);
+            Rebuild();
+        }
+
+        // 畫布由下到上三層：格線、連線（都用視窗座標畫）、內容（節點與線上的標籤，用畫布座標排，整層跟著視角平移與縮放）。
+        private void BuildCanvas()
+        {
+            canvas = new VisualElement { name = "blueprint-canvas", focusable = true };
+            canvas.AddToClassList("blueprint-canvas");
+            grid = new VisualElement { name = "blueprint-grid", pickingMode = PickingMode.Ignore };
+            grid.AddToClassList("blueprint-layer");
+            grid.generateVisualContent += DrawGrid;
+            canvas.Add(grid);
+            edges = new VisualElement { name = "blueprint-edges", pickingMode = PickingMode.Ignore };
+            edges.AddToClassList("blueprint-layer");
             edges.generateVisualContent += DrawEdges;
-            stage.Add(edges);
+            canvas.Add(edges);
+            content = new VisualElement { name = "blueprint-content", pickingMode = PickingMode.Ignore };
+            content.AddToClassList("blueprint-content");
+            canvas.Add(content);
 
             foreach (var entry in workspace.Entries)
             {
@@ -217,22 +273,164 @@ namespace UniGameUI.Editor
                 var label = new Label(route.Action) { pickingMode = PickingMode.Ignore };
                 label.AddToClassList("edge-label");
                 edgeLabels.Add((route, label));
-                stage.Add(label);
+                content.Add(label);
             }
-            UpdateStage();
-            var graphScroll = scroll;
-            graphScroll.schedule.Execute(() => graphScroll.scrollOffset = scrollOffset);
 
-            sidebar = new ScrollView();
-            sidebar.AddToClassList("blueprint-sidebar");
-            split.Add(sidebar);
-            DrawSidebar();
+            canvas.RegisterCallback<WheelEvent>(evt =>
+            {
+                ZoomAt(evt.localMousePosition, evt.delta.y);
+                evt.StopPropagation();
+            });
+            canvas.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                canvas.Focus();
+                // 按住中鍵拖曳平移；沒有中鍵的裝置用 Alt 加左鍵。
+                if (evt.button != 2 && !(evt.button == 0 && evt.altKey))
+                    return;
+                panning = true;
+                panPointer = WindowPoint(evt.position);
+                canvas.CapturePointer(evt.pointerId);
+                evt.StopPropagation();
+            });
+            canvas.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!panning || !canvas.HasPointerCapture(evt.pointerId))
+                    return;
+                var point = WindowPoint(evt.position);
+                PanBy(point - panPointer);
+                panPointer = point;
+            });
+            canvas.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (!panning || !canvas.HasPointerCapture(evt.pointerId))
+                    return;
+                panning = false;
+                canvas.ReleasePointer(evt.pointerId);
+                evt.StopPropagation();
+            });
+            canvas.RegisterCallback<PointerCaptureOutEvent>(_ => panning = false);
+            canvas.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.F || evt.actionKey || evt.altKey)
+                    return;
+                ShowAllNodes();
+                evt.StopPropagation();
+            });
+            canvas.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                // 這個工作階段第一次開啟這個 Scene 的藍圖：等畫布有了大小再「顯示全部」一次。
+                if (!frameWhenSized || !HasLayout)
+                    return;
+                frameWhenSized = false;
+                ShowAllNodes();
+            });
         }
 
-        private void Create(UIAuthoringMode mode)
+        // 滑鼠事件的位置（整個視窗的座標）換成畫布區域裡的視窗座標。
+        private Vector2 WindowPoint(Vector2 worldPosition)
         {
-            workspace = UIAuthoring.CreateWorkspace(SceneManager.GetActiveScene(), mode);
-            Rebuild();
+            return canvas.WorldToLocal(worldPosition);
+        }
+
+        private bool HasLayout
+        {
+            get
+            {
+                if (canvas == null)
+                    return false;
+                var size = canvas.layout.size;
+                return !float.IsNaN(size.x) && !float.IsNaN(size.y) && size.x >= 1f && size.y >= 1f;
+            }
+        }
+
+        /// <summary>目前的視角。</summary>
+        internal UIBlueprintViewport View => view;
+
+        /// <summary>畫布區域的大小（視窗的像素）。還沒有排版時是 <see cref="FallbackViewSize"/>。</summary>
+        internal Vector2 ViewSize => HasLayout ? canvas.layout.size : FallbackViewSize;
+
+        /// <summary>節點在畫布上的矩形（畫布座標）。</summary>
+        internal Rect NodeRect(string id)
+        {
+            return new Rect(positions[id], new Vector2(NodeWidth, NodeHeight));
+        }
+
+        // 所有節點（包含「任何畫面」）在畫布上佔的範圍。
+        private Rect NodeBounds()
+        {
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            var max = new Vector2(float.MinValue, float.MinValue);
+            foreach (var position in positions.Values)
+            {
+                min = Vector2.Min(min, position);
+                max = Vector2.Max(max, position + new Vector2(NodeWidth, NodeHeight));
+            }
+            return positions.Count == 0 ? new Rect(0, 0, NodeWidth, NodeHeight) : Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        }
+
+        /// <summary>滾輪縮放：以視窗座標的一點為中心，那一點底下的畫布位置不動。</summary>
+        internal void ZoomAt(Vector2 windowPoint, float wheelDelta)
+        {
+            SetView(view.ZoomedAround(windowPoint, view.Zoom * UIBlueprintViewport.WheelFactor(wheelDelta)));
+        }
+
+        /// <summary>把縮放設成指定的比例，以畫布區域的中央為中心。</summary>
+        internal void SetZoom(float zoom)
+        {
+            SetView(view.ZoomedAround(ViewSize * 0.5f, zoom));
+        }
+
+        internal void PanBy(Vector2 windowDelta)
+        {
+            SetView(view.Panned(windowDelta));
+        }
+
+        /// <summary>「顯示全部」：調整平移與縮放，讓所有節點都在畫布區域裡。</summary>
+        internal void ShowAllNodes()
+        {
+            if (content == null)
+                return;
+            SetView(UIBlueprintViewport.Framing(NodeBounds(), ViewSize, FramePadding));
+        }
+
+        private void ResetZoom()
+        {
+            SetZoom(1f);
+        }
+
+        // 視角只存在這個 Editor 工作階段，不寫進 Scene：只是看一下藍圖不應該弄髒 Scene。
+        private void SetView(UIBlueprintViewport next)
+        {
+            view = next;
+            if (viewKey != null)
+                UIBlueprintSession.SaveView(viewKey, view);
+            ApplyView();
+        }
+
+        private void ApplyView()
+        {
+            if (content == null)
+                return;
+            content.style.translate = new Translate(view.pan.x, view.pan.y);
+            content.style.scale = new Scale(new Vector2(view.Zoom, view.Zoom));
+            grid.MarkDirtyRepaint();
+            edges.MarkDirtyRepaint();
+            if (zoomButton != null)
+                zoomButton.text = $"{Mathf.RoundToInt(view.Zoom * 100f)}%";
+        }
+
+        // 每個 Scene 的視角在工作階段內記住。這個工作階段第一次開啟某個 Scene 的藍圖時自動「顯示全部」。
+        private void LoadView()
+        {
+            viewKey = UIBlueprintSession.SceneKey(workspace.gameObject.scene);
+            if (UIBlueprintSession.TryLoadView(viewKey, out var saved))
+            {
+                view = saved;
+                ApplyView();
+                return;
+            }
+            frameWhenSized = true;
+            ShowAllNodes();
         }
 
         private void CreateCard(UIEntry entry)
@@ -246,7 +444,7 @@ namespace UniGameUI.Editor
             card.style.width = NodeWidth;
             card.style.height = NodeHeight;
             cards.Add(entry.Id, card);
-            stage.Add(card);
+            content.Add(card);
 
             var header = new Label(entry.Title);
             header.AddToClassList("node-title");
@@ -283,7 +481,7 @@ namespace UniGameUI.Editor
             card.style.width = NodeWidth;
             card.style.height = NodeHeight;
             cards.Add(UIRoot.AnySource, card);
-            stage.Add(card);
+            content.Add(card);
 
             var header = new Label(AnySourceTitle);
             header.AddToClassList("node-title");
@@ -313,97 +511,149 @@ namespace UniGameUI.Editor
 
         private void RegisterNodeDrag(VisualElement handle, string id)
         {
-            Vector2 pointerStart = default;
-            Vector2 nodeStart = default;
             handle.RegisterCallback<PointerDownEvent>(evt =>
             {
-                if (evt.button != 0)
+                // 中鍵與 Alt 加左鍵留給畫布平移。
+                if (evt.button != 0 || evt.altKey)
                     return;
                 SelectNode(id);
-                pointerStart = evt.position;
-                nodeStart = positions[id];
+                BeginNodeDrag(id, WindowPoint(evt.position));
                 handle.CapturePointer(evt.pointerId);
                 evt.StopPropagation();
             });
             handle.RegisterCallback<PointerMoveEvent>(evt =>
             {
-                if (!handle.HasPointerCapture(evt.pointerId))
-                    return;
-                var position = nodeStart + (Vector2)evt.position - pointerStart;
-                positions[id] = new Vector2(Mathf.Max(12, position.x), Mathf.Max(12, position.y));
-                UpdateStage();
+                if (handle.HasPointerCapture(evt.pointerId))
+                    DragNodeTo(WindowPoint(evt.position));
             });
             handle.RegisterCallback<PointerUpEvent>(evt =>
             {
                 if (!handle.HasPointerCapture(evt.pointerId))
                     return;
                 handle.ReleasePointer(evt.pointerId);
-                if (positions[id] != nodeStart)
-                    UIAuthoring.PositionNode(workspace, id, positions[id]);
-                else if (id != UIRoot.AnySource)
+                if (!EndNodeDrag() && id != UIRoot.AnySource)
                     UIAuthoring.FocusReview(workspace, id);
                 evt.StopPropagation();
             });
+        }
+
+        /// <summary>開始拖曳節點。<paramref name="windowPoint"/> 是按下的位置（視窗座標）。</summary>
+        internal void BeginNodeDrag(string id, Vector2 windowPoint)
+        {
+            dragId = id;
+            dragPointerStart = windowPoint;
+            dragNodeStart = positions[id];
+            dragMoved = false;
+        }
+
+        /// <summary>
+        /// 拖曳途中。滑鼠在視窗裡移動的距離要換算成畫布上的距離，縮放之後節點才會跟著游標走。
+        /// </summary>
+        internal void DragNodeTo(Vector2 windowPoint)
+        {
+            if (dragId == null)
+                return;
+            var delta = windowPoint - dragPointerStart;
+            if (!dragMoved && delta.magnitude < DragThreshold)
+                return;
+            dragMoved = true;
+            positions[dragId] = dragNodeStart + view.WindowToCanvasDelta(delta);
+            UpdateStage();
+        }
+
+        /// <summary>放開。節點有移動時把新的位置寫回工作區並回傳 true；只是點一下時回傳 false。</summary>
+        internal bool EndNodeDrag()
+        {
+            var id = dragId;
+            dragId = null;
+            if (id == null || !dragMoved)
+                return false;
+            UIAuthoring.PositionNode(workspace, id, positions[id]);
+            return true;
         }
 
         private void RegisterWireDrag(VisualElement port, string source)
         {
             port.RegisterCallback<PointerDownEvent>(evt =>
             {
-                if (evt.button != 0)
+                if (evt.button != 0 || evt.altKey)
                     return;
-                SelectNode(source);
-                wireSource = source;
-                wireAction = actionField?.value;
-                wireOriginalAction = SelectedRouteAction();
-                wireTip = stage.WorldToLocal((Vector2)evt.position);
+                BeginWire(source, WindowPoint(evt.position));
                 port.CapturePointer(evt.pointerId);
-                edges.MarkDirtyRepaint();
                 evt.StopPropagation();
             });
             port.RegisterCallback<PointerMoveEvent>(evt =>
             {
-                if (!port.HasPointerCapture(evt.pointerId))
-                    return;
-                wireTip = stage.WorldToLocal((Vector2)evt.position);
-                edges.MarkDirtyRepaint();
+                if (port.HasPointerCapture(evt.pointerId))
+                    MoveWire(WindowPoint(evt.position));
             });
             port.RegisterCallback<PointerUpEvent>(evt =>
             {
                 if (!port.HasPointerCapture(evt.pointerId))
                     return;
                 port.ReleasePointer(evt.pointerId);
-                var point = stage.WorldToLocal((Vector2)evt.position);
-                var target = workspace.Entries.FirstOrDefault(entry =>
-                    entry.Id != source && new Rect(positions[entry.Id], new Vector2(NodeWidth, NodeHeight)).Contains(point));
-                var action = wireAction;
-                var originalAction = wireOriginalAction;
-                wireSource = null;
-                wireTip = null;
-                edges.MarkDirtyRepaint();
-                if (target == null)
-                    return;
-                if (string.IsNullOrWhiteSpace(action))
-                {
-                    var stem = $"open_{target.Id}";
-                    action = stem;
-                    for (var suffix = 2; workspace.Routes.Any(route => route.Source == source && route.Action == action); suffix++)
-                        action = $"{stem}_{suffix}";
-                }
-                var original = workspace.Routes.FirstOrDefault(route => route.Source == source &&
-                    route.Action == originalAction);
-                var kind = target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage;
-                // 重接到另一種畫面時，原本的 history 不一定適用（Popup 沒有 Replace），回到預設值。
-                var history = original != null && original.Kind == kind ? original.History : UIHistoryMode.Push;
-                TryEdit(() => SaveRoute(source, originalAction, action, kind, target.Id, history, null));
+                DropWire(WindowPoint(evt.position));
                 evt.StopPropagation();
             });
-            port.RegisterCallback<PointerCaptureOutEvent>(_ =>
+            port.RegisterCallback<PointerCaptureOutEvent>(_ => CancelWire());
+        }
+
+        /// <summary>從節點的連接點開始拖線。</summary>
+        internal void BeginWire(string source, Vector2 windowPoint)
+        {
+            SelectNode(source);
+            wireSource = source;
+            wireAction = actionField?.value;
+            wireOriginalAction = SelectedRouteAction();
+            wireTip = view.WindowToCanvas(windowPoint);
+            edges.MarkDirtyRepaint();
+        }
+
+        internal void MoveWire(Vector2 windowPoint)
+        {
+            if (wireSource == null)
+                return;
+            wireTip = view.WindowToCanvas(windowPoint);
+            edges.MarkDirtyRepaint();
+        }
+
+        private void CancelWire()
+        {
+            wireSource = null;
+            wireTip = null;
+            edges?.MarkDirtyRepaint();
+        }
+
+        /// <summary>
+        /// 在視窗的某一點放開拖線。底下有另一個畫面的節點時，建立或重接路由：目標是頁面就切頁，是 Popup 就開啟。
+        /// </summary>
+        internal void DropWire(Vector2 windowPoint)
+        {
+            if (wireSource == null)
+                return;
+            var source = wireSource;
+            var action = wireAction;
+            var originalAction = wireOriginalAction;
+            var point = view.WindowToCanvas(windowPoint);
+            CancelWire();
+
+            // 「任何畫面」節點沒有線可以連進來，所以只找畫面的節點。
+            var target = workspace.Entries.FirstOrDefault(entry => entry.Id != source && NodeRect(entry.Id).Contains(point));
+            if (target == null)
+                return;
+            if (string.IsNullOrWhiteSpace(action))
             {
-                wireSource = null;
-                wireTip = null;
-                edges.MarkDirtyRepaint();
-            });
+                var stem = $"open_{target.Id}";
+                action = stem;
+                for (var suffix = 2; workspace.Routes.Any(route => route.Source == source && route.Action == action); suffix++)
+                    action = $"{stem}_{suffix}";
+            }
+            var original = workspace.Routes.FirstOrDefault(route => route.Source == source &&
+                route.Action == originalAction);
+            var kind = target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage;
+            // 重接到另一種畫面時，原本的 history 不一定適用（Popup 沒有 Replace），回到預設值。
+            var history = original != null && original.Kind == kind ? original.History : UIHistoryMode.Push;
+            TryEdit(() => SaveRoute(source, originalAction, action, kind, target.Id, history, null));
         }
 
         private string SelectedRouteAction()
@@ -621,24 +871,61 @@ namespace UniGameUI.Editor
         // 「行為」選單顯示的文字，和 EnumField 的顯示方式相同。
         private static string KindName(UIRouteKind kind) => ObjectNames.NicifyVariableName(kind.ToString());
 
+        // 背景格線跟著平移與縮放移動。縮得很小時改用比較疏的格線，不會糊成一片。
+        private void DrawGrid(MeshGenerationContext context)
+        {
+            var size = grid.contentRect.size;
+            if (float.IsNaN(size.x) || float.IsNaN(size.y) || size.x <= 0f || size.y <= 0f)
+                return;
+            var step = GridStep * view.Zoom;
+            while (step < 12f)
+                step *= 4f;
+            PaintGridLines(context.painter2D, size, step, GridMinorColor);
+            PaintGridLines(context.painter2D, size, step * 4f, GridMajorColor);
+        }
+
+        private void PaintGridLines(Painter2D painter, Vector2 size, float step, Color color)
+        {
+            painter.strokeColor = color;
+            painter.lineWidth = 1f;
+            painter.BeginPath();
+            for (var x = Mathf.Repeat(view.pan.x, step); x < size.x; x += step)
+            {
+                painter.MoveTo(new Vector2(x, 0f));
+                painter.LineTo(new Vector2(x, size.y));
+            }
+            for (var y = Mathf.Repeat(view.pan.y, step); y < size.y; y += step)
+            {
+                painter.MoveTo(new Vector2(0f, y));
+                painter.LineTo(new Vector2(size.x, y));
+            }
+            painter.Stroke();
+        }
+
+        // 連線畫在不跟著縮放的那一層，所以端點要從畫布座標換成視窗座標。
         private void DrawEdges(MeshGenerationContext context)
         {
+            var outlet = new Vector2(NodeWidth, NodeHeight * 0.5f);
+            var inlet = new Vector2(0, NodeHeight * 0.5f);
             foreach (var route in workspace.Routes)
             {
                 if (!UIRoute.TargetsEntry(route.Kind) || !positions.TryGetValue(route.Source, out var from) ||
                     !positions.TryGetValue(route.Target, out var to))
                     continue;
-                PaintEdge(context.painter2D, from + new Vector2(NodeWidth, NodeHeight * 0.5f),
-                    to + new Vector2(0, NodeHeight * 0.5f),
+                PaintEdge(context.painter2D, view.CanvasToWindow(from + outlet), view.CanvasToWindow(to + inlet),
                     route.Kind == UIRouteKind.OpenPopup ? PopupColor : PageColor);
             }
-            if (wireTip.HasValue && positions.TryGetValue(wireSource, out var start))
-                PaintEdge(context.painter2D, start + new Vector2(NodeWidth, NodeHeight * 0.5f), wireTip.Value, Color.white);
+            if (wireTip.HasValue && wireSource != null && positions.TryGetValue(wireSource, out var start))
+            {
+                PaintEdge(context.painter2D, view.CanvasToWindow(start + outlet), view.CanvasToWindow(wireTip.Value),
+                    Color.white);
+            }
         }
 
-        private static void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, Color color)
+        private void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, Color color)
         {
-            var curve = Mathf.Max(60, Mathf.Abs(from.x - to.x) * 0.45f);
+            var curve = Mathf.Max(60f * view.Zoom, Mathf.Abs(from.x - to.x) * 0.45f);
+            var arrow = 8f * Mathf.Clamp(view.Zoom, 0.6f, 1.25f);
             painter.strokeColor = color;
             painter.lineWidth = 2;
             painter.BeginPath();
@@ -646,21 +933,20 @@ namespace UniGameUI.Editor
             painter.BezierCurveTo(from + Vector2.right * curve, to - Vector2.right * curve, to);
             painter.Stroke();
             painter.BeginPath();
-            painter.MoveTo(to + new Vector2(-8, -4));
+            painter.MoveTo(to + new Vector2(-arrow, -arrow * 0.5f));
             painter.LineTo(to);
-            painter.LineTo(to + new Vector2(-8, 4));
+            painter.LineTo(to + new Vector2(-arrow, arrow * 0.5f));
             painter.Stroke();
         }
 
+        // 節點與線上的標籤放在跟著視角移動的那一層，位置用畫布座標。
         private void UpdateStage()
         {
-            var size = new Vector2(720, 540);
             foreach (var pair in positions)
             {
                 var card = cards[pair.Key];
                 card.style.left = pair.Value.x;
                 card.style.top = pair.Value.y;
-                size = Vector2.Max(size, pair.Value + new Vector2(NodeWidth + 48, NodeHeight + 48));
             }
             foreach (var (route, label) in edgeLabels)
             {
@@ -672,8 +958,6 @@ namespace UniGameUI.Editor
                 label.style.left = (from.x + NodeWidth + to.x) / 2;
                 label.style.top = (from.y + to.y + NodeHeight) / 2 - 16;
             }
-            stage.style.width = size.x;
-            stage.style.height = size.y;
             edges.MarkDirtyRepaint();
         }
 
@@ -728,9 +1012,11 @@ namespace UniGameUI.Editor
             }
         }
 
-        private static void AddToolbarButton(VisualElement toolbar, string text, Action action)
+        private static ToolbarButton AddToolbarButton(VisualElement toolbar, string text, Action action)
         {
-            toolbar.Add(new ToolbarButton(action) { text = text });
+            var button = new ToolbarButton(action) { text = text };
+            toolbar.Add(button);
+            return button;
         }
     }
 }

@@ -7,16 +7,29 @@
     min-width: 54px;
 }
 
-.blueprint-stage {
+.blueprint-canvas {
+    flex-grow: 1;
+    overflow: hidden;
     background-color: #222629;
 }
 
-.blueprint-edges {
+/* 格線與連線：鋪滿畫布區域，不跟著視角縮放。 */
+.blueprint-layer {
     position: absolute;
     left: 0;
     top: 0;
     right: 0;
     bottom: 0;
+}
+
+/* 節點與線上的標籤：整層跟著視角平移與縮放，子元素用畫布座標排。 */
+.blueprint-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    transform-origin: left top;
 }
 
 .blueprint-node {
