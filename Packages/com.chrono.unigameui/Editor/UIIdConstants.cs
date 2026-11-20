@@ -73,9 +73,15 @@ namespace UniGameUI.Editor
             if (!checkCurrentFile || issues.Count > issueCount)
                 return;
             if (output.Path == null)
-                issues.Add(new UIIssue(UIIssueSeverity.Warning, "儲存場景後即可產生 UI ID 常數。"));
+            {
+                issues.Add(new UIIssue(UIIssueCode.ConstantsSceneUnsaved, "儲存場景後即可產生 UI ID 常數。",
+                    context: root));
+            }
             else if (!Matches(output.Path, output.Content) || !HasAssemblyDefinition())
-                issues.Add(new UIIssue(UIIssueSeverity.Warning, $"ID 常數尚未產生或已過期。請儲存場景或產生「{output.Path}」。"));
+            {
+                issues.Add(new UIIssue(UIIssueCode.ConstantsOutdated,
+                    $"ID 常數尚未產生或已過期。請儲存場景或產生「{output.Path}」。", context: root));
+            }
         }
 
         private static (string Path, string Content) Describe(UIRoot root, string scenePath, List<UIIssue> issues)
@@ -87,7 +93,10 @@ namespace UniGameUI.Editor
             var path = $"{Folder}/{type}.cs";
             var guid = AssetDatabase.AssetPathToGUID(scenePath);
             if (File.Exists(path) && !HasOwner(path, guid, scenePath))
-                AddError(issues, $"常數檔案「{path}」已由另一個場景或使用者檔案占用。");
+            {
+                AddError(issues, UIIssueCode.ConstantsFileOccupied,
+                    $"常數檔案「{path}」已由另一個場景或使用者檔案占用。");
+            }
             CheckSceneNames(root, scenePath, type, issues);
 
             var entries = root.Entries.Where(entry => entry != null && !string.IsNullOrWhiteSpace(entry.Id))
@@ -140,9 +149,15 @@ namespace UniGameUI.Editor
             {
                 var name = PascalCase(id) + suffix;
                 if (name == owner)
-                    AddError(issues, $"ID「{id}」產生的名稱 {name} 與所在類別同名。");
+                {
+                    AddError(issues, UIIssueCode.ConstantsNameConflict,
+                        $"ID「{id}」產生的名稱 {name} 與所在類別同名。");
+                }
                 else if (!names.TryAdd(name, id))
-                    AddError(issues, $"ID「{names[name]}」與「{id}」在 {owner} 中都會產生 {name}。");
+                {
+                    AddError(issues, UIIssueCode.ConstantsNameConflict,
+                        $"ID「{names[name]}」與「{id}」在 {owner} 中都會產生 {name}。");
+                }
                 else
                     output.Add((name, id));
             }
@@ -195,7 +210,10 @@ namespace UniGameUI.Editor
                     ? loaded.GetRootGameObjects().Any(gameObject => gameObject.GetComponentInChildren<UIRoot>(true))
                     : AssetDatabase.GetDependencies(candidate).Contains(workspaceScript);
                 if (hasWorkspace)
-                    AddError(issues, $"場景「{scenePath}」與「{candidate}」都會產生 {type}。");
+                {
+                    AddError(issues, UIIssueCode.ConstantsSceneConflict,
+                        $"場景「{scenePath}」與「{candidate}」都會產生 {type}。");
+                }
             }
         }
 
@@ -217,9 +235,9 @@ namespace UniGameUI.Editor
                  (scenePath != null && header[3] == PathMarker + scenePath));
         }
 
-        private static void AddError(List<UIIssue> issues, string message)
+        private static void AddError(List<UIIssue> issues, string code, string message)
         {
-            issues.Add(new UIIssue(UIIssueSeverity.Error, message));
+            issues.Add(new UIIssue(code, message));
         }
 
         private static void OnSceneSaved(Scene scene)

@@ -662,3 +662,46 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 4. 在互動 Editor 進 Play 前，若有待套用的覆寫，可以選 **套用並進入**、**直接進入** 或 **取消**。直接進入會使用目前已儲存的 Prefab。若多個 Scene 的審核實例同時修改同一 Prefab，先選擇要手動套用的實例。
 
 Player 建置處理器會從複製的 Scene 中移除審核框與 Prefab 審核實例，並保留單 Scene 模式的頁面物件。打包成 AssetBundle 或 Addressables 的 Scene 會保留審核複本，執行期會停用審核層，並依藍圖使用已儲存的 Prefab。
+
+## 驗收
+
+### 問題代碼
+
+`UIValidation.Check(root)` 回傳的每一筆 `UIIssue` 都有 `Severity`、`Code`、`Message`、`ViewId` 與 `ElementId`。**判斷問題種類請用 `Code`**，訊息文字是給人看的，之後可能調整；代碼定下來之後不會更改，每個代碼的嚴重度也是固定的。`ViewId`、`ElementId` 在問題和畫面或元件無關時是 null。`ToString()` 的格式是 `Error [route.target-missing] 訊息`。所有代碼也列在 `UIIssueCode`。
+
+| 代碼 | 嚴重度 | 意思 | 處理方式 |
+|---|---|---|---|
+| `workspace.missing` | Error | Scene 沒有 UniGameUI 工作區。 | 套用計畫，或用 `UIAuthoring.CreateWorkspace` 建立。 |
+| `dotween.not-ready` | Error | DOTween 沒有安裝，或還沒執行 Setup DOTween。 | 見「安裝 DOTween」。 |
+| `view.id-invalid` | Error | 藍圖裡有畫面的 ID 是空的或重複。 | 用計畫或 `UIAuthoring` 建立畫面，不要直接改工作區的資料。 |
+| `view.review-missing` | Error | 畫面在 Scene 裡的審核物件被刪掉、缺少必要的引用，或畫面 ID 不符。 | 還原被刪掉的物件；救不回來時重新建立這個畫面。 |
+| `view.prefab-missing` | Error | Popup 或 Prefab 模式頁面的 Prefab 遺失、缺少必要的引用，或畫面 ID 不符。 | 還原 Prefab 檔案，或重新登記這個畫面。 |
+| `view.overrides-pending` | Warning | 審核畫面有還沒套用到 Prefab 的覆寫，執行期用的是已儲存的 Prefab。 | 由使用者在藍圖按「套用到 Prefab」，或捨棄覆寫。 |
+| `view.canvas-missing` | Warning | 畫面缺少子 Canvas 或 GraphicRaycaster（0.2.0 以前建立的畫面）。 | 在藍圖按「補上子 Canvas」。 |
+| `view.animation-missing` | Error | 動畫選了 `Custom`，但畫面上沒有 `UIDOTweenAnimation` 的元件。 | 掛上自訂動畫元件，或改用其他動畫。 |
+| `view.default-selected-missing` | Error | 預設選取元件已經被刪掉。 | 重新指定或清除 `defaultSelected`。 |
+| `view.default-selected-outside` | Error | 預設選取元件不在這個畫面裡。 | 改指到這個畫面裡的元件。 |
+| `view.popup-option-on-page` | Error | 頁面開啟了只對 Popup 有意義的選項。 | 在 Inspector 關掉「關閉後保留並重用」與「點遮罩關閉」。 |
+| `view.overlay-missing` | Error | Popup 設定了點遮罩關閉，但沒有遮罩物件。 | 關掉這個選項，或補回遮罩。 |
+| `start.unknown` | Error | 起始頁不存在，或不是頁面。 | 用計畫的 `startPage` 或藍圖重新指定。 |
+| `route.invalid` | Error | 路由的來源畫面不存在、動作是空的，或同一個來源有重複的動作。 | 用計畫或藍圖重新建立這條路由。 |
+| `route.target-missing` | Error | `ShowPage` 或 `OpenPopup` 路由的目的地不存在，或種類不符。 | 修正路由的 `target`，或補上目的地的畫面。 |
+| `element.id-duplicate` | Error | 同一個畫面裡有空的或重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
+| `element.kind-unknown` | Error | 元件記錄的元件名稱不在元件集裡。 | 把元件登記回元件集，或刪掉這個元件重新建立。 |
+| `button.action-unrouted` | Error | 按鈕的動作找不到對應的路由。 | 補上路由，或修改按鈕的 `action`。訊息提到 Prefab 本體時，請修正審核實例並套用覆寫。 |
+| `input.event-system-multiple` | Error | 工作區所在的 Scene 有超過一個啟用的 EventSystem。 | 只保留一個。 |
+| `input.event-system-missing` | Error | 載入的 Scene 裡沒有 EventSystem。 | 在工作區的 Scene 或共用的 Scene 加回一個。 |
+| `input.event-system-disabled` | Error | 載入的 Scene 裡有 EventSystem，但沒有啟用。 | 啟用它的 GameObject 與元件。 |
+| `input.event-system-shared` | Warning | 一起載入的 Scene 有不只一個啟用的 EventSystem。 | 執行期同時載入這些 Scene 時只能留一個；分開載入時可以忽略。 |
+| `input.module-invalid` | Error | EventSystem 的輸入模組不是 `InputSystemUIInputModule`。 | 換成 Input System UI Input Module。 |
+| `input.handling-legacy` | Error | Active Input Handling 只啟用舊的 Input Manager。 | 見「確認專案」第 5 點。 |
+| `widgets.set-missing` | Error | 專案沒有元件集。 | 執行 **Tools → UniGameUI → Install Starter Widgets**。 |
+| `widgets.set-multiple` | Error | 專案裡有超過一個元件集。 | 只保留一個。 |
+| `widgets.name-invalid` | Error | 元件集裡有空白或重複的名稱。 | 在元件集的 Inspector 修正。 |
+| `widgets.prefab-missing` | Error | 元件集的項目沒有 Prefab。 | 重新指定；內建元件可以用 Install Starter Widgets 補回。 |
+| `widgets.component-missing` | Error | 元件 Prefab 缺少它比照的類別需要的元件。 | 補上元件，或改登記成別的類別。 |
+| `constants.file-occupied` | Error | ID 常數要寫入的檔案已經被另一個 Scene 或使用者的檔案占用。 | 把那個檔案移走或改名。 |
+| `constants.name-conflict` | Error | 兩個 ID 會產生同一個常數名稱，或和所在的類別同名。 | 修改其中一個 ID。 |
+| `constants.scene-conflict` | Error | 兩個有工作區的 Scene 會產生同名的常數類別。 | 把其中一個 Scene 改名。 |
+| `constants.scene-unsaved` | Warning | Scene 還沒有存成資產，無法產生 ID 常數。 | 儲存 Scene。 |
+| `constants.outdated` | Warning | ID 常數還沒有產生，或和目前的藍圖不一致。 | 儲存 Scene，或在藍圖按 **Validate**。 |

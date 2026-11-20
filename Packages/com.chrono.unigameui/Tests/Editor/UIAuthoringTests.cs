@@ -374,7 +374,8 @@ namespace UniGameUI.Editor.Tests
             var page = UIAuthoring.CreatePage(root, "home", "Home");
             UIAuthoring.SetTransition(page, true, UITransitionPreset.Fade);
             UIAuthoring.SetTransition(page, false, UITransitionPreset.Zoom);
-            var dependencyIssues = UIValidation.Check(root).Where(issue => issue.Message.Contains("Setup DOTween")).ToArray();
+            var dependencyIssues = UIValidation.Check(root)
+                .Where(issue => issue.Code == UIIssueCode.DOTweenNotReady).ToArray();
             if (UIDOTweenSetup.IsReady)
             {
                 Assert.That(UIDOTweenSetup.Status, Is.EqualTo(UIDOTweenStatus.Ready));
@@ -751,7 +752,7 @@ namespace UniGameUI.Editor.Tests
         private static IEnumerable<UIIssue> FunctionalErrors(UIRoot root)
         {
             return UIValidation.Check(root).Where(issue => issue.Severity == UIIssueSeverity.Error &&
-                !issue.Message.Contains("Setup DOTween"));
+                issue.Code != UIIssueCode.DOTweenNotReady);
         }
 
         private static void SetElementId(GameObject gameObject, string id)

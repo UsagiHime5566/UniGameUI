@@ -666,7 +666,9 @@ namespace UniGameUI.Editor.Tests
         // 和輸入有關的檢查結果，包含提醒。
         private static UIIssue[] InputIssues(UIRoot root)
         {
-            return UIValidation.Check(root).Where(issue => issue.Message.Contains("EventSystem")).ToArray();
+            return UIValidation.Check(root)
+                .Where(issue => issue.Code.StartsWith("input.event-system", StringComparison.Ordinal) ||
+                    issue.Code == UIIssueCode.InputModuleInvalid).ToArray();
         }
 
         private static Color Html(string value)
