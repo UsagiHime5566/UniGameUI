@@ -59,6 +59,7 @@ namespace UniGameUI.Editor
 
         // 計畫明確寫出的 TMP 欄位要固定成覆寫，這些是對應的序列化欄位。
         private const string FontProperty = "m_fontAsset";
+        private const string OptionsProperty = "m_Options.m_Options";
         private static readonly string[] FontSizeProperties = { "m_fontSize", "m_fontSizeBase" };
         private static readonly Vector2 FallbackSize = new Vector2(240, 72);
 
@@ -534,7 +535,7 @@ namespace UniGameUI.Editor
                 var localized = GetOrAdd<UILocalizedDropdown>(dropdown.gameObject);
                 Undo.RecordObject(localized, "Set UI dropdown keys");
                 localized.keys = spec.optionKeys.ToArray();
-                UIAuthoring.RecordOverride(localized);
+                UIAuthoring.RecordOverride(localized, "keys");
             }
             if (spec.options == null && float.IsNaN(spec.value))
                 return;
@@ -549,10 +550,12 @@ namespace UniGameUI.Editor
             else if (dropdown.value >= count)
                 dropdown.SetValueWithoutNotify(Mathf.Max(0, count - 1));
             dropdown.RefreshShownValue();
-            if (float.IsNaN(spec.value))
-                UIAuthoring.RecordOverride(dropdown);
-            else
-                UIAuthoring.RecordOverride(dropdown, "m_Value");
+            var pinned = new List<string>();
+            if (spec.options != null)
+                pinned.Add(OptionsProperty);
+            if (!float.IsNaN(spec.value))
+                pinned.Add("m_Value");
+            UIAuthoring.RecordOverride(dropdown, pinned.ToArray());
             if (dropdown.captionText)
                 UIAuthoring.RecordOverride(dropdown.captionText);
         }

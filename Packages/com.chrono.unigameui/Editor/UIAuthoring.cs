@@ -463,22 +463,92 @@ namespace UniGameUI.Editor
 
             var serialized = new SerializedObject(target);
             var restore = new List<Action>();
+            var lengthened = new List<(string Path, int Size)>();
             foreach (var path in propertyPaths)
             {
                 var property = serialized.FindProperty(path);
-                if (property == null || property.prefabOverride)
+                if (property == null)
                     continue;
-                var action = Perturb(property);
-                if (action != null)
-                    restore.Add(action);
+                // 覆寫是逐個分量記錄的。顏色只要有一個分量和 Prefab 不同，整個欄位就算有覆寫，
+                // 所以要一路看到最底層：顏色的 r、g、b、a，陣列的長度與每一項。
+                foreach (var leaf in Leaves(property))
+                {
+                    if (leaf.prefabOverride)
+                        continue;
+                    if (leaf.propertyType == SerializedPropertyType.ArraySize)
+                        lengthened.Add((leaf.propertyPath, leaf.intValue));
+                    var action = Perturb(leaf);
+                    if (action != null)
+                        restore.Add(action);
+                }
             }
             if (restore.Count == 0)
                 return;
 
             serialized.ApplyModifiedProperties();
-            foreach (var action in restore)
-                action();
+            // 倒著還原：陣列的長度最先被改，最後才改回來。
+            for (var index = restore.Count - 1; index >= 0; index--)
+                restore[index]();
             serialized.ApplyModifiedProperties();
+            if (lengthened.Count > 0)
+                RemoveOverridesBeyond(target, lengthened);
+        }
+
+        // 固定陣列長度時暫時多出來的那一項，改回長度之後它的覆寫還留著，要清掉。
+        private static void RemoveOverridesBeyond(Object target, List<(string Path, int Size)> arrays)
+        {
+            var root = PrefabUtility.GetOutermostPrefabInstanceRoot(target);
+            var source = PrefabUtility.GetCorrespondingObjectFromSource(target);
+            var modifications = root ? PrefabUtility.GetPropertyModifications(root) : null;
+            if (!source || modifications == null)
+                return;
+
+            var kept = modifications.Where(modification => modification.target != source ||
+                !arrays.Any(array => IsBeyond(modification.propertyPath, array.Path, array.Size))).ToArray();
+            if (kept.Length != modifications.Length)
+                PrefabUtility.SetPropertyModifications(root, kept);
+        }
+
+        // sizePath 是「….Array.size」，同一個陣列的項目是「….Array.data[索引]」。
+        private static bool IsBeyond(string propertyPath, string sizePath, int size)
+        {
+            var prefix = sizePath.Substring(0, sizePath.Length - "size".Length) + "data[";
+            if (!propertyPath.StartsWith(prefix, StringComparison.Ordinal))
+                return false;
+            var end = propertyPath.IndexOf(']', prefix.Length);
+            return end > 0 && int.TryParse(propertyPath.Substring(prefix.Length, end - prefix.Length), out var index) &&
+                index >= size;
+        }
+
+        private static List<SerializedProperty> Leaves(SerializedProperty property)
+        {
+            var leaves = new List<SerializedProperty>();
+            if (IsLeaf(property))
+            {
+                leaves.Add(property.Copy());
+                return leaves;
+            }
+
+            var iterator = property.Copy();
+            var end = property.GetEndProperty();
+            var enterChildren = true;
+            while (iterator.Next(enterChildren) && !SerializedProperty.EqualContents(iterator, end))
+            {
+                enterChildren = !IsLeaf(iterator);
+                if (!enterChildren)
+                    leaves.Add(iterator.Copy());
+            }
+            return leaves;
+        }
+
+        // 字串與物件引用在序列化裡還有子節點，但覆寫是記在它們自己身上。
+        private static bool IsLeaf(SerializedProperty property)
+        {
+            return property.propertyType is SerializedPropertyType.Integer or SerializedPropertyType.Boolean
+                or SerializedPropertyType.Float or SerializedPropertyType.String
+                or SerializedPropertyType.ObjectReference or SerializedPropertyType.Enum
+                or SerializedPropertyType.ArraySize or SerializedPropertyType.Character
+                or SerializedPropertyType.LayerMask || !property.hasChildren;
         }
 
         private static Action Perturb(SerializedProperty property)
@@ -492,10 +562,25 @@ namespace UniGameUI.Editor
                     return () => property.floatValue = value;
                 }
                 case SerializedPropertyType.Integer:
+                case SerializedPropertyType.Character:
+                case SerializedPropertyType.LayerMask:
+                {
+                    // Color32 的 rgba 是一個 32 位元的整數，用 longValue 才不會溢位。
+                    var value = property.longValue;
+                    property.longValue = value == 0 ? 1 : 0;
+                    return () => property.longValue = value;
+                }
                 case SerializedPropertyType.Enum:
                 {
                     var value = property.intValue;
                     property.intValue = value == 0 ? 1 : 0;
+                    return () => property.intValue = value;
+                }
+                case SerializedPropertyType.ArraySize:
+                {
+                    // 只能加長：縮短會丟掉最後一項的內容。
+                    var value = property.intValue;
+                    property.intValue = value + 1;
                     return () => property.intValue = value;
                 }
                 case SerializedPropertyType.Boolean:
@@ -509,14 +594,6 @@ namespace UniGameUI.Editor
                     var value = property.stringValue;
                     property.stringValue = value + "*";
                     return () => property.stringValue = value;
-                }
-                case SerializedPropertyType.Color:
-                {
-                    var value = property.colorValue;
-                    property.colorValue = new Color(
-                        value.r < 0.5f ? 1f : 0f, value.g < 0.5f ? 1f : 0f,
-                        value.b < 0.5f ? 1f : 0f, value.a < 0.5f ? 1f : 0f);
-                    return () => property.colorValue = value;
                 }
                 case SerializedPropertyType.ObjectReference:
                 {
