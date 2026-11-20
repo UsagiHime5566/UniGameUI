@@ -593,8 +593,9 @@ namespace UniGameUI.Editor
         {
             UIIdConstants.GenerateForValidation(workspace, new List<UIIssue>());
             var issues = UIValidation.Check(workspace);
-            EditorUtility.DisplayDialog("UniGameUI Validate",
-                issues.Count == 0 ? "未發現配置問題。" : string.Join(Environment.NewLine, issues), "關閉");
+            // 細節記到 Console：每一筆都帶代碼，點擊可以定位到相關的畫面物件。
+            UIValidation.LogIssues(workspace, issues);
+            EditorUtility.DisplayDialog("UniGameUI Validate", UIValidation.DialogMessage(issues), "關閉");
         }
 
         private void TryEdit(Action change)
