@@ -110,8 +110,9 @@ namespace UniGameUI.Editor
         }
 
         /// <summary>
-        /// 標記畫面由程式控制進出，例如用程式開啟、自己關閉的 Popup。標記之後 Validate 不檢查它走不走得到、
-        /// 有沒有出口，走訪也不要求它能單靠路由開啟。設定存在工作區的藍圖裡，不在 View Prefab 裡。
+        /// 標記畫面由程式控制：進來的方式不靠路由，例如用程式開啟、自己關閉的確認框，或需要程式給資料才能顯示的畫面。
+        /// 標記之後 Validate 不檢查它走不走得到、裡面的按鈕有沒有動作；Popup 也不檢查有沒有出口，頁面照樣檢查。
+        /// 走訪不要求它能單靠路由開啟。設定存在工作區的藍圖裡，不在 View Prefab 裡。
         /// </summary>
         public static void SetNavigatedByCode(UIRoot root, string id, bool value)
         {

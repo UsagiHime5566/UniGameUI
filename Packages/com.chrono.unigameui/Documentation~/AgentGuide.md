@@ -132,8 +132,8 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 - `mode` 可用 `SingleScene` 或 `Prefab`。只有確定需要新 Scene 時才給 `createScene: true`。新工作區預設參考解析度 1920×1080、每排 3 格。
 - `scenePath` 指到的 Scene 還沒開啟時，計畫會自己開啟或建立它：只開著一個沒存過的空 Scene 時取代它，否則以附加方式開啟，套用成功後維持開著。所以開著一個有工作區的 Scene 時，也可以對另一個 Scene 套用計畫。計畫失敗時，為了套用而開啟的 Scene 會關回去，原本開著的 Scene 不動。
 - `startPage` 是可選的頁面 ID，指定空字串可清除起始頁。路由種類有 `ShowPage`、`OpenPopup`、`Back`、`ClosePopup`、`Emit`。前兩種需要 `target`。同一來源頁的一個 `action` 對應一條路由。
-- `"source": "*"` 是藍圖上「任何畫面」節點的訊號路由，不論目前顯示哪個畫面都成立，由遊戲程式用 `SignalAsync` 送出。種類只能是 `ShowPage`、`OpenPopup`、`Emit`。見「由遊戲事件觸發的跳轉」。
-- `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`OpenPopup` 也可以設定 `history`，可用值為 `Push`（預設，可以用返回關閉）與 `Clear`（不可返回），規則見「由遊戲事件觸發的跳轉」的「跳過去之後能不能返回」。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。將任一欄位寫在其他種類的路由上，或 `OpenPopup` 寫 `Replace`，計畫會在套用前指出路由與欄位。
+- `"source": "*"` 是藍圖上「任何畫面」節點的訊號路由，不論目前顯示哪個畫面都成立，由遊戲程式用 `SignalAsync` 送出。種類只能是 `ShowPage`、`OpenPopup`、`Emit`。什麼時候用訊號、什麼時候用畫面自己的路由，見「頁面之間的流程」。
+- `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`OpenPopup` 也可以設定 `history`，可用值為 `Push`（預設，可以用返回關閉）與 `Clear`（不可返回），規則見「頁面之間的流程」的「跳過去之後能不能返回」。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。將任一欄位寫在其他種類的路由上，或 `OpenPopup` 寫 `Replace`，計畫會在套用前指出路由與欄位。
 - `pageTransitionMode` 可用 `Sequential` 或 `Concurrent`。新工作區預設依序播放。要讓切頁的進場和退場重疊，設定 `Concurrent` 或在 `UIRoot` Inspector 修改「切頁動畫」。
 - `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Zoom` 或 `Custom`。例如 `"enter": { "preset": "Zoom", "duration": 0.2, "zoomScale": 0.8, "ease": "OutBack" }`。Zoom 倍率相對於原本的 Motion 尺寸，預設為 0.85。Slide 可設定方向 `Left`、`Right`、`Up`、`Down` 和 `distance`，RotateFade 可設定 `angle`。Ease 有 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
 - 既有頁面可直接新增其他 ID 的元件。要修改既有元件時，指定該元件 ID、原 `kind`、`updateExisting: true` 與要寫入的欄位。若要更新既有 View 的背景、動畫或下面的 View 選項，在 View 設 `updateExisting: true`。更新既有路由時，指定原 `source`、`action`、`replace: true` 和要改的欄位。平常省略這些選項，重跑可保留人工編修。
@@ -151,7 +151,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 | `backKey` | `Back`（預設）、`Ignore` | `Ignore` 時這個畫面不回應返回鍵。 |
 | `popupCache` | `Recreate`（預設）、`Reuse` | 只能寫在 Popup。`Reuse` 時關閉後保留實例，下次開啟重用。 |
 | `overlayClick` | `Ignore`（預設）、`Close` | 只能寫在 Popup。`Close` 時點擊遮罩等同不帶結果的關閉。 |
-| `navigation` | `Routes`（預設）、`Code` | `Code` 表示這個畫面由程式控制進出，不靠路由。只影響 Validate 與走訪，見「驗收」的「由程式控制的畫面」。 |
+| `navigation` | `Routes`（預設）、`Code` | `Code` 表示這個畫面由程式控制：進來的方式不靠路由。頁面照樣要有自己的出口路由。只影響 Validate 與走訪，見「驗收」的「由程式控制的畫面」。 |
 
 ## 元件
 
@@ -479,13 +479,24 @@ public sealed class LanguageSwitcher : MonoBehaviour
 
 ### 導航、返回與 Popup
 
-遊戲程式可呼叫 `await root.ShowPageAsync(id, data)`、`await root.OpenPopupAsync(id, data)`、`await root.ClosePopupAsync()` 或 `await root.BackAsync()`。每個 Unity `Awaitable` 只等待一次。轉場中收到的導航請求會立即回傳 `Busy`，不排隊。唯一的例外是 `root.SignalAsync(action, data)`：訊號會等進行中的導航結束再執行，用在不論當時在哪個畫面都要送達的遊戲事件，見「由遊戲事件觸發的跳轉」。
+遊戲程式可呼叫 `await root.ShowPageAsync(id, data)`、`await root.OpenPopupAsync(id, data)`、`await root.ClosePopupAsync()` 或 `await root.BackAsync()`。每個 Unity `Awaitable` 只等待一次。轉場中收到的導航請求會立即回傳 `Busy`，不排隊。例外是 `root.TriggerWhenIdleAsync(source, action)`（頁面腳本用 `NavigateAsync(action)`）與 `root.SignalAsync(action, data)`：它們會等進行中的導航結束再執行，彼此依送出的順序排隊。
+
+走藍圖上的路由有四種寫法：
+
+| 呼叫 | 走哪一條路由 | 有導航正在進行時 | 用在 |
+|---|---|---|---|
+| 按鈕的 `action`（`UIButtonAction`） | 按鈕所在畫面的路由 | 按不到：轉場中畫面不接受輸入 | 按鈕直接對應一個去處 |
+| `root.TriggerAsync(source, action)` | `source` 畫面自己的路由 | 立即回傳 `Busy` | 確定沒有導航在進行、也不想等的地方 |
+| 頁面腳本的 `NavigateAsync(action)`，等於 `root.TriggerWhenIdleAsync(View.Id, action)` | 這個畫面自己的路由 | 等它結束再執行 | 在這一頁發生、依遊戲邏輯的結果去不同地方 |
+| `root.SignalAsync(action, data)` | 「任何畫面」的訊號路由 | 等它結束再執行 | 任何畫面都可能發生的事；可以帶資料 |
+
+`TriggerAsync` 與 `NavigateAsync` 的來源要是目前最上層的畫面，訊號不必。`NavigateAsync` 與訊號在輪到的時候才判斷，規則見「頁面之間的流程」。
 
 `root.ShowPageAsync(id, data, history)` 的 `Push` 會把離開的頁面加入歷史，`Replace` 會略過離開的頁面，`Clear` 會在切頁成功後清空歷史。切頁或返回成功後會移除歷史尾端與目前頁相同的項目。失敗或取消時保留原歷史。`HistoryCount` 可查還能返回幾頁，`ClearHistory()` 可直接清空。返回會先關最上層的 Popup。返回上一頁會重用頁面實例與上次顯示時的資料。
 
 `CurrentPage`、`TopPopup`、`Popups` 可查目前畫面。`TryGetView(id, out var view)` 取得已存在的實例。單 Scene 頁面隨 Scene 載入，Prefab 頁面在首次顯示時建立，兩種頁面都會留到 Scene 卸載。Popup 在開啟期間才可查到。
 
-`OpenPopupAsync` 等到進場結束。`root.OpenPopupAsync(id, data, UIHistoryMode.Clear)` 開啟不可返回的 Popup，規則見「由遊戲事件觸發的跳轉」。`OpenPopupForResultAsync<T>` 等到退場與隱藏通知結束。Popup 內可呼叫 `View.Close(value)`，或在 ClosePopup 路由設定字串結果。只有最上層且開著的 Popup 可以透過 `View.Close` 關閉。
+`OpenPopupAsync` 等到進場結束。`root.OpenPopupAsync(id, data, UIHistoryMode.Clear)` 開啟不可返回的 Popup，規則見「頁面之間的流程」。`OpenPopupForResultAsync<T>` 等到退場與隱藏通知結束。Popup 內可呼叫 `View.Close(value)`，或在 ClosePopup 路由設定字串結果。只有最上層且開著的 Popup 可以透過 `View.Close` 關閉。
 
 `UIPopupResult<T>.Status` 反映開啟失敗、正常關閉或取消。`HasValue` 表示收到型別相符的結果，確認後可讀取 `Value`，也可直接呼叫 `GetValueOrDefault(fallback)`。返回、返回鍵、點遮罩、切頁或未指定結果的關閉會回傳 `Completed`，此時 `HasValue` 為 false。型別不符時 Console 會指出實際和期望的型別。取消 token、停用或銷毀工作區，以及 Popup 被外部銷毀都會以 `Canceled` 結束等待。取消 token 或停用工作區時，已開啟的 Popup 保持原狀。
 
@@ -647,7 +658,7 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 | 結果 | 意義與 Console 診斷 |
 |---|---|
 | `Completed` | 操作完成。個別事件的例外仍會按上述規則記錄。 |
-| `Busy` | 另一個導航正在進行。從同步通知提出時會記錄警告，動畫播放期間的一般忙碌請求安靜回傳。`SignalAsync` 不會回傳這個結果，它會等進行中的導航結束。 |
+| `Busy` | 另一個導航正在進行。從同步通知提出時會記錄警告，動畫播放期間的一般忙碌請求安靜回傳。`SignalAsync`、`TriggerWhenIdleAsync` 與 `NavigateAsync` 不會回傳這個結果，它們會等進行中的導航結束。 |
 | `Canceled` | 操作取消，安靜回傳。 |
 | `Unavailable` | 請求合法，目前狀態無法執行。通常會警告。沒有上一頁的返回安靜回傳。 |
 | `NotFound` | 畫面 ID、Prefab 或路由設定缺失或不符合請求。Console 會記錄錯誤。 |
@@ -657,16 +668,120 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 
 自訂 DOTween 轉場請繼承 `UIDOTweenAnimation`，在 `Build(Sequence sequence, UIView view, bool entering)` 加入 tween，掛到該 View 並選 `Custom`。播放、取消和還原 `Motion`／`CanvasGroup` 由框架管理。自訂動畫可用 `AppendCallback` 插入回呼。
 
-### 由遊戲事件觸發的跳轉
+### 頁面之間的流程
 
-遊戲裡發生的事也常常要換畫面：角色死亡、挑戰者連線、斷線。這種跳轉一樣畫在藍圖上，依「這件事會在哪裡發生」分成兩種寫法。
+遊戲的換頁大多是「在某一頁發生了一件事，依結果去某個地方」：按下「進入下一天」，結果可能是開店前、週結或結局；HUD 上的角色死亡。這些都要畫在藍圖上，藍圖才看得出遊玩的順序，走訪也才驗證得到。
 
-| 這件事 | 畫在藍圖的哪裡 | 觸發方式 |
+**判斷標準是「這件事在哪裡發生」，不是「去處由誰決定」。** 去處由遊戲邏輯決定，不代表這件事不屬於某一頁：在哪一頁發生，就把每個可能的去處都畫成那一頁的路由，程式只負責挑哪一條。
+
+| 這件事 | 畫在哪裡 | 怎麼觸發 |
 |---|---|---|
-| **只在某個畫面才會發生**：HUD 上的角色死亡、畫面自己的計時器 | 那個畫面自己的路由 | 頁面腳本呼叫 `Root.TriggerAsync(View.Id, 動作)` |
-| **任何畫面都可能發生**：挑戰者連線、斷線 | 「任何畫面」節點拉出去的**訊號路由** | 遊戲程式呼叫 `root.SignalAsync(動作, 資料)` |
+| 在某一頁按了按鈕，依遊戲邏輯的結果去不同地方（「進入下一天」可能到開店前、週結或結局） | **那一頁自己的路由**，每個可能的去處各一條 | 按鈕用 `Emit`，`OnAction` 跑完遊戲邏輯之後 `await NavigateAsync(依結果挑的動作)` |
+| 只在某一頁才會發生的遊戲事件（HUD 上的角色死亡、這一頁的計時器） | 那一頁自己的路由 | 頁面腳本 `await NavigateAsync(動作)` |
+| 任何頁面都可能發生的事（挑戰者連線、斷線、讀檔後跳到存檔當時的畫面） | 「任何畫面」的訊號路由 | `root.SignalAsync(動作, 資料)` |
 
-下面是一個對戰遊戲 Scene 的計畫，兩種寫法都用到。`"source": "*"` 就是「任何畫面」節點。
+**不要把每一頁的換頁都做成訊號，再把所有頁面標記為由程式控制。** 功能上能動，Validate 與走訪也可能都通過，但藍圖上所有的線都從「任何畫面」放射出去，看不出「標題 → 開店前 → 營業中 → 打烊後」的順序；走訪只驗證得到每一頁都叫得出來，驗證不到順序。由程式控制只代表進來的方式不靠路由，這種頁面沒有自己的出口時，Validate 會回報 `view.no-exit`；起始頁標記為由程式控制時回報 `start.navigated-by-code`。
+
+`NavigateAsync(action)` 是頁面腳本（`UIViewBehaviour`）的方法，等於 `Root.TriggerWhenIdleAsync(View.Id, action)`：走這一頁自己的路由，有導航正在進行時等它結束再執行，不會回傳 `Busy`。輪到它的時候：
+
+| 情況 | 結果 |
+|---|---|
+| 這一頁是最上層的畫面 | 照 `TriggerAsync` 走這條路由，回傳它的結果。 |
+| 這一頁還在畫面上，但上面蓋著 Popup | `Unavailable`，並記錄警告指出是哪個 Popup。要先關 Popup 再走，還是放棄，由遊戲決定。 |
+| 等待期間已經切到別的畫面 | `Canceled`，不記錄任何訊息：這件事已經不必處理。 |
+| 這一頁沒有這個動作的路由 | `NotFound`，記錄錯誤。 |
+| 等待期間 token 被取消，或工作區被停用、銷毀 | `Canceled`。 |
+
+**依結果走這一頁的其中一條路由**
+
+下面是日終結算頁：按下「進入下一天」之後，遊戲邏輯決定隔天是開店前、週結還是結局，頁面依結果走自己的三條路由之一。三條都是 `history: Clear`：日循環不能返回。`morning`、`weeklyReview`、`ending` 是同一個 Scene 的其他頁面，這裡只列出日終結算頁的部分。
+
+```json
+{
+  "views": [
+    {
+      "id": "dayEnd",
+      "title": "Day end",
+      "elements": [
+        { "id": "nextDay", "kind": "Button", "text": "Next day", "action": "nextDay" }
+      ]
+    }
+  ],
+  "routes": [
+    { "source": "dayEnd", "action": "nextDay", "kind": "Emit" },
+    { "source": "dayEnd", "action": "toMorning", "kind": "ShowPage", "target": "morning", "history": "Clear" },
+    { "source": "dayEnd", "action": "toWeeklyReview", "kind": "ShowPage", "target": "weeklyReview", "history": "Clear" },
+    { "source": "dayEnd", "action": "toEnding", "kind": "ShowPage", "target": "ending", "history": "Clear" }
+  ]
+}
+```
+
+下列範本掛在 `dayEnd` 頁，Scene 是 `DayCycle.unity`，所以常數類別是 `DayCycleUI`。`DayCycle` 代表遊戲自己的日循環邏輯，實際的專案換成自己的遊戲狀態。
+
+```csharp
+using System;
+using UniGameUI;
+using UniGameUI.Generated;
+using UnityEngine;
+
+public enum DayOutcome { NextMorning, WeeklyReview, Ending }
+
+// 遊戲自己的日循環。範例只示範「去處由遊戲邏輯決定」，實際的專案換成自己的遊戲狀態。
+public sealed class DayCycle
+{
+    public static readonly DayCycle Current = new DayCycle();
+
+    public int Day { get; private set; } = 1;
+    public bool Bankrupt { get; set; }
+
+    public DayOutcome AdvanceDay()
+    {
+        Day++;
+        if (Bankrupt || Day > 15)
+            return DayOutcome.Ending;
+        return Day % 7 == 0 ? DayOutcome.WeeklyReview : DayOutcome.NextMorning;
+    }
+}
+
+public sealed class DayEndPage : UIViewBehaviour
+{
+    protected override async void OnAction(string action)
+    {
+        if (action != DayCycleUI.Actions.NextDay)
+            return;
+
+        try
+        {
+            // 1. 遊戲邏輯先跑，決定隔天是什麼。
+            var outcome = DayCycle.Current.AdvanceDay();
+
+            // 2. 依結果挑這一頁的其中一條路由。三個去處都畫在藍圖上，走訪會把每一條都走一次。
+            var route = outcome switch
+            {
+                DayOutcome.WeeklyReview => DayCycleUI.Actions.ToWeeklyReview,
+                DayOutcome.Ending => DayCycleUI.Actions.ToEnding,
+                _ => DayCycleUI.Actions.ToMorning,
+            };
+            var result = await NavigateAsync(route, destroyCancellationToken);
+            if (result != UINavResult.Completed && result != UINavResult.Canceled)
+                Debug.LogWarning($"進入下一天的結果是 {result}。", this);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception, this);
+        }
+    }
+}
+```
+
+- 按鈕只有一個動作 `nextDay`（`Emit`），三個去處是三條路由。不要為了「去處不只一個」把它們改成訊號。
+- 清單項目的點擊（`UIList.ItemClicked`）不經過 `OnAction`，在它的處理方法裡一樣呼叫 `NavigateAsync`。
+- 去處要等 Popup 的結果才知道時（例如先開選人的 Popup），在 `OpenPopupForResultAsync` 回來之後呼叫 `NavigateAsync`。
+- 讀檔之後要回到存檔當時的那一頁，可能從任何頁面發生，所以用訊號路由，每個可能的頁面各一條，例如 `loadMorning`、`loadBusiness`。
+
+**任何畫面都可能發生的事：訊號**
+
+下面是一個對戰遊戲 Scene 的計畫，頁面自己的路由與訊號路由都用到。`"source": "*"` 就是「任何畫面」節點。
 
 ```json
 {
@@ -740,7 +855,7 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 | `OpenPopup` | 在目前的畫面上開啟目標 Popup 並傳入 `data`。已經有 Popup 開著時疊在上面。目標已經開著時回傳 `Unavailable`。 |
 | `Emit` | 呼叫目前最上層畫面的 `OnAction(action)`，並觸發 `ActionEmitted`，來源是 `UIRoot.AnySource`。不帶資料；有給 `data` 時記錄一筆警告。 |
 
-- **訊號不會因為忙碌而被拒絕。** 有導航正在進行時，訊號等它結束再執行；多個訊號依送出的順序執行；在生命週期方法裡送出也一樣，等這次導航結束後執行。所以 `await` 拿到的是實際執行之後的結果，不會是 `Busy`。這不改變其他 API：`ShowPageAsync`、`OpenPopupAsync`、`TriggerAsync` 等照舊回傳 `Busy`。
+- **訊號不會因為忙碌而被拒絕。** 有導航正在進行時，訊號等它結束再執行；多個訊號依送出的順序執行，和 `NavigateAsync` 也是同一個順序；在生命週期方法裡送出也一樣，等這次導航結束後執行。所以 `await` 拿到的是實際執行之後的結果，不會是 `Busy`。這不改變其他 API：`ShowPageAsync`、`OpenPopupAsync`、`TriggerAsync` 等照舊回傳 `Busy`。
 - 等待期間 token 被取消，或工作區被停用、銷毀：回傳 `Canceled`。找不到這個動作的訊號路由：回傳 `NotFound` 並記錄錯誤。
 - `ActionTriggered` 在訊號開始執行時觸發，`ActionCompleted` 在結束時觸發，和一般路由相同。
 - 一般路由不傳資料，訊號可以。目標畫面一定要有資料才能顯示時，請在藍圖把它標記為由程式控制（計畫的 `"navigation": "Code"`，如上面的 `challenger`），走訪才知道這一步需要由程式提供資料。
@@ -815,12 +930,9 @@ public sealed class ChallengerPage : UIViewBehaviour
 }
 ```
 
-**只在某個畫面發生的事**
+**只在某一頁發生的遊戲事件**
 
-畫成那個畫面自己的路由，由頁面腳本觸發。`TriggerAsync` 只在來源是目前最上層的畫面、而且沒有導航正在進行時才會執行，所以這種寫法要自己處理兩種情況：
-
-- **`Busy`：** 有導航正在進行。等它結束再試。
-- **上面蓋著 Popup：** 來源頁不是最上層，`TriggerAsync` 回傳 `Unavailable`。依遊戲的設計決定要先關掉 Popup、等 Popup 關閉，還是放棄。
+畫成那一頁自己的路由，由頁面腳本用 `NavigateAsync` 觸發。有導航正在進行時它會等，等完已經不在這一頁時回傳 `Canceled`，這兩種情況都不必自己處理；只剩「上面蓋著 Popup」要由遊戲決定。
 
 下列範本掛在 `hud` 頁。角色死亡只會在 HUD 上發生，所以走 `hud` 自己的 `defeated` 路由。
 
@@ -850,41 +962,16 @@ public sealed class HudPage : UIViewBehaviour
     {
         try
         {
-            var root = Root;
-            while (this && root)
-            {
-                // 有導航正在進行時 TriggerAsync 會回傳 Busy：等它結束再試。
-                if (root.IsTransitioning)
-                {
-                    await Awaitable.NextFrameAsync(destroyCancellationToken);
-                    continue;
-                }
+            // 有導航正在進行時會等它結束；那時已經不在 HUD 上就回傳 Canceled，不必處理。
+            var result = await NavigateAsync(MatchUI.Actions.Defeated, destroyCancellationToken);
 
-                // 那次導航結束之後已經不在這個畫面：這件事不必再處理。
-                if (root.CurrentPage != View)
-                    return;
+            // 上面蓋著 Popup（例如暫停選單）時回傳 Unavailable。這裡的做法是先把 Popup 關掉再走；也可以直接放棄。
+            if (result == UINavResult.Unavailable && Root.TopPopup &&
+                await Root.ClosePopupAsync(destroyCancellationToken) == UINavResult.Completed)
+                result = await NavigateAsync(MatchUI.Actions.Defeated, destroyCancellationToken);
 
-                // 上面蓋著 Popup 時 hud 不是最上層，TriggerAsync 會回傳 Unavailable。
-                // 這裡的做法是先把 Popup 關掉；也可以改成直接放棄，或等 Popup 關閉。
-                if (root.TopPopup)
-                {
-                    var closed = await root.ClosePopupAsync();
-                    if (closed != UINavResult.Completed && closed != UINavResult.Busy)
-                        return;
-                    continue;
-                }
-
-                var result = await root.TriggerAsync(View.Id, MatchUI.Actions.Defeated);
-                if (result == UINavResult.Busy)
-                    continue;
-                if (result != UINavResult.Completed)
-                    Debug.LogWarning($"切到結算畫面的結果是 {result}。", this);
-                return;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // 畫面被銷毀，或 Play Mode 結束。
+            if (result != UINavResult.Completed && result != UINavResult.Canceled)
+                Debug.LogWarning($"切到結算畫面的結果是 {result}。", this);
         }
         catch (Exception exception)
         {
@@ -899,7 +986,7 @@ public sealed class HudPage : UIViewBehaviour
 `Emit` 的訊號不指定要去哪裡，只通知目前最上層的畫面，由它在 `OnAction` 自己決定。適合「同一件事在不同畫面有不同反應」的情況：上面的 `roundTimeUp` 在 HUD 上要切到結算畫面（`HudPage.OnAction`），在大廳或其他畫面什麼都不必做。
 
 - 有 Popup 開著時，收到的是最上層的 Popup，不是底下的頁面。
-- `OnAction` 不在導航進行中被呼叫，裡面可以直接導航。
+- `OnAction` 不在導航進行中被呼叫，裡面可以直接導航；用 `NavigateAsync` 就不必管這件事。
 - 不想寫在頁面腳本裡時，訂閱 `root.ActionEmitted`，來源是 `UIRoot.AnySource`。
 
 **跳過去之後能不能返回**
@@ -1003,10 +1090,13 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 
 ### 由程式控制的畫面
 
-有些畫面不靠路由進出：確認框是 `ConfirmAsync` 開啟、自己關閉的；載入畫面、過場畫面常常是程式直接顯示的。請在藍圖把這種畫面標記為**由程式控制進出**，否則 Validate 會提醒它走不到、沒有出口。
+有些畫面**進來的方式不靠路由**：確認框是 `ConfirmAsync` 開啟、自己關閉的；挑戰者登場的畫面一定要由訊號帶資料過來才能顯示。請在藍圖把這種畫面標記為**由程式控制**，否則 Validate 會提醒它走不到。
 
 - 設定方式有三種：計畫的 View 欄位 `"navigation": "Code"`（預設是 `Routes`，和其他 View 選項一樣只在新建畫面或設了 `updateExisting` 時寫入）；藍圖視窗右欄的「由程式控制進出」；`UIAuthoring.SetNavigatedByCode(root, id, true)`。
-- 標記之後：Validate 不檢查它走不走得到（`view.unreachable`）、有沒有出口（`view.no-exit`）、裡面的按鈕有沒有動作（`button.unbound`）；所有頁面都由程式控制時不回報 `start.none`；走訪不要求它能單靠路由開啟。
+- 標記之後：Validate 不檢查它走不走得到（`view.unreachable`）、裡面的按鈕有沒有動作（`button.unbound`）；所有頁面都由程式控制時不回報 `start.none`；走訪不要求它能單靠路由開啟。
+- **標記只代表進來的方式，不代表離開的方式。** Popup 標記之後不檢查有沒有出口（確認框這類 Popup 是自己用 `View.Close()` 關閉的），頁面照樣檢查 `view.no-exit`：這一頁發生的換頁請畫成這一頁的路由，用 `NavigateAsync` 依結果挑其中一條，見「頁面之間的流程」。
+- **去處由遊戲狀態決定，不等於不靠路由。** 「進入下一天」的去處由遊戲邏輯決定，但它發生在日終結算頁，三個去處都是那一頁的路由，日終結算頁不必標記。
+- 起始頁不需要這個標記：它是框架在 `Start` 時顯示的，不帶資料。起始頁標記為由程式控制時回報 `start.navigated-by-code`。
 - 由程式控制的畫面是程式打開的，所以從它出發的路由通到的畫面也算走得到。
 - **一定要有資料才能顯示的畫面請這樣標記**，例如由訊號帶資料過來的挑戰者登場畫面。走訪不傳資料，路由的目標是這種畫面而顯示失敗時，那一步記為略過而不是失敗。
 - 根節點掛了 `UIConfirmPopup` 的畫面自動視為由程式控制，不必設定，藍圖上也不能取消。
@@ -1150,9 +1240,10 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `view.popup-option-on-page` | Error | 頁面開啟了只對 Popup 有意義的選項。 | 在 Inspector 關掉「關閉後保留並重用」與「點遮罩關閉」。 |
 | `view.overlay-missing` | Error | Popup 設定了點遮罩關閉，但沒有遮罩物件。 | 關掉這個選項，或補回遮罩。 |
 | `view.unreachable` | Warning | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到這個頁面或 Popup。起始頁本身、由程式控制的畫面、訊號路由的目標（以及從它們出發走得到的畫面）不算；沒有起始頁時只回報 `start.none`。 | 補上通往它的路由。由程式開啟的畫面標記為由程式控制。 |
-| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由，從它沿著 `OpenPopup` 路由開得到的 Popup 也沒有切到別頁的 `ShowPage` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉；或 Popup 被 `history: Clear` 的 `OpenPopup` 路由（一般路由或訊號路由）以不可返回的方式開啟，卻只有 `Back` 路由（不可返回的 Popup 上 `Back` 無效，不算出口）。由程式控制的畫面不算；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上離開的路由。由程式切換或關閉的畫面標記為由程式控制。 |
+| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由，從它沿著 `OpenPopup` 路由開得到的 Popup 也沒有切到別頁的 `ShowPage` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉；或 Popup 被 `history: Clear` 的 `OpenPopup` 路由（一般路由或訊號路由）以不可返回的方式開啟，卻只有 `Back` 路由（不可返回的 Popup 上 `Back` 無效，不算出口）。由程式控制的 Popup 不算，**由程式控制的頁面照樣檢查**；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上這一頁的路由，每個可能的去處各一條，用 `NavigateAsync` 依結果挑其中一條。由程式關閉的 Popup 標記為由程式控制。 |
 | `start.unknown` | Error | 起始頁不存在，或不是頁面。 | 用計畫的 `startPage` 或藍圖重新指定。 |
 | `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式控制時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式控制。 |
+| `start.navigated-by-code` | Warning | 起始頁標記為由程式控制。起始頁是框架在 `Start` 時顯示的，不帶資料，不需要這個標記；它常是「把所有頁面都標記」的跡象。 | 拿掉起始頁的標記。頁面之間的換頁畫成各頁自己的路由，見「頁面之間的流程」。 |
 | `route.incomplete` | Error | 路由的來源或動作是空的。 | 用計畫或藍圖重新建立這條路由。 |
 | `route.source-missing` | Error | 路由的來源畫面不存在。 | 補上來源畫面，或移除這條路由。 |
 | `route.duplicate` | Error | 同一個來源有重複的動作（訊號路由之間動作重複也算）。 | 移除多出來的那一條，或改用不同的動作名稱。 |

@@ -426,6 +426,12 @@ namespace UniGameUI.Editor.Tests
                     Home();
                     break;
 
+                case UIIssueCode.StartNavigatedByCode:
+                    Home();
+                    UIAuthoring.SetStartPage(root, "home");
+                    UIAuthoring.SetNavigatedByCode(root, "home", true);
+                    break;
+
                 case UIIssueCode.ViewUnreachable:
                     Home();
                     UIAuthoring.SetStartPage(root, "home");

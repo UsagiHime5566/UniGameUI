@@ -11,6 +11,7 @@ namespace UniGameUI.Editor
 {
     // 0.5.0 新增的檢查。它們指出的是「看起來不對」，專案可能有正當的理由，所以都是 Warning，
     // 而且每一項都有不算的情況。「由程式控制」指藍圖上的標記，或根節點掛了 UIConfirmPopup 的畫面。
+    // 由程式控制只代表進來的方式不靠路由（0.6.0）：頁面標記之後照樣檢查有沒有出口。
     public static partial class UIValidation
     {
         private const int MaxListedCharacters = 10;
@@ -57,6 +58,13 @@ namespace UniGameUI.Editor
             }
             if (!views.TryGetValue(root.StartPageId, out var start) || start.Kind != UIEntryKind.Page)
                 return;
+            if (byCode.Contains(start.Id))
+            {
+                issues.Add(new UIIssue(UIIssueCode.StartNavigatedByCode,
+                    $"起始頁「{start.Id}」標記為由程式控制。起始頁是框架在 Start 時顯示的，不帶資料，不需要這個標記，" +
+                    "請拿掉。把所有頁面都標記為由程式控制時，藍圖看不出遊玩的流程，Validate 也沒辦法提醒走不到的頁面。",
+                    start.Id, context: ContextOf(root, start)));
+            }
 
             // 由程式控制的畫面是程式打開的，訊號路由的目標是訊號帶過去的，所以它們和起始頁一樣是出發點。
             var reached = new HashSet<string>(byCode) { start.Id };
@@ -92,14 +100,12 @@ namespace UniGameUI.Editor
         {
             foreach (var entry in views.Values)
             {
-                if (byCode.Contains(entry.Id))
-                    continue;
-
                 var own = routes.Where(route => route.Source == entry.Id).ToArray();
                 if (entry.Kind == UIEntryKind.Page)
                 {
                     // 只有一個頁面的工作區沒有別的地方可以去。
                     // 頁面自己沒有 ShowPage 或 Back，但它開得到的 Popup 有（例如暫停選單的「回標題」），也離得開。
+                    // 由程式控制只代表進來的方式，頁面照樣要有出口。
                     if (pages.Length == 1 ||
                         own.Any(route => route.Kind is UIRouteKind.ShowPage or UIRouteKind.Back) ||
                         OpensPopupThatLeaves(entry.Id, routes, views))
@@ -107,10 +113,16 @@ namespace UniGameUI.Editor
                     issues.Add(new UIIssue(UIIssueCode.ViewNoExit,
                         $"頁面「{entry.Id}」沒有任何 ShowPage 或 Back 路由，它開得到的 Popup 也沒有切到別頁的 " +
                         "ShowPage 路由，進來之後離不開。" +
-                        "請補上路由；由程式切換的頁面請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
+                        (byCode.Contains(entry.Id) ? "由程式控制只表示進來的方式。" : "") +
+                        "這一頁發生的換頁請畫成這一頁的路由，每個可能的去處各一條，用 NavigateAsync 依結果挑其中一條；" +
+                        "任何畫面都可能發生的事才用「任何畫面」的訊號路由。",
                         entry.Id, context: ContextOf(root, entry)));
                     continue;
                 }
+
+                // 由程式控制的 Popup 是程式開啟、自己關閉的（例如確認框用 View.Close()），不檢查出口。
+                if (byCode.Contains(entry.Id))
+                    continue;
 
                 // Popup 執行期用的是 Prefab；沒有 Prefab 時另有 Error，這裡用審核畫面判斷。
                 var view = entry.Prefab ? entry.Prefab : entry.Review;

@@ -140,8 +140,10 @@ namespace UniGameUI.Editor.Tests
             Assert.That(page.ViewId, Is.EqualTo("shop"));
             Assert.That(page.Severity, Is.EqualTo(UIIssueSeverity.Warning));
             Assert.That(page.Message, Does.Contain("shop").And.Contain("Back"));
+            // 0.6.0：由程式控制只代表進來的方式，頁面標記之後照樣要有出口。
             UIAuthoring.SetNavigatedByCode(root, "shop", true);
-            Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty, "由程式控制的頁面不算");
+            Assert.That(Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId), Is.EqualTo(new[] { "shop" }),
+                "由程式控制的頁面照樣檢查出口");
             UIAuthoring.SetNavigatedByCode(root, "shop", false);
             UIAuthoring.Connect(root, "shop", "back", UIRouteKind.Back);
             Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty);

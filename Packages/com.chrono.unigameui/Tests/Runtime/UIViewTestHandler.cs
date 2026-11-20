@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using UnityEngine;
 
 namespace UniGameUI.Tests
@@ -34,6 +35,10 @@ namespace UniGameUI.Tests
         }
 
         public void ReportFromInspector(string phase) => Observed?.Invoke(this, phase, null);
+
+        // 測試用：從外面呼叫 protected 的 NavigateAsync。
+        internal Awaitable<UINavResult> Navigate(string action, CancellationToken cancellation = default) =>
+            NavigateAsync(action, cancellation);
 
         public void ThrowFromInspector(string message)
         {

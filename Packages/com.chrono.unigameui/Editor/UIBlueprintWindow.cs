@@ -602,7 +602,9 @@ namespace UniGameUI.Editor
             if (entry.Id == workspace.StartPageId)
                 AddBadge(badges, "起始頁", "badge-start").tooltip = "載入 Scene 之後第一個顯示的頁面。";
             if (UIAuthoring.IsNavigatedByCode(entry))
-                AddBadge(badges, "程式控制", "badge-code").tooltip = "這個畫面由程式控制進出，不靠路由。";
+                AddBadge(badges, "程式控制", "badge-code").tooltip = isPopup
+                    ? "由程式控制：進來的方式不靠路由，例如程式開啟、自己關閉的 Popup。"
+                    : "由程式控制：進來的方式不靠路由。頁面照樣要有自己的出口路由。";
 
             AddNodeText(card, entry.Title, "node-title");
             AddNodeText(card, entry.Id, "node-id").tooltip = "畫面 ID";

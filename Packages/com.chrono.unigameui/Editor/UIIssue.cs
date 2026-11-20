@@ -64,6 +64,7 @@ namespace UniGameUI.Editor
 
         public const string StartUnknown = "start.unknown";
         public const string StartNone = "start.none";
+        public const string StartNavigatedByCode = "start.navigated-by-code";
 
         public const string RouteIncomplete = "route.incomplete";
         public const string RouteSourceMissing = "route.source-missing";
@@ -119,6 +120,7 @@ namespace UniGameUI.Editor
                 [ViewNoExit] = UIIssueSeverity.Warning,
                 [StartUnknown] = UIIssueSeverity.Error,
                 [StartNone] = UIIssueSeverity.Warning,
+                [StartNavigatedByCode] = UIIssueSeverity.Warning,
                 [RouteIncomplete] = UIIssueSeverity.Error,
                 [RouteSourceMissing] = UIIssueSeverity.Error,
                 [RouteDuplicate] = UIIssueSeverity.Error,

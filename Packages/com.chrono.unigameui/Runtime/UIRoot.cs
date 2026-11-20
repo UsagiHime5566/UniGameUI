@@ -72,8 +72,8 @@ namespace UniGameUI
         private readonly Dictionary<string, UIView> retainedPopups = new Dictionary<string, UIView>();
         // 以 history: Clear 開啟、目前還開著的 Popup。它們在最上層時不能返回。
         private readonly HashSet<UIView> unreturnablePopups = new HashSet<UIView>();
-        // 排隊中的訊號，依送出的順序執行。
-        private readonly List<object> signals = new List<object>();
+        // 排隊等待執行的訊號與 TriggerWhenIdleAsync，依送出的順序執行。
+        private readonly List<object> idleQueue = new List<object>();
         private IReadOnlyList<UIView> popupList;
         private IReadOnlyList<string> historyList;
         private List<(AwaitableCompletionSource<object> Source, object Result)> closedPopupResults;
@@ -400,6 +400,61 @@ namespace UniGameUI
             var active = TopPopup ? TopPopup : currentPage;
             if (!active || active.Id != source)
                 return Unavailable(request, "來源不是目前最上層的畫面。");
+            return await FollowTriggeredRouteAsync(route, active, request, cancellation);
+        }
+
+        /// <summary>
+        /// 走 <paramref name="source"/> 這個畫面自己的路由。和 <see cref="TriggerAsync"/> 相同，但不會因為忙碌而被拒絕：
+        /// 有導航正在進行時等它結束，和 <see cref="SignalAsync"/> 共用同一個排隊順序。輪到它的時候：
+        /// 來源是最上層的畫面就照 TriggerAsync 執行並回傳結果；
+        /// 來源還在畫面上、但上面蓋著 Popup 時回傳 <see cref="UINavResult.Unavailable"/> 並記錄警告，指出是哪個 Popup；
+        /// 來源已經不在畫面上（等待期間切走了）時安靜地回傳 <see cref="UINavResult.Canceled"/>。
+        /// 找不到路由時回傳 <see cref="UINavResult.NotFound"/>。
+        /// 等待期間 token 被取消，或工作區被停用、銷毀時回傳 <see cref="UINavResult.Canceled"/>。
+        /// 頁面腳本用 <see cref="UIViewBehaviour"/> 的 NavigateAsync。
+        /// </summary>
+        public async Awaitable<UINavResult> TriggerWhenIdleAsync(
+            string source, string action, CancellationToken cancellation = default)
+        {
+            await Awaitable.MainThreadAsync();
+            var request = $"TriggerWhenIdle '{source}'/'{action}'";
+            if (!CanNavigate())
+                return Unavailable(request, "工作區停用或尚未就緒。");
+            if (cancellation.IsCancellationRequested)
+                return UINavResult.Canceled;
+            if (source == AnySource)
+                return Unavailable(request, "「任何畫面」的訊號路由要用 SignalAsync 送出。");
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(action) ||
+                !routesByAction.TryGetValue((source, action), out var route))
+                return NotFound(request, "找不到路由。");
+            return await WhenIdleAsync(token => TriggerWhenTurnAsync(route, request, token), cancellation);
+        }
+
+        // TriggerWhenIdleAsync 輪到了：依來源目前在不在最上層決定怎麼做。
+        private async Awaitable<UINavResult> TriggerWhenTurnAsync(
+            UIRoute route, string request, CancellationToken cancellation)
+        {
+            if (!CanNavigate())
+                return UINavResult.Canceled;
+            var active = TopPopup ? TopPopup : currentPage;
+            if (active && active.Id == route.Source)
+                return await FollowTriggeredRouteAsync(route, active, request, cancellation);
+            var onScreen = (currentPage && currentPage.Id == route.Source) ||
+                popups.Exists(popup => popup && popup.Id == route.Source);
+            if (onScreen)
+            {
+                return Unavailable(request, $"來源畫面 '{route.Source}' 上面蓋著 Popup '{CurrentPopupId}'，沒有執行。" +
+                    "要先關閉 Popup 再走這條路由，還是放棄，由遊戲決定。");
+            }
+            // 等待期間已經切到別的畫面：這件事不必再處理。
+            return UINavResult.Canceled;
+        }
+
+        // 來源已經確認是最上層的畫面：觸發路由並通知 ActionTriggered 與 ActionCompleted。
+        private async Awaitable<UINavResult> FollowTriggeredRouteAsync(
+            UIRoute route, UIView active, string request, CancellationToken cancellation)
+        {
+            var source = route.Source;
 
             void Triggered() => UIEventDispatch.Invoke(ActionTriggered, listener => listener(route),
                 exception => LogNotificationException($"{request} {nameof(ActionTriggered)}", exception));
@@ -446,17 +501,24 @@ namespace UniGameUI
             if (string.IsNullOrEmpty(action) || !routesByAction.TryGetValue((AnySource, action), out var route))
                 return NotFound(request, "找不到這個動作的訊號路由。請在藍圖的「任何畫面」節點加上路由。");
 
+            return await WhenIdleAsync(token => RunSignalAsync(route, data, request, token), cancellation);
+        }
+
+        // 排隊：等進行中的導航，以及排在前面的訊號與 TriggerWhenIdleAsync 都結束，再執行 run。
+        // run 剛好被別的導航搶先而回傳 Busy 時，回去繼續等。
+        private async Awaitable<UINavResult> WhenIdleAsync(
+            Func<CancellationToken, Awaitable<UINavResult>> run, CancellationToken cancellation)
+        {
             var ticket = new object();
-            signals.Add(ticket);
+            idleQueue.Add(ticket);
             try
             {
                 using var waiting = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellation);
                 while (true)
                 {
-                    // 等進行中的導航與排在前面的訊號結束。
-                    while (busy || !ReferenceEquals(signals[0], ticket))
+                    while (busy || !ReferenceEquals(idleQueue[0], ticket))
                         await Awaitable.NextFrameAsync(waiting.Token);
-                    var result = await RunSignalAsync(route, data, request, waiting.Token);
+                    var result = await run(waiting.Token);
                     if (result != UINavResult.Busy)
                         return result;
                 }
@@ -467,7 +529,7 @@ namespace UniGameUI
             }
             finally
             {
-                signals.Remove(ticket);
+                idleQueue.Remove(ticket);
             }
         }
 
