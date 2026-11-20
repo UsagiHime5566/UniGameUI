@@ -320,6 +320,57 @@ namespace UniGameUI.Editor.Tests
             Assert.That(LoadedScenes(), Is.EqualTo(new[] { path }));
         }
 
+        [Test]
+        public void PreflightReadsTheContentOfAnExistingViewPrefab()
+        {
+            RequireDOTween();
+            var widgets = UseIsolatedWidgets();
+            UIWidgets.Install();
+            var confirmPath = $"{widgets}/Confirm.prefab";
+            var before = File.ReadAllBytes(confirmPath);
+            var root = WorkspaceWithHomePage("Batch3Fix Existing Prefab");
+
+            // 確認框的 confirm 記錄的是 Button：用別的 kind 更新要在套用前被擋下。
+            var error = Assert.Throws<ArgumentException>(() => UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""other"" }},
+                {{ ""id"": ""confirm"", ""kind"": ""Popup"", ""prefabPath"": ""{confirmPath}"", ""elements"": [
+                    {{ ""id"": ""confirm"", ""kind"": ""Text"", ""updateExisting"": true,
+                       ""text"": ""Yes"", ""alignment"": ""Left"" }}] }}] }}"));
+            Assert.That(error.Message, Does.Contain("confirm").And.Contain("Button").And.Contain("Text"));
+            AssertNothingWasApplied(root);
+            Assert.That(File.ReadAllBytes(confirmPath), Is.EqualTo(before));
+
+            // defaultSelected 指到 Prefab 裡不存在或不能選取的元件，一樣在套用前被擋下。
+            foreach (var (target, reason) in new[] { ("missing", "不存在"), ("title", "不能被選取") })
+            {
+                error = Assert.Throws<ArgumentException>(() => UIPlan.Apply($@"{{ ""views"": [
+                    {{ ""id"": ""other"" }},
+                    {{ ""id"": ""confirm"", ""kind"": ""Popup"", ""prefabPath"": ""{confirmPath}"",
+                       ""defaultSelected"": ""{target}"" }}] }}"), target);
+                Assert.That(error.Message, Does.Contain(target).And.Contain(reason));
+                AssertNothingWasApplied(root);
+            }
+
+            // defaultSelected 指到 Prefab 裡的按鈕可以套用；同一個 kind 的 updateExisting 也可以。
+            UIPlan.Apply($@"{{ ""views"": [{{ ""id"": ""confirm"", ""kind"": ""Popup"",
+                ""prefabPath"": ""{confirmPath}"", ""defaultSelected"": ""confirm"", ""elements"": [
+                    {{ ""id"": ""confirm"", ""kind"": ""Button"", ""updateExisting"": true, ""text"": ""Yes"" }}] }}] }}");
+            var entry = UIAuthoring.FindEntry(root, "confirm");
+            Assert.That(AssetDatabase.GetAssetPath(entry.Prefab), Is.EqualTo(confirmPath));
+            Assert.That(entry.Review.DefaultSelected.GetComponentInParent<UIElementId>(true).Id, Is.EqualTo("confirm"));
+            Assert.That(UIPlan.FindElement(entry.Review, "confirm").GetComponentInChildren<TMP_Text>(true).text,
+                Is.EqualTo("Yes"));
+            // 改動留在審核實例上等使用者套用，Prefab 本體仍然預設選取取消鍵。
+            Assert.That(entry.Prefab.DefaultSelected.GetComponentInParent<UIElementId>(true).Id, Is.EqualTo("cancel"));
+            Assert.That(File.ReadAllBytes(confirmPath), Is.EqualTo(before));
+
+            // 登記過之後照舊以審核實例為準。
+            error = Assert.Throws<ArgumentException>(() => UIPlan.Apply($@"{{ ""views"": [
+                {{ ""id"": ""confirm"", ""kind"": ""Popup"", ""elements"": [
+                    {{ ""id"": ""cancel"", ""kind"": ""Toggle"", ""updateExisting"": true, ""state"": ""On"" }}] }}] }}"));
+            Assert.That(error.Message, Does.Contain("cancel").And.Contain("Button").And.Contain("Toggle"));
+        }
+
         private static string[] LoadedScenes()
         {
             return Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)

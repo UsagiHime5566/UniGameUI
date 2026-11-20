@@ -334,6 +334,7 @@ namespace UniGameUI.Editor
                     throw new ArgumentException($"Duplicate or incompatible view '{view.id}'.");
                 kinds[view.id] = kind;
 
+                UIView existingPrefab = null;
                 if (kind == UIEntryKind.Popup || mode == UIAuthoringMode.Prefab)
                 {
                     var path = string.IsNullOrEmpty(view.prefabPath)
@@ -343,20 +344,24 @@ namespace UniGameUI.Editor
                     if (!paths.Add(path))
                         throw new ArgumentException($"Two views use '{path}'.");
                     var asset = AssetDatabase.LoadMainAssetAtPath(path);
-                    var existingView = asset is GameObject prefab ? prefab.GetComponent<UIView>() : null;
-                    if (asset && !existingView)
+                    existingPrefab = asset is GameObject prefab ? prefab.GetComponent<UIView>() : null;
+                    if (asset && !existingPrefab)
                         throw new ArgumentException($"Prefab path is already in use: {path}");
-                    if (existingView && existingView.Id != view.id)
-                        throw new ArgumentException(UIAuthoring.ViewIdMismatch(path, existingView.Id, view.id));
+                    if (existingPrefab && existingPrefab.Id != view.id)
+                        throw new ArgumentException(UIAuthoring.ViewIdMismatch(path, existingPrefab.Id, view.id));
                 }
                 else if (!string.IsNullOrEmpty(view.prefabPath))
                 {
                     throw new ArgumentException($"Single Scene page '{view.id}' cannot have a Prefab path.");
                 }
 
-                var existingReview = entries.TryGetValue(view.id, out var entry) ? entry.Review : null;
-                PreflightElements(view, existingReview, catalog);
-                PreflightViewOptions(view, kind, existingReview, catalog);
+                // 畫面指到的 Prefab 已經存在時，裡面的內容就是既有的畫面，不論這個工作區有沒有登記過它。
+                // 登記過的畫面看審核實例：它是那個 Prefab 的實例，另外包含還沒套用回 Prefab 的修改。
+                var existingContent = entries.TryGetValue(view.id, out var entry) && entry.Review
+                    ? entry.Review
+                    : existingPrefab;
+                PreflightElements(view, existingContent, catalog);
+                PreflightViewOptions(view, kind, existingContent, catalog);
             }
 
             if (!string.IsNullOrEmpty(plan.startPage) &&
