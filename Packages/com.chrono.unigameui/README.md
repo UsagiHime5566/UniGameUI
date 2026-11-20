@@ -21,8 +21,14 @@ UniGameUI 需要 [DOTween 標準版](https://assetstore.unity.com/packages/tools
 
 儲存場景或套用 JSON 計畫後，工具會在 `Assets/UniGameUI/Generated` 產生 ID 常數。等 Editor 編譯完成再接遊戲腳本。自訂 asmdef 需引用產生常數的 `UniGameUI.Generated` 組件。用法和完整頁面範本見 [AgentGuide 的遊戲程式章節](Documentation~/AgentGuide.md#遊戲程式)。
 
+## 驗收工具
+
+- **Validate** 檢查藍圖的設定，每一筆問題有穩定的代碼：路由的目的地不存在、走不到的畫面、沒有出口的畫面、沒有動作的按鈕、字型缺少的字元等。
+- **自動走訪** 進入 Play Mode，把藍圖上的每條路由實際觸發一次，確認走得通。
+- 兩個工具都能從命令列執行（`UIValidation.RunFromCommandLine`、`UIWalk.RunFromCommandLine`），用結束代碼表示結果並寫出 JSON 報告，也可以從藍圖視窗的 **Validate** 與 **走訪** 按鈕執行。agent 交付前的固定步驟、報告格式與問題代碼表在操作指南的「驗收」一節。
+
 ## 回歸測試
 
 安裝或完成 DOTween Setup 後，在 Unity Test Runner 執行 UniGameUI 的 Edit Mode 和 Play Mode 測試。以 Git URL 或本機磁碟安裝套件時，在專案 `Packages/manifest.json` 的頂層 `testables` 加入 `"com.chrono.unigameui"`，例如 `"testables": ["com.chrono.unigameui"]`。嵌入 `Packages` 的開發專案會自動列出套件測試。 [Unity 套件測試文件](https://docs.unity.com/en-us/engine/6000.3/manual/packages-list/cus-pkg-lp/cus-pkg-development/cus-tests)
 
-測試涵蓋導航與事件順序、子 Canvas 的 raycast、ID 常數、元件查找、Prefab、歷史模式、Popup 結果、起始元件與元件集、清單、多語系、手把與鍵盤導覽、返回鍵、確認框，以及缺少 DOTween 時的行為。Test Runner 會標示需要 DOTween 或圖形裝置的案例。測試使用自己的資料夾安裝起始元件（`Assets/UniGameUI-TestWidgets` 與 `Assets/UniGameUI-PlayModeWidgets`），結束後會刪除，不會動到專案在 `Assets/UniGameUI/Widgets` 的元件。導覽與返回鍵的案例用 Input System 的測試工具模擬鍵盤、手把與滑鼠。
+測試涵蓋導航與事件順序、子 Canvas 的 raycast、ID 常數、元件查找、Prefab、歷史模式、Popup 結果、起始元件與元件集、清單、多語系、手把與鍵盤導覽、返回鍵、確認框、Validate 的每一種問題代碼、自動走訪（實際進出 Play Mode），以及缺少 DOTween 時的行為。Test Runner 會標示需要 DOTween 或圖形裝置的案例。測試使用自己的資料夾安裝起始元件（`Assets/UniGameUI-TestWidgets` 與 `Assets/UniGameUI-PlayModeWidgets`），結束後會刪除，不會動到專案在 `Assets/UniGameUI/Widgets` 的元件。導覽與返回鍵的案例用 Input System 的測試工具模擬鍵盤、手把與滑鼠。

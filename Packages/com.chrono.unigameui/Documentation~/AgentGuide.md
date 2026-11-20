@@ -1,6 +1,6 @@
 # UniGameUI 操作指南
 
-從這份文件的公開工具操作 Unity。交付時指出實際使用的 Scene、藍圖路徑、Play 驗證結果，以及需要專案自行接上的事件。
+從這份文件的公開工具操作 Unity。交付前照「驗收」一節執行 Validate 與走訪。交付時指出實際使用的 Scene、藍圖路徑、兩份驗收報告的摘要，以及需要專案自行接上的事件。
 
 ## 確認專案
 
@@ -150,6 +150,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 | `backKey` | `Back`（預設）、`Ignore` | `Ignore` 時這個畫面不回應返回鍵。 |
 | `popupCache` | `Recreate`（預設）、`Reuse` | 只能寫在 Popup。`Reuse` 時關閉後保留實例，下次開啟重用。 |
 | `overlayClick` | `Ignore`（預設）、`Close` | 只能寫在 Popup。`Close` 時點擊遮罩等同不帶結果的關閉。 |
+| `navigation` | `Routes`（預設）、`Code` | `Code` 表示這個畫面由程式控制進出，不靠路由。只影響 Validate 與走訪，見「驗收」的「由程式控制的畫面」。 |
 
 ## 元件
 
@@ -250,7 +251,8 @@ var result = await root.TriggerAsync(WorkshopUI.Views.Workshop, WorkshopUI.Actio
 - `UIAuthoring.SetTransition(view, entering, preset, duration, direction, ease, distance, angle, zoomScale)` 和 `SetPageTransitionMode(root, mode)`。
 - `UIAuthoring.ArrangeReview(root)`、`FocusReview(root, id)`、`PreviewPopupOnPage(root, popupId, pageId)`、`HasReviewOverrides(entry)`、`ApplyReviewOverrides(root, id)`。最後一項適合提交本次新建立的 Prefab。既有實例的覆寫先交給使用者審核。
 - `UIWidgets.Find()` 回傳元件集（沒有時是 null），`Install()` 補上缺少的起始元件，`Register(name, prefabPath, like)` 登記自訂元件，`SetDefaultFont(fontAssetPath)` 設定預設字型，`ConfirmPrefabPath` 是起始確認框的路徑。
-- `UIValidation.Check(root)` 回傳結構化錯誤與警告。對於自訂子階層，用 Unity Editor 的 Undo 和序列化 API 儲存變更。
+- `UIAuthoring.SetNavigatedByCode(root, id, value)` 標記畫面由程式控制進出，`UIEntry.NavigatedByCode` 讀取這個標記。
+- `UIValidation.Check(root)` 回傳目前工作區的問題，每一筆有穩定的代碼。`UIValidation.CheckScenes(scenePaths, strict)` 依序檢查多個 Scene 並回傳報告。`UIWalk.Start(options)` 開始自動走訪。三者的用法見「驗收」。對於自訂子階層，用 Unity Editor 的 Undo 和序列化 API 儲存變更。
 
 ## 遊戲程式
 
@@ -656,7 +658,7 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 
 ## 審核
 
-1. **Tools → UniGameUI → Blueprint** 會開啟藍圖。選節點可定位對應 Scene 頁面。用右欄編輯動作、切換種類、目標、返回歷史、關閉結果和起始頁，也能從輸出端拖線。在 Play Mode 用實際按鈕試走新增的互動。
+1. **Tools → UniGameUI → Blueprint** 會開啟藍圖。選節點可定位對應 Scene 頁面。用右欄編輯動作、切換種類、目標、返回歷史、關閉結果和起始頁，也能從輸出端拖線；右欄的「由程式控制進出」標記不靠路由進出的畫面。工具列的 **Validate** 檢查目前的工作區，**走訪** 進入 Play Mode 把每條路由走一遍，兩者的說明在「驗收」。在 Play Mode 用實際按鈕試走新增的互動。
 2. **檢視全部 UI** 會把 Scene 切到 2D 並框選所有審核畫面。Popup 可以在工作區右欄疊在指定頁面上預覽，用 **重新排列** 回到網格。
 3. 在 View Inspector 可預覽進場或退場，並設定預設選取元件、是否回應返回鍵；Popup 另外有「關閉後保留並重用」與「點遮罩關閉」。`UIRoot` 的 Inspector 可以關掉「取消鍵當成返回」。C# 可用 `UIAnimationPreview.Start(view, entering)` 與 `UIAnimationPreview.Stop()`。Validate 會核對 Scene 預覽和執行期 Prefab 上的按鈕；改名後遇到 Prefab 綁定錯誤，套用對應預覽的覆寫。若舊 View 缺少子 Canvas，按藍圖工具列的 **補上子 Canvas**，工具會將所需元件補到 Prefab 本體，其他預覽覆寫繼續由使用者審核。
 4. 在互動 Editor 進 Play 前，若有待套用的覆寫，可以選 **套用並進入**、**直接進入** 或 **取消**。直接進入會使用目前已儲存的 Prefab。若多個 Scene 的審核實例同時修改同一 Prefab，先選擇要手動套用的實例。
@@ -664,6 +666,176 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 Player 建置處理器會從複製的 Scene 中移除審核框與 Prefab 審核實例，並保留單 Scene 模式的頁面物件。打包成 AssetBundle 或 Addressables 的 Scene 會保留審核複本，執行期會停用審核層，並依藍圖使用已儲存的 Prefab。
 
 ## 驗收
+
+交付前固定做這三步，不必有人進 Editor 點過一遍，就能確認藍圖沒有接錯、每條路由都走得通：
+
+1. **執行 Validate。** Error 要全部解決。Warning 逐筆確認：是有意的就留著，並在交付說明寫明原因；不是就修掉。
+2. **執行走訪。** 結果要是 `Passed`。
+3. **在交付說明附上兩份報告的摘要：** Validate 的 Error 與 Warning 數量、留下的每一筆 Warning 與原因；走訪通過、失敗、略過各幾步。
+
+兩個工具都能從命令列執行，用結束代碼表示結果，並寫出 JSON 報告；也都有 C# 入口與藍圖視窗的按鈕。專案已經由另一個 Editor 開啟時，命令列拿不到專案鎖，請改用那個 Editor 裡的 C# 入口，或在專案的副本上執行。
+
+### Validate
+
+```text
+Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路徑>
+  -executeMethod UniGameUI.Editor.UIValidation.RunFromCommandLine
+  [-unigameui-scene <Scene 路徑>]... [-unigameui-report <JSON 路徑>] [-unigameui-strict]
+```
+
+- **不要加 `-quit`。** 工具會自己結束 Editor 並設定結束代碼。
+- `-unigameui-scene` 是專案裡的路徑，例如 `Assets/Scenes/Workshop.unity`，可以重複。省略時檢查 Build Settings 裡啟用的所有 Scene。沒有工作區的 Scene 會略過，報告裡它的 `hasWorkspace` 是 false。
+- `-unigameui-strict` 是嚴格模式：Warning 也算沒有通過。
+- 報告預設寫到 `Library/UniGameUI/validate.json`，摘要同時印到記錄檔。
+
+| 結束代碼 | 意思 |
+|---|---|
+| 0 | 沒有 Error。嚴格模式下也沒有 Warning。 |
+| 1 | 有 Error，或嚴格模式下有 Warning。 |
+| 2 | 沒辦法執行：參數錯誤、Scene 不存在，或沒有任何 Scene 有工作區。 |
+
+```text
+{
+  "tool": "UniGameUI.Validate",
+  "version": "0.5.0",
+  "strict": false,
+  "passed": false,
+  "errorCount": 1,
+  "warningCount": 0,
+  "error": "",
+  "scenes": [
+    {
+      "scenePath": "Assets/Scenes/Workshop.unity",
+      "hasWorkspace": true,
+      "issues": [
+        {
+          "severity": "Error", "code": "route.target-missing",
+          "viewId": "workshop", "elementId": "", "message": "…"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `error` 平常是空字串。結束代碼是 2 時，它是沒辦法執行的原因；這時報告仍然會寫出來，參數寫錯也一樣。
+- C# 入口是 `UIValidation.CheckScenes(scenePaths, strict)`，回傳 `UIValidationReport`（`Passed`、`ErrorCount`、`WarningCount`、`Scenes`、`ToJson()`），不會結束 Editor。它依序開啟各個 Scene，結束後回到原本開著的 Scene；目前開著的 Scene 有未儲存的修改時丟出例外，不會自動存檔。只檢查目前的工作區時用 `UIValidation.Check(root)`。
+- 命令列與 `CheckScenes` 是把每個 Scene **單獨開啟**來檢查的。EventSystem 放在另一個共用 Scene 的專案，單獨檢查會回報 `input.event-system-missing`；這種專案請在同時開著這些 Scene 的 Editor 裡用 `UIValidation.Check(root)`。
+- 命令列與 `CheckScenes` 只檢查，不會產生或更新 ID 常數。常數過期時回報 `constants.outdated`。
+- 藍圖視窗的 **Validate** 檢查目前的工作區，並先更新 ID 常數。對話框顯示 Error 與 Warning 各幾筆；每一筆問題連同代碼記到 Console，點擊可以定位到相關的畫面物件。
+
+### 由程式控制的畫面
+
+有些畫面不靠路由進出：確認框是 `ConfirmAsync` 開啟、自己關閉的；載入畫面、過場畫面常常是程式直接顯示的。請在藍圖把這種畫面標記為**由程式控制進出**，否則 Validate 會提醒它走不到、沒有出口。
+
+- 設定方式有三種：計畫的 View 欄位 `"navigation": "Code"`（預設是 `Routes`，和其他 View 選項一樣只在新建畫面或設了 `updateExisting` 時寫入）；藍圖視窗右欄的「由程式控制進出」；`UIAuthoring.SetNavigatedByCode(root, id, true)`。
+- 標記之後：Validate 不檢查它走不走得到（`view.unreachable`）、有沒有出口（`view.no-exit`）、裡面的按鈕有沒有動作（`button.unbound`）；所有頁面都由程式控制時不回報 `start.none`；走訪不要求它能單靠路由開啟。
+- 由程式控制的畫面是程式打開的，所以從它出發的路由通到的畫面也算走得到。
+- 根節點掛了 `UIConfirmPopup` 的畫面自動視為由程式控制，不必設定，藍圖上也不能取消。
+- 這個設定存在工作區的藍圖裡，不在 View Prefab 裡；同一個 Popup Prefab 在不同 Scene 可以有不同的設定。它只影響 Validate 與走訪，不影響執行期的行為。
+- 靠路由進出的畫面不要為了消除 Warning 而標記。真的走不到，就補上路由。
+
+### 走訪
+
+走訪在 Play Mode 把藍圖上的每條路由實際觸發一次，確認走得通。
+
+```text
+Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路徑>
+  -executeMethod UniGameUI.Editor.UIWalk.RunFromCommandLine
+  -unigameui-scene <Scene 路徑> [-unigameui-report <JSON 路徑>]
+  [-unigameui-include-emit] [-unigameui-step-timeout <秒>] [-unigameui-timeout <秒>]
+```
+
+- 一次走訪一個 Scene，`-unigameui-scene` 必填。
+- **不要加 `-quit`。** 工具在走訪結束、回到 Edit Mode 之後自己結束 Editor。
+- `-unigameui-step-timeout` 是每一步的時間上限，預設 10 秒。`-unigameui-timeout` 是整體的時間上限，預設 300 秒；超過就結束，結果是 `NotRun`，批次工作不會卡住。
+- 報告預設寫到 `Library/UniGameUI/walk-<Scene 名稱>.json`，摘要同時印到記錄檔。
+
+| 結束代碼 | 意思 |
+|---|---|
+| 0 | `Passed`。可以有略過的步驟。 |
+| 1 | `Failed`：至少有一步失敗。 |
+| 2 | `NotRun`：Validate 有 Error、Scene 沒有工作區、整體逾時；或參數錯誤、Scene 不存在。 |
+
+**流程**
+
+1. 先對這個 Scene 執行 Validate。有 Error 就不進 Play Mode，結果是 `NotRun`，報告附上 Validate 的結果。
+2. 進入 Play Mode。有待套用到 Prefab 的覆寫時不詢問，直接使用已儲存的 Prefab，報告的 `notes` 會記一筆。
+3. 等起始頁顯示完成，記為第一步（`kind` 是 `Start`）。沒有起始頁時這一步略過。
+4. 依藍圖的順序，每條路由走一步。一步失敗不影響後面的步驟。
+5. 離開 Play Mode，寫出報告。
+
+**每一步**
+
+1. 準備：關掉所有 Popup、清空歷史，讓來源畫面成為最上層。來源是頁面時，先顯示一個有路由通到它的頁面（沒有就用起始頁），再顯示來源頁，`Back` 才有地方回去。來源是 Popup 時，先顯示有 `OpenPopup` 路由指到它的頁面（沒有就用起始頁），再開啟它。
+2. 觸發：`root.TriggerAsync(來源, 動作)`。
+3. 判定：依下表。另外，這一步從準備到穩定的期間，Console 不可以出現 Error 或 Exception；只有 Warning 不影響結果。Unity Editor 自己的錯誤（堆疊全部在 `UnityEditor` 命名空間裡，例如 Editor 建立搜尋索引失敗）和專案的 UI 無關，不算。
+4. 等待穩定：連續幾個影格沒有導航在進行，才開始下一步。頁面腳本在 `OnShown` 之後接著導航（上面 `LaunchPage` 的寫法）不算失敗。
+5. 超過單步的時間上限時，這一步失敗，原因是逾時，進行中的導航會被取消，接著繼續下一步。
+
+| 路由種類 | 通過條件 |
+|---|---|
+| `ShowPage` | 回傳 `Completed`，完成時目前頁是目標頁。 |
+| `OpenPopup` | 回傳 `Completed`，完成時最上層的 Popup 是目標。 |
+| `ClosePopup` | 回傳 `Completed`，來源 Popup 不再開著。 |
+| `Back` | 回傳 `Completed`。來源是頁面時回到準備時的上一頁，來源是 Popup 時 Popup 關閉。工作區只有一個頁面而來源是頁面時，這一步略過。 |
+| `Emit` | 預設略過。加上 `-unigameui-include-emit`（C# 是 `IncludeEmit`）時觸發，回傳 `Completed` 即通過。 |
+
+每一步的結果是 `Passed`、`Failed` 或 `Skipped`，加上原因。準備來源畫面失敗時，來源是由程式控制的畫面記為 `Skipped`（需要由程式提供資料）；其他情況記為 `Failed`，因為靠路由到得了的畫面本來就收不到資料，沒有資料就顯示不出來是真的問題。
+
+**範圍與限制**
+
+- **不傳資料。** 走訪顯示畫面時 `data` 都是 null。靠路由進得去的畫面，`OnShowing` 要能在沒有資料時正常顯示。
+- **不模擬輸入。** 走訪直接觸發路由，不按按鈕，也不操作滑鼠、鍵盤或手把。按鈕有沒有接到路由由 Validate 檢查。
+- **不看外觀。** 不檢查畫面長什麼樣子，不截圖。
+- **會執行頁面腳本。** 生命週期方法和實際遊玩時一樣會被呼叫。`Emit` 預設略過，所以 `OnAction` 預設不會被呼叫。
+- 由程式控制、而且沒有任何路由以它為來源的畫面不會被開啟；它列在報告的 `views` 裡，註明沒有走訪。
+- 走訪用的是目前 Scene 在 Editor 裡的內容，不必先存檔。Domain Reload 開啟或關閉的專案都可以用。
+- 和 Validate 的命令列一樣，走訪只載入這一個 Scene。
+
+**報告**
+
+```text
+{
+  "tool": "UniGameUI.Walk",
+  "version": "0.5.0",
+  "scenePath": "Assets/Scenes/Workshop.unity",
+  "outcome": "Failed",
+  "reason": "",
+  "passedCount": 4,
+  "failedCount": 1,
+  "skippedCount": 1,
+  "steps": [
+    {
+      "source": "", "action": "", "kind": "Start", "target": "workshop",
+      "status": "Passed", "result": "", "reason": "", "seconds": 0.05, "logs": []
+    },
+    {
+      "source": "workshop", "action": "openSettings", "kind": "ShowPage", "target": "settings",
+      "status": "Passed", "result": "Completed", "reason": "", "seconds": 0.42, "logs": []
+    }
+  ],
+  "views": [
+    { "id": "confirm", "kind": "Popup", "visited": false, "reason": "由程式控制，而且沒有以它為來源的路由，不在走訪範圍。" }
+  ],
+  "validation": { "errorCount": 0, "warningCount": 2, "issues": [] },
+  "notes": []
+}
+```
+
+- `outcome` 是 `Passed`（沒有失敗的步驟）、`Failed` 或 `NotRun`。`NotRun` 時 `reason` 是原因，已經走完的步驟仍然列在 `steps`。
+- 三個數量包含起始那一步。
+- `result` 是觸發路由得到的導航結果；沒有觸發時是空字串。
+- `logs` 是這一步期間 Console 的 Error、Exception、Assert 與 Warning，每一筆有 `type` 與 `message`。
+- `views` 列出藍圖上每一個畫面在走訪期間有沒有顯示過，沒有的話 `reason` 是原因。
+- `validation.issues` 的格式和 Validate 報告的 `issues` 相同。
+
+**C# 與藍圖視窗**
+
+- `UIWalk.Start(options)` 對目前作用中的 Scene 走訪，例如 `UIWalk.Start(new UIWalkOptions { IncludeEmit = true, StepTimeoutSeconds = 5f })`。要在 Edit Mode 呼叫；它立刻返回，走訪在之後的 Play Mode 進行。`options` 可以省略，三個選項是 `IncludeEmit`、`StepTimeoutSeconds` 與 `ReportPath`。
+- `UIWalk.IsRunning` 在走訪進行中是 true。結束、回到 Edit Mode 之後，從 `UIWalk.LastReport` 讀取結果（`Outcome`、`PassedCount`、`FailedCount`、`SkippedCount`、`Steps`、`Views`、`ToJson()`），它是這個 Editor 工作階段最後一次走訪的結果。
+- `UIWalk.Finished` 在寫出報告之後觸發。進入 Play Mode 時如果重新載入 Domain（Unity 的預設），之前訂閱的方法會消失，所以從另一段程式等待結果時，請等 `IsRunning` 變回 false 再讀 `LastReport`。
+- 藍圖視窗工具列的 **走訪** 對目前的 Scene 執行。結束後跳出摘要：通過、失敗、略過各幾步，以及失敗步驟的來源、動作與原因。失敗的步驟同時記到 Console。
 
 ### 問題代碼
 

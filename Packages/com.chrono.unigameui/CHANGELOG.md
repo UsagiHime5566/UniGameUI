@@ -1,5 +1,14 @@
 # 變更紀錄
 
+## 0.5.0（2026-11-20）
+
+- `UIIssue` 新增 `Code`、`ViewId`、`ElementId`，`ToString()` 的格式改為 `Error [route.target-missing] 訊息`。每一種問題都有穩定的代碼，列在 `UIIssueCode` 與操作指南的問題代碼表，嚴重度由代碼決定。原本是英文的 Validate 訊息改成繁體中文。
+- 藍圖的畫面可以標記「由程式控制進出」：計畫的 View 欄位 `navigation`（`Routes`、`Code`）、藍圖視窗右欄的勾選、`UIAuthoring.SetNavigatedByCode` 與 `UIEntry.NavigatedByCode`。設定存在工作區，不影響執行期。根節點掛了 `UIConfirmPopup` 的畫面自動視為由程式控制。
+- Validate 新增五項 Warning：`start.none`（沒有起始頁）、`view.unreachable`（走不到的畫面）、`view.no-exit`（沒有出口的畫面）、`button.unbound`（沒有動作的按鈕）、`text.missing-glyph`（字型缺少的字元）。每一項都有不算的情況；缺字的檢查不會改動字型資產。
+- 新增 Validate 的命令列入口 `UIValidation.RunFromCommandLine`（`-unigameui-scene`、`-unigameui-report`、`-unigameui-strict`）、JSON 報告與結束代碼，以及 `UIValidation.CheckScenes` 與 `UIValidationReport`。藍圖視窗的 Validate 改為顯示 Error 與 Warning 的數量，每一筆問題連同代碼記到 Console，點擊可以定位。
+- 新增自動走訪：`UIWalk.Start`、`UIWalkOptions`、`UIWalk.IsRunning`、`UIWalk.LastReport`、`UIWalk.Finished`、`UIWalkReport`，命令列入口 `UIWalk.RunFromCommandLine`（`-unigameui-scene`、`-unigameui-report`、`-unigameui-include-emit`、`-unigameui-step-timeout`、`-unigameui-timeout`），以及藍圖視窗工具列的「走訪」。走訪在 Play Mode 把每條路由觸發一次，寫出 JSON 報告，用結束代碼表示結果。
+- 操作指南新增「驗收」一節：交付前的固定步驟、兩個工具的用法、由程式控制的畫面、走訪的範圍與限制、問題代碼表。
+
 ## 0.4.0（2026-11-20）
 
 - 新增相依 `com.unity.inputsystem`，只支援新的 Input System。新工作區的 EventSystem 直接使用 `InputSystemUIInputModule`；輸入模組不對，或 Active Input Handling 只啟用舊的 Input Manager 時，Validate 回報錯誤。
