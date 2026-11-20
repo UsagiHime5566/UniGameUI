@@ -223,6 +223,63 @@
     background-color: #3d4a54;
 }
 
+/* 滑鼠在線上：游標換成可以點的樣子。 */
+.blueprint-canvas.line-hover {
+    cursor: link;
+}
+
+/* 線的中繼點：小圓點，顏色跟著線。大小由程式固定成畫面上的 10 像素。 */
+.route-waypoint {
+    position: absolute;
+    transform-origin: center;
+    background-color: #6db8ee;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: #1c2024;
+    border-right-color: #1c2024;
+    border-top-color: #1c2024;
+    border-bottom-color: #1c2024;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+    opacity: 0.75;
+    cursor: move-arrow;
+}
+
+.waypoint-popup {
+    background-color: #c39ced;
+}
+
+.waypoint-signal {
+    background-color: #f0b35a;
+    opacity: 0.55;
+}
+
+.route-waypoint:hover,
+.route-waypoint.waypoint-emphasized {
+    opacity: 1;
+    border-left-color: #ffffff;
+    border-right-color: #ffffff;
+    border-top-color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+
+.route-waypoint.waypoint-selected {
+    opacity: 1;
+    background-color: #ffffff;
+    border-left-color: #ffd15c;
+    border-right-color: #ffd15c;
+    border-top-color: #ffd15c;
+    border-bottom-color: #ffd15c;
+}
+
+.blueprint-live .route-waypoint {
+    cursor: arrow;
+}
+
 /* 訊號路由的標籤：比較淡，滑鼠移上去或選取「任何畫面」時變清楚。 */
 .edge-signal {
     border-left-color: #f0b35a;

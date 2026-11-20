@@ -457,6 +457,26 @@ namespace UniGameUI.Editor
             BuildRouteFields(routeFields, kindField.value, values.Target, values.History, values.Result);
             kindField.RegisterValueChangedCallback(evt => RouteKindChanged(evt.newValue));
             AddError(section, routeError, "route-error");
+
+            // 線的中繼點：只是整理線的走向。
+            if (current != null && (UIRoute.TargetsEntry(current.Kind) || current.Waypoints.Count > 0))
+            {
+                var count = current.Waypoints.Count;
+                AddInfo(section, "中繼點", count == 0
+                    ? liveMode ? "沒有。" : "沒有。在線上雙擊可以新增。"
+                    : $"{count} 個", "route-waypoints");
+                if (!liveMode)
+                {
+                    var clear = new Button(() => ClearWaypoints(current))
+                    {
+                        name = "clear-waypoints",
+                        text = "清除中繼點",
+                        tooltip = "拿掉這條線所有的中繼點，線回到直接連到目的地。可以 Undo。",
+                    };
+                    clear.SetEnabled(count > 0);
+                    section.Add(clear);
+                }
+            }
             if (liveMode)
             {
                 // 唯讀：看得到內容，不能修改，也沒有儲存與刪除。

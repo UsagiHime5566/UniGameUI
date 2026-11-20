@@ -197,6 +197,13 @@ namespace UniGameUI.Editor
             dragId = null;
             panning = false;
             hoveredRoute = null;
+            waypointPositions.Clear();
+            waypointDots.Clear();
+            dragWaypointRoute = null;
+            // Undo 會重新建立路由的物件：選取中的中繼點不在工作區裡就不算選取。
+            if (selectedWaypointRoute != null && (!workspace || !workspace.Routes.Contains(selectedWaypointRoute) ||
+                selectedWaypointIndex >= selectedWaypointRoute.Waypoints.Count))
+                selectedWaypointRoute = null;
             canvas = null;
             content = null;
             sidebar = null;
@@ -392,6 +399,8 @@ namespace UniGameUI.Editor
                 edgeLabels.Add((route, label));
                 content.Add(label);
             }
+            CreateWaypointDots();
+            canvas.AddManipulator(new ContextualMenuManipulator(PopulateContextMenu));
 
             canvas.RegisterCallback<WheelEvent>(evt =>
             {
@@ -404,9 +413,9 @@ namespace UniGameUI.Editor
                 // 按住中鍵拖曳平移；沒有中鍵的裝置用 Alt 加左鍵。
                 if (evt.button != 2 && !(evt.button == 0 && evt.altKey))
                 {
-                    // 節點與線上的標籤會自己處理左鍵；事件到得了這裡，表示按在空白的地方。
+                    // 節點、線上的標籤、中繼點會自己處理左鍵；事件到得了這裡，表示按在線上或空白的地方。
                     if (evt.button == 0)
-                        ClickCanvas();
+                        PressLine(WindowPoint(evt.position), evt.clickCount);
                     return;
                 }
                 panning = true;
@@ -418,8 +427,8 @@ namespace UniGameUI.Editor
             {
                 if (!panning || !canvas.HasPointerCapture(evt.pointerId))
                 {
-                    // 沒有在平移或拖曳時：滑鼠靠近訊號路由的線，那條線變清楚。
-                    if (evt.pressedButtons == 0 && dragId == null && wireSource == null)
+                    // 沒有在平移或拖曳時：滑鼠靠近線，那條線變清楚。
+                    if (evt.pressedButtons == 0 && dragId == null && wireSource == null && dragWaypointRoute == null)
                         SetHoveredRoute(RouteNear(WindowPoint(evt.position)));
                     return;
                 }
@@ -439,6 +448,13 @@ namespace UniGameUI.Editor
             canvas.RegisterCallback<PointerLeaveEvent>(_ => SetHoveredRoute(null));
             canvas.RegisterCallback<KeyDownEvent>(evt =>
             {
+                // 選取了中繼點時按 Delete 刪除它。
+                if ((evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace) && selectedWaypointRoute != null)
+                {
+                    DeleteSelectedWaypoint();
+                    evt.StopPropagation();
+                    return;
+                }
                 if (evt.keyCode != KeyCode.F || evt.actionKey || evt.altKey)
                     return;
                 ShowAllNodes();
@@ -483,7 +499,7 @@ namespace UniGameUI.Editor
             return new Rect(positions[id], new Vector2(NodeWidth, NodeHeight));
         }
 
-        // 所有節點（包含「任何畫面」）在畫布上佔的範圍。
+        // 所有節點（包含「任何畫面」）與線的中繼點在畫布上佔的範圍。
         private Rect NodeBounds()
         {
             var min = new Vector2(float.MaxValue, float.MaxValue);
@@ -492,6 +508,14 @@ namespace UniGameUI.Editor
             {
                 min = Vector2.Min(min, position);
                 max = Vector2.Max(max, position + new Vector2(NodeWidth, NodeHeight));
+            }
+            foreach (var points in waypointPositions.Values)
+            {
+                foreach (var point in points)
+                {
+                    min = Vector2.Min(min, point);
+                    max = Vector2.Max(max, point);
+                }
             }
             return positions.Count == 0 ? new Rect(0, 0, NodeWidth, NodeHeight) : Rect.MinMaxRect(min.x, min.y, max.x, max.y);
         }
@@ -570,6 +594,7 @@ namespace UniGameUI.Editor
                 return;
             content.style.translate = new Translate(view.pan.x, view.pan.y);
             content.style.scale = new Scale(new Vector2(view.Zoom, view.Zoom));
+            PlaceWaypointDots();
             grid.MarkDirtyRepaint();
             edges.MarkDirtyRepaint();
             frame.MarkDirtyRepaint();
@@ -777,7 +802,9 @@ namespace UniGameUI.Editor
         /// <summary>按著移動：拖線時移動線的終點，否則拖曳節點。</summary>
         internal void MovePointer(Vector2 windowPoint)
         {
-            if (wireSource != null)
+            if (dragWaypointRoute != null)
+                DragWaypointTo(windowPoint);
+            else if (wireSource != null)
                 MoveWire(windowPoint);
             else
                 DragNodeTo(windowPoint);
@@ -786,7 +813,9 @@ namespace UniGameUI.Editor
         /// <summary>放開：拖線時在這一點放下，否則結束拖曳。</summary>
         internal void ReleasePointer(Vector2 windowPoint)
         {
-            if (wireSource != null)
+            if (dragWaypointRoute != null)
+                EndWaypointDrag();
+            else if (wireSource != null)
                 DropWire(windowPoint);
             else
                 EndNodeDrag();
@@ -809,8 +838,12 @@ namespace UniGameUI.Editor
         /// <summary>點畫布空白的地方：取消選取，右欄回到沒有選取時的內容。</summary>
         internal void ClickCanvas()
         {
+            selectedWaypointRoute = null;
             if (string.IsNullOrEmpty(selectedId) && string.IsNullOrEmpty(selectedAction))
+            {
+                ApplyEdgeStates(EditorApplication.timeSinceStartup);
                 return;
+            }
             selectedId = null;
             selectedAction = null;
             RefreshSelection();
@@ -956,6 +989,7 @@ namespace UniGameUI.Editor
 
         private void SelectNode(string id)
         {
+            selectedWaypointRoute = null;
             if (selectedId == id)
                 return;
             selectedId = id;
@@ -1067,39 +1101,16 @@ namespace UniGameUI.Editor
             var now = EditorApplication.timeSinceStartup;
             // 先畫訊號路由，畫面之間的流程畫在上面。
             foreach (var route in EdgesToDraw(now).OrderBy(route => route.IsSignal ? 0 : 1))
-            {
-                var (from, to) = EdgeEnds(route);
-                PaintEdge(context.painter2D, from, to, EdgeStyle(route, now));
-            }
+                PaintEdge(context.painter2D, RoutePath(route), EdgeStyle(route, now));
             if (wireTip.HasValue && wireSource != null && positions.TryGetValue(wireSource, out var start))
             {
-                PaintEdge(context.painter2D, view.CanvasToWindow(start + EdgeOutlet),
-                    view.CanvasToWindow(wireTip.Value), new UIBlueprintEdgeStyle(Color.white, 2f, false));
+                PaintEdge(context.painter2D, UIBlueprintCurves.Path(start + EdgeOutlet, wireTip.Value, null),
+                    new UIBlueprintEdgeStyle(Color.white, 2f, false));
             }
         }
 
         private static readonly Vector2 EdgeOutlet = new Vector2(NodeWidth, NodeHeight * 0.5f);
         private static readonly Vector2 EdgeInlet = new Vector2(0, NodeHeight * 0.5f);
-
-        // 線的兩端（視窗座標）：來源節點的右邊到目標節點的左邊。
-        private (Vector2 From, Vector2 To) EdgeEnds(UIRoute route)
-        {
-            return (view.CanvasToWindow(positions[route.Source] + EdgeOutlet),
-                view.CanvasToWindow(positions[route.Target] + EdgeInlet));
-        }
-
-        // 線的貝茲曲線控制點。畫線與判斷滑鼠有沒有靠近線都用這一組。
-        private (Vector2 C1, Vector2 C2) EdgeControls(Vector2 from, Vector2 to)
-        {
-            var curve = Mathf.Max(60f * view.Zoom, Mathf.Abs(from.x - to.x) * 0.45f);
-            return (from + Vector2.right * curve, to - Vector2.right * curve);
-        }
-
-        private static Vector2 Bezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
-        {
-            var u = 1f - t;
-            return u * u * u * p0 + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * p3;
-        }
 
         /// <summary>
         /// 要畫線的路由：切頁與開啟 Popup。訊號路由在「顯示訊號路由」關掉時不畫，剛走過、還亮著的例外。
@@ -1131,8 +1142,14 @@ namespace UniGameUI.Editor
             }
             else
             {
+                // 滑鼠移到線上或選取這條路由時，線變亮、變粗：讓人知道可以在這裡操作。
                 color = route.Kind == UIRouteKind.OpenPopup ? PopupColor : PageColor;
                 width = 2f;
+                if (IsEmphasized(route) && selectedId != UIRoot.AnySource)
+                {
+                    color = Color.Lerp(color, Color.white, 0.35f);
+                    width = 3f;
+                }
             }
             var flash = RouteFlash(route, now);
             if (flash > 0f)
@@ -1151,38 +1168,25 @@ namespace UniGameUI.Editor
                 (route.Source == selectedId && route.Action == selectedAction);
         }
 
-        /// <summary>視窗座標的這一點附近（6 像素內）有線時，回傳最近的那一條路由。</summary>
+        /// <summary>
+        /// 視窗座標的這一點附近（畫面上 <see cref="LineReach"/> 像素內）有線時，回傳最近的那一條路由。
+        /// 線用畫布座標算，所以距離要換算：縮放 50% 時畫面上的 6 像素是畫布上的 12。
+        /// </summary>
         internal UIRoute RouteNear(Vector2 windowPoint)
         {
-            const float reach = 6f;
+            var point = view.WindowToCanvas(windowPoint);
             UIRoute nearest = null;
-            var best = reach;
+            var best = LineReach / view.Zoom;
             foreach (var route in EdgesToDraw(EditorApplication.timeSinceStartup))
             {
-                var (from, to) = EdgeEnds(route);
-                var (c1, c2) = EdgeControls(from, to);
-                var previous = from;
-                for (var step = 1; step <= 32; step++)
+                var distance = UIBlueprintCurves.DistanceTo(RoutePath(route), point, out _);
+                if (distance < best)
                 {
-                    var next = Bezier(from, c1, c2, to, step / 32f);
-                    var distance = DistanceToSegment(windowPoint, previous, next);
-                    if (distance < best)
-                    {
-                        best = distance;
-                        nearest = route;
-                    }
-                    previous = next;
+                    best = distance;
+                    nearest = route;
                 }
             }
             return nearest;
-        }
-
-        private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
-        {
-            var segment = b - a;
-            var length = segment.sqrMagnitude;
-            var t = length <= 0f ? 0f : Mathf.Clamp01(Vector2.Dot(point - a, segment) / length);
-            return Vector2.Distance(point, a + segment * t);
         }
 
         /// <summary>滑鼠移到線或標籤上：那條線變清楚。傳入 null 表示滑鼠離開了。</summary>
@@ -1191,6 +1195,8 @@ namespace UniGameUI.Editor
             if (hoveredRoute == route)
                 return;
             hoveredRoute = route;
+            // 游標也換成可以點的樣子。
+            canvas?.EnableInClassList("line-hover", route != null);
             ApplyEdgeStates(EditorApplication.timeSinceStartup);
         }
 
@@ -1218,6 +1224,7 @@ namespace UniGameUI.Editor
                 label.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
                 label.EnableInClassList("edge-emphasized", route.IsSignal && IsEmphasized(route));
             }
+            ApplyWaypointStates(now, show);
             var hidden = content?.Q<Label>("any-source-hidden");
             if (hidden != null)
             {
@@ -1228,9 +1235,13 @@ namespace UniGameUI.Editor
             edges?.MarkDirtyRepaint();
         }
 
-        private void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, UIBlueprintEdgeStyle style)
+        // 畫一條線。線是畫布座標，畫在不跟著縮放的那一層，所以每個點都換成視窗座標（等比例換算，曲線的形狀不變）。
+        private void PaintEdge(Painter2D painter, IReadOnlyList<UIBlueprintSegment> canvasPath, UIBlueprintEdgeStyle style)
         {
-            var (c1, c2) = EdgeControls(from, to);
+            var path = canvasPath.Select(segment => new UIBlueprintSegment(view.CanvasToWindow(segment.Start),
+                view.CanvasToWindow(segment.Control1), view.CanvasToWindow(segment.Control2),
+                view.CanvasToWindow(segment.End))).ToList();
+            var to = path[path.Count - 1].End;
             var arrow = 8f * Mathf.Clamp(view.Zoom, 0.6f, 1.25f);
             painter.strokeColor = style.Color;
             painter.lineWidth = style.Width;
@@ -1238,36 +1249,33 @@ namespace UniGameUI.Editor
             if (style.Dashed)
             {
                 // Painter2D 沒有虛線：把曲線切成約 2.5 像素的小段，依走過的長度畫一段、跳一段。
-                var approximate = 0f;
-                var sample = from;
-                for (var step = 1; step <= 16; step++)
-                {
-                    var point = Bezier(from, c1, c2, to, step / 16f);
-                    approximate += Vector2.Distance(sample, point);
-                    sample = point;
-                }
-                var steps = Mathf.Clamp(Mathf.CeilToInt(approximate / 2.5f), 16, 512);
                 const float dash = 7f;
                 const float gap = 5f;
                 var travelled = 0f;
-                var previous = from;
-                for (var step = 1; step <= steps; step++)
+                foreach (var segment in path)
                 {
-                    var next = Bezier(from, c1, c2, to, step / (float)steps);
-                    var length = Vector2.Distance(previous, next);
-                    if (travelled % (dash + gap) < dash)
+                    var approximate = Vector2.Distance(segment.Start, segment.Control1) +
+                        Vector2.Distance(segment.Control1, segment.Control2) + Vector2.Distance(segment.Control2, segment.End);
+                    var steps = Mathf.Clamp(Mathf.CeilToInt(approximate / 2.5f), 16, 512);
+                    var previous = segment.Start;
+                    for (var step = 1; step <= steps; step++)
                     {
-                        painter.MoveTo(previous);
-                        painter.LineTo(next);
+                        var next = segment.Evaluate(step / (float)steps);
+                        if (travelled % (dash + gap) < dash)
+                        {
+                            painter.MoveTo(previous);
+                            painter.LineTo(next);
+                        }
+                        travelled += Vector2.Distance(previous, next);
+                        previous = next;
                     }
-                    travelled += length;
-                    previous = next;
                 }
             }
             else
             {
-                painter.MoveTo(from);
-                painter.BezierCurveTo(c1, c2, to);
+                painter.MoveTo(path[0].Start);
+                foreach (var segment in path)
+                    painter.BezierCurveTo(segment.Control1, segment.Control2, segment.End);
             }
             painter.Stroke();
             painter.BeginPath();
@@ -1288,12 +1296,13 @@ namespace UniGameUI.Editor
             }
             foreach (var (route, label) in edgeLabels)
             {
-                if (!positions.TryGetValue(route.Source, out var from) || string.IsNullOrEmpty(route.Target) ||
-                    !positions.TryGetValue(route.Target, out var to))
+                if (!HasLine(route))
                     continue;
-                label.style.left = (from.x + NodeWidth + to.x) / 2;
-                label.style.top = (from.y + to.y + NodeHeight) / 2 - 16;
+                var anchor = LabelAnchor(route);
+                label.style.left = anchor.x;
+                label.style.top = anchor.y - 16;
             }
+            PlaceWaypointDots();
             ApplyEdgeStates(EditorApplication.timeSinceStartup);
 
             // 範圍框跟著節點：節點移動、新增、刪除之後都重新計算。

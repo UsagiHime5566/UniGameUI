@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
@@ -49,6 +50,11 @@ namespace UniGameUI
         [SerializeField] internal string target;
         [SerializeField] internal UIHistoryMode history;
         [SerializeField] internal string result;
+        // 藍圖上這條線依序經過的中繼點（畫布座標）。只影響藍圖怎麼畫，執行期、Validate、走訪都不使用。
+        [SerializeField, HideInInspector] internal List<Vector2> waypoints = new List<Vector2>();
+
+        // 舊的 Scene 沒有這個欄位時就是沒有中繼點。
+        internal List<Vector2> Waypoints => waypoints ??= new List<Vector2>();
 
         /// <summary>來源畫面的 ID。<see cref="UIRoot.AnySource"/> 表示這是「任何畫面」的訊號路由。</summary>
         public string Source => source;

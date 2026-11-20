@@ -259,6 +259,22 @@ namespace UniGameUI.Editor
             return entry;
         }
 
+        /// <summary>
+        /// 設定藍圖上一條線的中繼點（畫布座標，依線經過的順序）。只是版面：不是公開 API，計畫也不管。
+        /// 和移動節點一樣可以 Undo，並把 Scene 標成未儲存。
+        /// </summary>
+        internal static void SetWaypoints(UIRoot root, UIRoute route, IEnumerable<Vector2> points, string undoName)
+        {
+            CheckRoot(root);
+            if (route == null || !root.routes.Contains(route))
+                throw new ArgumentException("找不到這條路由。");
+            var next = points.ToList();
+            Undo.RecordObject(root, undoName);
+            route.Waypoints.Clear();
+            route.Waypoints.AddRange(next);
+            MarkChanged(root);
+        }
+
         public static void Disconnect(UIRoot root, string source, string action)
         {
             CheckRoot(root);
