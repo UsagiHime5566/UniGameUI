@@ -13,7 +13,7 @@ namespace UniGameUI.Editor
     public sealed partial class UIBlueprintWindow : EditorWindow
     {
         internal const float NodeWidth = 210;
-        internal const float NodeHeight = 94;
+        internal const float NodeHeight = 104;
         // 「顯示全部」時，範圍框和畫布邊緣之間留的距離（視窗的像素）。
         private const float FramePadding = 24;
         // 範圍框和最外圍的節點之間留的距離（畫布的單位）。
@@ -62,6 +62,7 @@ namespace UniGameUI.Editor
         private bool dragMoved;
         private bool panning;
         private Vector2 panPointer;
+        private bool releasing;
 
         /// <summary>畫布區域還沒有排版時（例如測試裡），計算「顯示全部」用的大小。</summary>
         internal Vector2 FallbackViewSize = new Vector2(960, 600);
@@ -286,8 +287,21 @@ namespace UniGameUI.Editor
             CreateAnySourceCard();
             foreach (var route in workspace.Routes.Where(route => UIRoute.TargetsEntry(route.Kind)))
             {
-                var label = new Label(route.Action) { pickingMode = PickingMode.Ignore };
+                var label = new Label(route.Action)
+                {
+                    tooltip = $"{DisplayView(route.Source)} → {DisplayView(route.Target)}（{KindLabel(route.Kind)}）。" +
+                        "點一下在右欄選取這條路由。",
+                };
                 label.AddToClassList("edge-label");
+                label.AddToClassList(route.Kind == UIRouteKind.OpenPopup ? "edge-popup" : "edge-page");
+                label.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    if (evt.button != 0 || evt.altKey)
+                        return;
+                    canvas.Focus();
+                    PressEdgeLabel(label);
+                    evt.StopPropagation();
+                });
                 edgeLabels.Add((route, label));
                 content.Add(label);
             }
@@ -302,7 +316,12 @@ namespace UniGameUI.Editor
                 canvas.Focus();
                 // 按住中鍵拖曳平移；沒有中鍵的裝置用 Alt 加左鍵。
                 if (evt.button != 2 && !(evt.button == 0 && evt.altKey))
+                {
+                    // 節點與線上的標籤會自己處理左鍵；事件到得了這裡，表示按在空白的地方。
+                    if (evt.button == 0)
+                        ClickCanvas();
                     return;
+                }
                 panning = true;
                 panPointer = WindowPoint(evt.position);
                 canvas.CapturePointer(evt.pointerId);
@@ -481,106 +500,236 @@ namespace UniGameUI.Editor
 
         private void CreateCard(UIEntry entry)
         {
-            var card = new VisualElement();
-            card.AddToClassList("blueprint-node");
-            if (entry.Kind == UIEntryKind.Popup)
-                card.AddToClassList("popup-node");
-            if (entry.Id == selectedId)
-                card.AddToClassList("selected-node");
-            card.style.width = NodeWidth;
-            card.style.height = NodeHeight;
-            cards.Add(entry.Id, card);
-            content.Add(card);
+            var isPopup = entry.Kind == UIEntryKind.Popup;
+            var card = NewCard("node-" + entry.Id, entry.Id, isPopup ? "popup-node" : "page-node");
 
-            var header = new Label(entry.Title);
-            header.AddToClassList("node-title");
-            card.Add(header);
-            RegisterNodeDrag(header, entry.Id);
+            // 種類、起始頁、由程式控制各用一個徽章，不擠在同一行小字裡。
+            var badges = AddBadgeRow(card);
+            AddBadge(badges, EntryKindLabel(entry.Kind), isPopup ? "badge-popup" : "badge-page");
+            if (entry.Id == workspace.StartPageId)
+                AddBadge(badges, "起始頁", "badge-start").tooltip = "載入 Scene 之後第一個顯示的頁面。";
+            if (UIAuthoring.IsNavigatedByCode(entry))
+                AddBadge(badges, "程式控制", "badge-code").tooltip = "這個畫面由程式控制進出，不靠路由。";
 
-            var details = new Label($"{(entry.Kind == UIEntryKind.Popup ? "Popup" : "頁面")}  ·  {entry.Id}" +
-                (entry.Id == workspace.StartPageId ? "  ·  起始" : "") +
-                (UIAuthoring.IsNavigatedByCode(entry) ? "  ·  程式控制" : ""));
-            details.AddToClassList("node-detail");
-            card.Add(details);
-
-            var localActions = workspace.Routes.Where(route => route.Source == entry.Id && !UIRoute.TargetsEntry(route.Kind))
-                .Select(route => $"{route.Action} ({KindLabel(route.Kind)})");
-            var footer = new Label(string.Join("  ·  ", localActions));
-            footer.AddToClassList("node-detail");
-            footer.tooltip = footer.text;
-            card.Add(footer);
-
-            var port = new Label { tooltip = "拖曳到另一個節點以建立或重接路由" };
-            port.AddToClassList("node-port");
-            card.Add(port);
-            RegisterWireDrag(port, entry.Id);
+            AddNodeText(card, entry.Title, "node-title");
+            AddNodeText(card, entry.Id, "node-id").tooltip = "畫面 ID";
+            AddLocalActions(card, workspace.Routes.Where(route => route.Source == entry.Id));
+            AddPort(card, "從這裡拖曳到另一個節點，建立或重接路由。");
         }
 
         // 「任何畫面」節點：只有輸出的連接點，沒有線可以連進來。
         private void CreateAnySourceCard()
         {
-            var card = new VisualElement { name = "any-source-node" };
+            var card = NewCard("any-source-node", UIRoot.AnySource, "signal-node");
+            AddBadge(AddBadgeRow(card), "訊號", "badge-signal");
+            AddNodeText(card, AnySourceTitle, "node-title");
+            AddNodeText(card, "SignalAsync(動作, 資料)", "node-id").tooltip =
+                "從這裡拉出去的是訊號路由：不論目前顯示哪個畫面都成立，由遊戲程式用 SignalAsync 送出。";
+            AddLocalActions(card, workspace.Routes.Where(route => route.IsSignal));
+            AddPort(card, "從這裡拖曳到畫面的節點，建立或重接訊號路由。");
+        }
+
+        private VisualElement NewCard(string name, string id, string kindClass)
+        {
+            var card = new VisualElement { name = name };
             card.AddToClassList("blueprint-node");
-            card.AddToClassList("signal-node");
-            if (selectedId == UIRoot.AnySource)
+            card.AddToClassList(kindClass);
+            if (id == selectedId)
                 card.AddToClassList("selected-node");
             card.style.width = NodeWidth;
             card.style.height = NodeHeight;
-            cards.Add(UIRoot.AnySource, card);
+            cards.Add(id, card);
             content.Add(card);
-
-            var header = new Label(AnySourceTitle);
-            header.AddToClassList("node-title");
-            card.Add(header);
-            RegisterNodeDrag(header, UIRoot.AnySource);
-
-            var details = new Label("訊號  ·  SignalAsync")
-            {
-                tooltip = "從這裡拉出去的是訊號路由：不論目前顯示哪個畫面都成立，由遊戲程式用 SignalAsync 送出。",
-            };
-            details.AddToClassList("node-detail");
-            card.Add(details);
-
-            var localActions = workspace.Routes
-                .Where(route => route.IsSignal && !UIRoute.TargetsEntry(route.Kind))
-                .Select(route => $"{route.Action} ({KindLabel(route.Kind)})");
-            var footer = new Label(string.Join("  ·  ", localActions));
-            footer.AddToClassList("node-detail");
-            footer.tooltip = footer.text;
-            card.Add(footer);
-
-            var port = new Label { tooltip = "拖曳到畫面節點以建立或重接訊號路由" };
-            port.AddToClassList("node-port");
-            card.Add(port);
-            RegisterWireDrag(port, UIRoot.AnySource);
+            RegisterNodePointer(card, id);
+            return card;
         }
 
-        private void RegisterNodeDrag(VisualElement handle, string id)
+        private static VisualElement AddBadgeRow(VisualElement card)
         {
-            handle.RegisterCallback<PointerDownEvent>(evt =>
+            var row = new VisualElement();
+            row.AddToClassList("node-badges");
+            card.Add(row);
+            return row;
+        }
+
+        private static Label AddBadge(VisualElement parent, string text, string kindClass)
+        {
+            var badge = new Label(text);
+            badge.AddToClassList("badge");
+            badge.AddToClassList(kindClass);
+            parent.Add(badge);
+            return badge;
+        }
+
+        private static Label AddNodeText(VisualElement card, string text, string className)
+        {
+            var label = new Label(text);
+            label.AddToClassList(className);
+            card.Add(label);
+            return label;
+        }
+
+        // 不會拉線到別的畫面的動作（返回、關閉 Popup、送出事件）列在節點的最下面。
+        private static void AddLocalActions(VisualElement card, IEnumerable<UIRoute> routes)
+        {
+            var actions = routes.Where(route => !UIRoute.TargetsEntry(route.Kind))
+                .Select(route => $"{route.Action}（{KindLabel(route.Kind)}）");
+            var label = AddNodeText(card, string.Join("  ·  ", actions), "node-actions");
+            label.tooltip = label.text;
+        }
+
+        private static void AddPort(VisualElement card, string tooltip)
+        {
+            var port = new VisualElement { tooltip = tooltip };
+            port.AddToClassList("node-port");
+            port.style.top = NodeHeight * 0.5f - 6f;
+            card.Add(port);
+        }
+
+        internal static string EntryKindLabel(UIEntryKind kind)
+        {
+            return kind == UIEntryKind.Popup ? "Popup" : "頁面";
+        }
+
+        // 整個節點都可以操作：按在連接點上是拖線，其餘的位置是選取與拖曳。
+        private void RegisterNodePointer(VisualElement card, string id)
+        {
+            card.RegisterCallback<PointerDownEvent>(evt =>
             {
                 // 中鍵與 Alt 加左鍵留給畫布平移。
                 if (evt.button != 0 || evt.altKey)
                     return;
-                SelectNode(id);
-                BeginNodeDrag(id, WindowPoint(evt.position));
-                handle.CapturePointer(evt.pointerId);
+                canvas.Focus();
+                PressNode(id, evt.target as VisualElement, WindowPoint(evt.position), evt.clickCount);
+                card.CapturePointer(evt.pointerId);
                 evt.StopPropagation();
             });
-            handle.RegisterCallback<PointerMoveEvent>(evt =>
+            card.RegisterCallback<PointerMoveEvent>(evt =>
             {
-                if (handle.HasPointerCapture(evt.pointerId))
-                    DragNodeTo(WindowPoint(evt.position));
+                if (card.HasPointerCapture(evt.pointerId))
+                    MovePointer(WindowPoint(evt.position));
             });
-            handle.RegisterCallback<PointerUpEvent>(evt =>
+            card.RegisterCallback<PointerUpEvent>(evt =>
             {
-                if (!handle.HasPointerCapture(evt.pointerId))
+                if (!card.HasPointerCapture(evt.pointerId))
                     return;
-                handle.ReleasePointer(evt.pointerId);
-                if (!EndNodeDrag() && id != UIRoot.AnySource)
-                    UIAuthoring.FocusReview(workspace, id);
+                var point = WindowPoint(evt.position);
+                // 放掉滑鼠的擷取時會收到「擷取結束」的通知，這裡是正常放開，不要當成被打斷。
+                releasing = true;
+                card.ReleasePointer(evt.pointerId);
+                releasing = false;
+                ReleasePointer(point);
                 evt.StopPropagation();
             });
+            card.RegisterCallback<PointerCaptureOutEvent>(_ => CancelPointer());
+        }
+
+        /// <summary>要定位到 Scene 裡的畫面時呼叫。沒有指定時用 <see cref="UIAuthoring.FocusReview"/>。</summary>
+        internal Action<string> FocusRequested;
+
+        /// <summary>目前選取的節點 ID。沒有選取時是 null 或空字串。</summary>
+        internal string SelectedId => selectedId;
+
+        /// <summary>右欄選中的路由的動作名稱。沒有選中時是 null。</summary>
+        internal string SelectedAction => SelectedRouteAction();
+
+        /// <summary>
+        /// 在節點上按下滑鼠左鍵。<paramref name="target"/> 是按到的元素：連接點是開始拖線；
+        /// 其餘的位置（標題、說明文字、空白處）都是選取這個節點並準備拖曳。單擊只選取，雙擊才定位到 Scene。
+        /// </summary>
+        internal void PressNode(string id, VisualElement target, Vector2 windowPoint, int clickCount = 1)
+        {
+            if (target != null && target.ClassListContains("node-port"))
+            {
+                BeginWire(id, windowPoint);
+                return;
+            }
+
+            SelectNode(id);
+            if (clickCount >= 2)
+            {
+                dragId = null;
+                // 「任何畫面」不是畫面，Scene 裡沒有東西可以定位。
+                if (id == UIRoot.AnySource)
+                    return;
+                if (FocusRequested != null)
+                    FocusRequested(id);
+                else
+                    UIAuthoring.FocusReview(workspace, id);
+                return;
+            }
+            BeginNodeDrag(id, windowPoint);
+        }
+
+        /// <summary>按著移動：拖線時移動線的終點，否則拖曳節點。</summary>
+        internal void MovePointer(Vector2 windowPoint)
+        {
+            if (wireSource != null)
+                MoveWire(windowPoint);
+            else
+                DragNodeTo(windowPoint);
+        }
+
+        /// <summary>放開：拖線時在這一點放下，否則結束拖曳。</summary>
+        internal void ReleasePointer(Vector2 windowPoint)
+        {
+            if (wireSource != null)
+                DropWire(windowPoint);
+            else
+                EndNodeDrag();
+        }
+
+        // 操作途中被打斷（例如視窗失去焦點）：拖線取消，拖到一半的節點回到原位。
+        private void CancelPointer()
+        {
+            if (releasing)
+                return;
+            if (dragId != null && dragMoved && positions.ContainsKey(dragId))
+            {
+                positions[dragId] = dragNodeStart;
+                UpdateStage();
+            }
+            dragId = null;
+            CancelWire();
+        }
+
+        /// <summary>點畫布空白的地方：取消選取，右欄回到沒有選取時的內容。</summary>
+        internal void ClickCanvas()
+        {
+            if (string.IsNullOrEmpty(selectedId) && string.IsNullOrEmpty(selectedAction))
+                return;
+            selectedId = null;
+            selectedAction = null;
+            RefreshSelection();
+        }
+
+        /// <summary>選取一條路由：選取它的來源節點，並在右欄選中這條路由。</summary>
+        internal void SelectRoute(string source, string action)
+        {
+            selectedId = source;
+            selectedAction = action;
+            RefreshSelection();
+        }
+
+        /// <summary>線上的動作標籤。這條路由沒有畫線（不是切頁或開啟 Popup）時是 null。</summary>
+        internal Label EdgeLabel(string source, string action)
+        {
+            return edgeLabels.FirstOrDefault(pair => pair.Route.Source == source && pair.Route.Action == action).Label;
+        }
+
+        /// <summary>點線上的動作標籤：選取那條路由。</summary>
+        internal void PressEdgeLabel(Label label)
+        {
+            var route = edgeLabels.FirstOrDefault(pair => pair.Label == label).Route;
+            if (route != null)
+                SelectRoute(route.Source, route.Action);
+        }
+
+        private void RefreshSelection()
+        {
+            foreach (var pair in cards)
+                pair.Value.EnableInClassList("selected-node", pair.Key == selectedId);
+            DrawSidebar();
         }
 
         /// <summary>開始拖曳節點。<paramref name="windowPoint"/> 是按下的位置（視窗座標）。</summary>
@@ -616,32 +765,6 @@ namespace UniGameUI.Editor
                 return false;
             UIAuthoring.PositionNode(workspace, id, positions[id]);
             return true;
-        }
-
-        private void RegisterWireDrag(VisualElement port, string source)
-        {
-            port.RegisterCallback<PointerDownEvent>(evt =>
-            {
-                if (evt.button != 0 || evt.altKey)
-                    return;
-                BeginWire(source, WindowPoint(evt.position));
-                port.CapturePointer(evt.pointerId);
-                evt.StopPropagation();
-            });
-            port.RegisterCallback<PointerMoveEvent>(evt =>
-            {
-                if (port.HasPointerCapture(evt.pointerId))
-                    MoveWire(WindowPoint(evt.position));
-            });
-            port.RegisterCallback<PointerUpEvent>(evt =>
-            {
-                if (!port.HasPointerCapture(evt.pointerId))
-                    return;
-                port.ReleasePointer(evt.pointerId);
-                DropWire(WindowPoint(evt.position));
-                evt.StopPropagation();
-            });
-            port.RegisterCallback<PointerCaptureOutEvent>(_ => CancelWire());
         }
 
         /// <summary>從節點的連接點開始拖線。</summary>
@@ -716,9 +839,7 @@ namespace UniGameUI.Editor
                 return;
             selectedId = id;
             selectedAction = null;
-            foreach (var pair in cards)
-                pair.Value.EnableInClassList("selected-node", pair.Key == id);
-            DrawSidebar();
+            RefreshSelection();
         }
 
         private void DrawSidebar()

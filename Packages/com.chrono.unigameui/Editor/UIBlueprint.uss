@@ -46,40 +46,108 @@
     white-space: nowrap;
 }
 
+/* 節點：整個節點都可以點選與拖曳。左邊的色條與徽章的顏色表示種類。 */
 .blueprint-node {
     position: absolute;
     background-color: #343e46;
     border-left-width: 4px;
     border-left-color: #6db8ee;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-top-color: rgba(0, 0, 0, 0);
+    border-right-color: rgba(0, 0, 0, 0);
+    border-bottom-color: rgba(0, 0, 0, 0);
     border-top-left-radius: 5px;
     border-top-right-radius: 5px;
     border-bottom-left-radius: 5px;
     border-bottom-right-radius: 5px;
-    padding-bottom: 8px;
+    cursor: move-arrow;
+}
+
+.blueprint-node:hover {
+    background-color: #3d4a54;
+    border-top-color: rgba(255, 255, 255, 0.35);
+    border-right-color: rgba(255, 255, 255, 0.35);
+    border-bottom-color: rgba(255, 255, 255, 0.35);
 }
 
 .popup-node {
     border-left-color: #c39ced;
 }
 
-.selected-node {
+.signal-node {
+    border-left-color: #f0b35a;
+}
+
+.selected-node,
+.selected-node:hover {
     background-color: #465662;
+    border-top-color: #e8f1f8;
+    border-right-color: #e8f1f8;
+    border-bottom-color: #e8f1f8;
+}
+
+.node-badges {
+    flex-direction: row;
+    padding-left: 8px;
+    padding-top: 7px;
+}
+
+/* 徽章：節點、右欄與線上的標籤用同一組顏色。 */
+.badge {
+    font-size: 10px;
+    -unity-font-style: bold;
+    color: #11181d;
+    background-color: #9aa7b1;
+    margin-left: 0;
+    margin-right: 4px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.badge-page {
+    background-color: #6db8ee;
+}
+
+.badge-popup {
+    background-color: #c39ced;
+}
+
+.badge-signal {
+    background-color: #f0b35a;
+}
+
+.badge-start {
+    background-color: #86d48f;
+}
+
+.badge-code {
+    background-color: #aab6bf;
 }
 
 .node-title {
     font-size: 14px;
     -unity-font-style: bold;
     color: #f2f5f7;
-    padding-top: 8px;
+    padding-top: 5px;
     padding-left: 9px;
-    padding-bottom: 4px;
+    padding-bottom: 0;
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.node-detail {
-    color: #d0dce5;
+.node-id {
+    color: #9fb0bd;
     font-size: 11px;
     margin-left: 9px;
     margin-right: 15px;
@@ -87,38 +155,72 @@
     text-overflow: ellipsis;
 }
 
+.node-actions {
+    color: #d0dce5;
+    font-size: 11px;
+    margin-left: 9px;
+    margin-right: 15px;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 連接點：從這裡拖線。 */
 .node-port {
     position: absolute;
     width: 12px;
     height: 12px;
-    top: 40px;
-    right: -5px;
+    right: -7px;
     background-color: #6db8ee;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border-bottom-left-radius: 6px;
     border-bottom-right-radius: 6px;
+    cursor: link;
+}
+
+.node-port:hover {
+    background-color: #ffffff;
+    scale: 1.35 1.35;
 }
 
 .popup-node .node-port {
     background-color: #c39ced;
 }
 
-.signal-node {
-    border-left-color: #f0b35a;
-}
-
 .signal-node .node-port {
     background-color: #f0b35a;
 }
 
+.popup-node .node-port:hover,
+.signal-node .node-port:hover {
+    background-color: #ffffff;
+}
+
+/* 線上的動作標籤：可以點，點了選取那條路由。 */
 .edge-label {
     position: absolute;
     color: #e9f1f9;
     background-color: #252d33;
+    border-left-width: 3px;
+    border-left-color: #6db8ee;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
     padding-left: 4px;
-    padding-right: 4px;
+    padding-right: 5px;
     font-size: 10px;
+    cursor: link;
+}
+
+.edge-popup {
+    border-left-color: #c39ced;
+}
+
+.edge-label:hover {
+    color: #ffffff;
+    background-color: #3d4a54;
 }
 
 .blueprint-sidebar {

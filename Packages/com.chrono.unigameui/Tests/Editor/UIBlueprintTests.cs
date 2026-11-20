@@ -397,6 +397,164 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        // 5-3：節點的操作。
+        [Test]
+        public void NodesAreSelectedAndDraggedFromAnywhereOnThem()
+        {
+            var scene = NewScene("Batch5 Nodes");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            UIAuthoring.CreatePage(root, "next", "Next");
+            UIAuthoring.Connect(root, "home", "ping", UIRouteKind.Emit);
+            UIAuthoring.PositionNode(root, "home", new Vector2(0, 0));
+            UIAuthoring.PositionNode(root, "next", new Vector2(500, 40));
+            UIAuthoring.PositionNode(root, UIRoot.AnySource, new Vector2(0, 400));
+            SceneManager.SetActiveScene(scene);
+            var home = UIAuthoring.FindEntry(root, "home");
+            var next = UIAuthoring.FindEntry(root, "next");
+
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                window.CreateGUI();
+                window.SetZoom(0.5f);
+                var focused = new System.Collections.Generic.List<string>();
+                window.FocusRequested = focused.Add;
+
+                var card = window.rootVisualElement.Q("node-home");
+                var title = card.Q<Label>(className: "node-title");
+                var id = card.Q<Label>(className: "node-id");
+                var port = card.Q(className: "node-port");
+                Assert.That(title.text, Is.EqualTo("Home"));
+                Assert.That(id.text, Is.EqualTo("home"));
+                Assert.That(port, Is.Not.Null);
+
+                // 標題、說明文字、節點的空白處：按下都會選取，拖曳都會移動。
+                foreach (var target in new VisualElement[] { title, id, card })
+                {
+                    window.ClickCanvas();
+                    Assert.That(window.SelectedId, Is.Null.Or.Empty);
+                    var start = home.GraphPosition;
+                    var press = window.View.CanvasToWindow(start + new Vector2(30, 20));
+                    window.PressNode("home", target, press);
+                    Assert.That(window.SelectedId, Is.EqualTo("home"));
+                    Assert.That(card.ClassListContains("selected-node"), Is.True);
+                    window.MovePointer(press + new Vector2(40, 30));
+                    window.ReleasePointer(press + new Vector2(40, 30));
+                    AssertClose(home.GraphPosition - start, new Vector2(80, 60));
+                }
+                Assert.That(focused, Is.Empty, "單擊與拖曳都不會定位到 Scene");
+
+                // 在連接點按下是拖線，不會移動節點。
+                var resting = home.GraphPosition;
+                var rect = window.NodeRect("home");
+                var portPoint = window.View.CanvasToWindow(new Vector2(rect.xMax, rect.center.y));
+                window.PressNode("home", port, portPoint);
+                window.MovePointer(portPoint + new Vector2(80, 60));
+                Assert.That(window.NodeRect("home").position, Is.EqualTo(resting));
+                window.ReleasePointer(window.View.CanvasToWindow(window.NodeRect("next").center));
+                Assert.That(home.GraphPosition, Is.EqualTo(resting));
+                var route = root.Routes.Single(candidate => candidate.Target == "next");
+                Assert.That((route.Source, route.Action, route.Kind), Is.EqualTo(("home", "open_next", UIRouteKind.ShowPage)));
+
+                // 單擊只選取；雙擊才定位。
+                window.ClickCanvas();
+                var nextPosition = next.GraphPosition;
+                var point = window.View.CanvasToWindow(window.NodeRect("next").center);
+                window.PressNode("next", null, point);
+                window.ReleasePointer(point);
+                Assert.That(window.SelectedId, Is.EqualTo("next"));
+                Assert.That(focused, Is.Empty);
+                window.PressNode("next", null, point, 2);
+                window.ReleasePointer(point);
+                Assert.That(focused, Is.EqualTo(new[] { "next" }));
+                Assert.That(next.GraphPosition, Is.EqualTo(nextPosition));
+
+                // 「任何畫面」不是畫面：雙擊只會選取，沒有東西可以定位。
+                var anyPoint = window.View.CanvasToWindow(window.NodeRect(UIRoot.AnySource).center);
+                window.PressNode(UIRoot.AnySource, null, anyPoint, 2);
+                window.ReleasePointer(anyPoint);
+                Assert.That(window.SelectedId, Is.EqualTo(UIRoot.AnySource));
+                Assert.That(focused.Count, Is.EqualTo(1));
+
+                // 點空白的地方取消選取。
+                window.ClickCanvas();
+                Assert.That(window.SelectedId, Is.Null.Or.Empty);
+                Assert.That(window.rootVisualElement.Query(className: "selected-node").ToList(), Is.Empty);
+
+                // 線上的動作標籤可以點：選取來源節點，右欄選中這條路由。
+                var label = window.EdgeLabel("home", "open_next");
+                Assert.That(label, Is.Not.Null);
+                Assert.That(label.text, Is.EqualTo("open_next"));
+                Assert.That(label.pickingMode, Is.EqualTo(PickingMode.Position));
+                window.PressEdgeLabel(label);
+                Assert.That(window.SelectedId, Is.EqualTo("home"));
+                Assert.That(window.SelectedAction, Is.EqualTo("open_next"));
+                Assert.That(window.rootVisualElement.Q("node-home").ClassListContains("selected-node"), Is.True);
+                var action = window.rootVisualElement.Query<TextField>().ToList().First(field => field.label == "動作");
+                Assert.That(action.value, Is.EqualTo("open_next"));
+                // 不是切頁或開啟 Popup 的路由沒有畫線，也就沒有標籤。
+                Assert.That(window.EdgeLabel("home", "ping"), Is.Null);
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+                UIBlueprintSession.ForgetView(UIBlueprintSession.SceneKey(scene));
+            }
+        }
+
+        [Test]
+        public void NodesShowTheirKindAndFlagsAsBadges()
+        {
+            var scene = NewScene("Batch5 Badges");
+            var root = UIAuthoring.CreateWorkspace(scene);
+            UIAuthoring.CreatePage(root, "home", "Home");
+            UIAuthoring.CreatePage(root, "next", "Next");
+            UIAuthoring.CreatePopup(root, "tip", "Tip", $"{folder}/Tip.prefab");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.SetNavigatedByCode(root, "tip", true);
+            UIAuthoring.Connect(root, "home", "ping", UIRouteKind.Emit);
+            UIAuthoring.Connect(root, "next", "back", UIRouteKind.Back);
+            UIAuthoring.Connect(root, UIRoot.AnySource, "tick", UIRouteKind.Emit);
+            SceneManager.SetActiveScene(scene);
+
+            var window = ScriptableObject.CreateInstance<UIBlueprintWindow>();
+            try
+            {
+                window.CreateGUI();
+                // 種類、起始頁、由程式控制各是一個徽章。
+                Assert.That(Badges("node-home"), Is.EqualTo(new[] { "頁面", "起始頁" }));
+                Assert.That(Badges("node-next"), Is.EqualTo(new[] { "頁面" }));
+                Assert.That(Badges("node-tip"), Is.EqualTo(new[] { "Popup", "程式控制" }));
+                Assert.That(Badges("any-source-node"), Is.EqualTo(new[] { "訊號" }));
+                Assert.That(Node("node-home").ClassListContains("page-node"), Is.True);
+                Assert.That(Node("node-tip").ClassListContains("popup-node"), Is.True);
+                Assert.That(Node("any-source-node").ClassListContains("signal-node"), Is.True);
+                Assert.That(Node("node-tip").Q<Label>(className: "badge-popup"), Is.Not.Null);
+                Assert.That(Node("any-source-node").Q<Label>(className: "badge-signal"), Is.Not.Null);
+
+                // 不會拉線的動作列在節點的最下面，用和右欄相同的說法。
+                Assert.That(Node("node-home").Q<Label>(className: "node-actions").text, Is.EqualTo("ping（送出事件）"));
+                Assert.That(Node("node-next").Q<Label>(className: "node-actions").text, Is.EqualTo("back（返回）"));
+                Assert.That(Node("any-source-node").Q<Label>(className: "node-actions").text,
+                    Is.EqualTo("tick（送出事件）"));
+                Assert.That(Node("any-source-node").Q<Label>(className: "node-title").text,
+                    Is.EqualTo(UIBlueprintWindow.AnySourceTitle));
+
+                VisualElement Node(string name) => window.rootVisualElement.Q(name);
+
+                string[] Badges(string name)
+                {
+                    return Node(name).Query<Label>(className: "badge").ToList().Select(badge => badge.text).ToArray();
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(window);
+                UIBlueprintSession.ForgetView(UIBlueprintSession.SceneKey(scene));
+            }
+        }
+
         private static string ZoomText(UIBlueprintWindow window)
         {
             return window.rootVisualElement.Q<ToolbarButton>("zoom-level").text;
