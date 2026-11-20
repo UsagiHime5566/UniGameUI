@@ -332,7 +332,8 @@ namespace UniGameUI
 
         internal async Awaitable<UINavResult> ClosePopupAsync(UIView popup, object result)
         {
-            var popupId = popup ? popup.Id : null;
+            // 已經被銷毀的 Popup 也照樣用它的 ID 說明，所以不用 Unity 的 null 判斷。
+            var popupId = ReferenceEquals(popup, null) ? null : popup.Id;
             var request = $"Close '{popupId}'";
             UINavResult status;
             if (busy && notification.HasValue)
