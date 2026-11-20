@@ -93,13 +93,30 @@ namespace UniGameUI.Editor
 
             foreach (var route in root.Routes)
             {
+                // 訊號路由的來源是「任何畫面」，不是某一個畫面。
+                var isSignal = route != null && route.IsSignal;
                 if (route == null || string.IsNullOrEmpty(route.Source) || string.IsNullOrEmpty(route.Action) ||
-                    !routes.Add((route.Source, route.Action)) || !views.ContainsKey(route.Source))
+                    !routes.Add((route.Source, route.Action)) || (!isSignal && !views.ContainsKey(route.Source)))
                 {
                     issues.Add(new UIIssue(UIIssueCode.RouteInvalid,
                         $"路由「{route?.Source}/{route?.Action}」的來源畫面不存在、動作是空的，" +
-                        "或同一個來源有重複的動作。", route?.Source, context: root));
+                        "或同一個來源有重複的動作。", isSignal ? null : route?.Source, context: root));
                     continue;
+                }
+
+                var sourceId = isSignal ? null : route.Source;
+                var context = isSignal ? root : ContextOf(root, views[route.Source]);
+                if (isSignal && !UIAuthoring.IsSignalKind(route.Kind))
+                {
+                    issues.Add(new UIIssue(UIIssueCode.RouteSignalKindInvalid,
+                        $"路由「{route.Source}/{route.Action}」是「任何畫面」的訊號路由，種類只能是 ShowPage、" +
+                        $"OpenPopup 或 Emit（目前是 {route.Kind}）。", context: root));
+                }
+                if (!UIAuthoring.AcceptsHistory(route.Kind, route.History))
+                {
+                    issues.Add(new UIIssue(UIIssueCode.RouteHistoryInvalid,
+                        $"路由「{route.Source}/{route.Action}」是 {route.Kind}，history 不能是 {route.History}。" +
+                        "OpenPopup 只能是 Push（可以返回）或 Clear（不可返回）。", sourceId, context: context));
                 }
                 if (UIRoute.TargetsEntry(route.Kind) &&
                     (string.IsNullOrEmpty(route.Target) || !views.TryGetValue(route.Target, out var target) ||
@@ -108,7 +125,7 @@ namespace UniGameUI.Editor
                     var expected = route.Kind == UIRouteKind.ShowPage ? "頁面" : "Popup";
                     issues.Add(new UIIssue(UIIssueCode.RouteTargetMissing,
                         $"路由「{route.Source}/{route.Action}」的目的地「{route.Target}」不存在，或不是{expected}。",
-                        route.Source, context: ContextOf(root, views[route.Source])));
+                        sourceId, context: context));
                 }
             }
 

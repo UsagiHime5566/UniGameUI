@@ -861,6 +861,8 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式控制時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式控制。 |
 | `route.invalid` | Error | 路由的來源畫面不存在、動作是空的，或同一個來源有重複的動作。 | 用計畫或藍圖重新建立這條路由。 |
 | `route.target-missing` | Error | `ShowPage` 或 `OpenPopup` 路由的目的地不存在，或種類不符。 | 修正路由的 `target`，或補上目的地的畫面。 |
+| `route.signal-kind-invalid` | Error | 「任何畫面」的訊號路由種類是 `Back` 或 `ClosePopup`。 | 訊號路由只能是 `ShowPage`、`OpenPopup` 或 `Emit`。改掉種類，或把它改成某個畫面自己的路由。 |
+| `route.history-invalid` | Error | `OpenPopup` 路由的 `history` 是 `Replace`。 | 改成 `Push`（可以返回）或 `Clear`（不可返回）。 |
 | `element.id-duplicate` | Error | 同一個畫面裡有空的或重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
 | `element.kind-unknown` | Error | 元件記錄的元件名稱不在元件集裡。 | 把元件登記回元件集，或刪掉這個元件重新建立。 |
 | `button.action-unrouted` | Error | 按鈕的動作找不到對應的路由。 | 補上路由，或修改按鈕的 `action`。訊息提到 Prefab 本體時，請修正審核實例並套用覆寫。 |

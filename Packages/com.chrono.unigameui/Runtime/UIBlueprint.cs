@@ -50,11 +50,19 @@ namespace UniGameUI
         [SerializeField] internal UIHistoryMode history;
         [SerializeField] internal string result;
 
+        /// <summary>來源畫面的 ID。<see cref="UIRoot.AnySource"/> 表示這是「任何畫面」的訊號路由。</summary>
         public string Source => source;
         public string Action => action;
         public UIRouteKind Kind => kind;
         public string Target => target;
+        /// <summary>
+        /// 跳過去之後能不能返回。ShowPage 可以是 Push、Replace、Clear；OpenPopup 可以是 Push 或 Clear，
+        /// Clear 開啟的是不可返回的 Popup。
+        /// </summary>
         public UIHistoryMode History => history;
+
+        /// <summary>這是不是「任何畫面」的訊號路由。</summary>
+        public bool IsSignal => source == UIRoot.AnySource;
         public string Result => result;
 
         public static bool TargetsEntry(UIRouteKind kind)

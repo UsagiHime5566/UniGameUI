@@ -406,6 +406,21 @@ namespace UniGameUI.Editor.Tests
                     });
                     break;
 
+                case UIIssueCode.RouteSignalKindInvalid:
+                    Home();
+                    root.routes.Add(new UIRoute { source = UIRoot.AnySource, action = "go", kind = UIRouteKind.Back });
+                    break;
+
+                case UIIssueCode.RouteHistoryInvalid:
+                    Home();
+                    Popup("tip");
+                    root.routes.Add(new UIRoute
+                    {
+                        source = "home", action = "go", kind = UIRouteKind.OpenPopup, target = "tip",
+                        history = UIHistoryMode.Replace
+                    });
+                    break;
+
                 case UIIssueCode.ElementIdDuplicate:
                     Home();
                     SetElementId(Child(home, "First"), "twin");

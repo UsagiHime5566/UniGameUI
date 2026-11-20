@@ -401,7 +401,8 @@ namespace UniGameUI
                             "接收者丟出例外，當成沒有處理。", exception);
                     }
                 }
-                if (!top || top.BlocksBackKey)
+                // 不可返回的 Popup 在最上層時返回鍵無效；上面的 OnBackRequested 仍然先被呼叫過了。
+                if (!top || top.BlocksBackKey || unreturnablePopups.Contains(top))
                     return;
             }
             if (busy)

@@ -170,7 +170,8 @@ namespace UniGameUI.Editor
                 throw new ArgumentException($"Route '{source}/{action}' already exists.");
 
             var changed = new List<Object> { root };
-            if (action != originalAction && entry.Review)
+            // 訊號路由沒有來源畫面，也就沒有要跟著改名的按鈕。
+            if (action != originalAction && entry != null && entry.Review)
             {
                 changed.AddRange(entry.Review.GetComponentsInChildren<UIButtonAction>(true)
                     .Where(binding => binding.Action == originalAction &&
@@ -197,18 +198,57 @@ namespace UniGameUI.Editor
         {
             route.kind = kind;
             route.target = UIRoute.TargetsEntry(kind) ? target : "";
-            route.history = kind == UIRouteKind.ShowPage ? history : UIHistoryMode.Push;
+            route.history = kind == UIRouteKind.ShowPage || kind == UIRouteKind.OpenPopup
+                ? history : UIHistoryMode.Push;
             route.result = kind == UIRouteKind.ClosePopup ? result ?? "" : "";
         }
 
+        /// <summary>「任何畫面」的訊號路由可以用的種類。</summary>
+        internal static bool IsSignalKind(UIRouteKind kind)
+        {
+            return kind == UIRouteKind.ShowPage || kind == UIRouteKind.OpenPopup || kind == UIRouteKind.Emit;
+        }
+
+        /// <summary>
+        /// 這個種類的路由能不能用這個 history。ShowPage 三種都可以；OpenPopup 只有 Push（可以返回）
+        /// 與 Clear（不可返回）；其他種類沒有 history。
+        /// </summary>
+        internal static bool AcceptsHistory(UIRouteKind kind, UIHistoryMode history)
+        {
+            switch (kind)
+            {
+                case UIRouteKind.ShowPage:
+                    return Enum.IsDefined(typeof(UIHistoryMode), history);
+                case UIRouteKind.OpenPopup:
+                    return history == UIHistoryMode.Push || history == UIHistoryMode.Clear;
+                default:
+                    return true;
+            }
+        }
+
+        // 回傳來源畫面。來源是 UIRoot.AnySource（訊號路由）時沒有來源畫面，回傳 null。
         private static UIEntry ValidateRoute(UIRoot root, string source, string action,
             UIRouteKind kind, string target, UIHistoryMode history)
         {
             CheckRoot(root);
-            var entry = FindEntry(root, source) ?? throw new ArgumentException($"Unknown source '{source}'.");
+            var isSignal = source == UIRoot.AnySource;
+            var entry = isSignal
+                ? null
+                : FindEntry(root, source) ?? throw new ArgumentException($"Unknown source '{source}'.");
             CheckId(action);
+            if (isSignal && !IsSignalKind(kind))
+            {
+                throw new ArgumentException(
+                    $"「任何畫面」的訊號路由只能是 ShowPage、OpenPopup 或 Emit，不能是 {kind}。", nameof(kind));
+            }
             if (kind == UIRouteKind.ShowPage && !Enum.IsDefined(typeof(UIHistoryMode), history))
                 throw new ArgumentException($"不支援頁面歷史模式「{history}」。", nameof(history));
+            if (kind == UIRouteKind.OpenPopup && !AcceptsHistory(kind, history))
+            {
+                throw new ArgumentException(
+                    $"OpenPopup 的 history 只能是 Push（可以返回）或 Clear（不可返回），不能是 {history}。",
+                    nameof(history));
+            }
             if (UIRoute.TargetsEntry(kind))
             {
                 var expected = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
@@ -288,6 +328,14 @@ namespace UniGameUI.Editor
         public static void PositionNode(UIRoot root, string id, Vector2 position)
         {
             CheckRoot(root);
+            if (id == UIRoot.AnySource)
+            {
+                // 「任何畫面」節點不是畫面，位置存在工作區上。
+                Undo.RecordObject(root, "Move blueprint node");
+                root.anySourceGraphPosition = position;
+                MarkChanged(root);
+                return;
+            }
             var entry = FindEntry(root, id) ?? throw new ArgumentException($"Unknown view '{id}'.");
             Undo.RecordObject(root, "Move blueprint node");
             entry.graphPosition = position;

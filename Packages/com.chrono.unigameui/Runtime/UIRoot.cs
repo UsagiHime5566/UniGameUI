@@ -22,6 +22,12 @@ namespace UniGameUI
         /// </summary>
         public const string DefaultConfirmPopupId = "confirm";
 
+        /// <summary>
+        /// 藍圖上「任何畫面」節點的路由來源。從它拉出去的路由是訊號路由，不論目前顯示哪個畫面都成立，
+        /// 用 <see cref="SignalAsync"/> 送出。
+        /// </summary>
+        public const string AnySource = "*";
+
         // 起始確認框的安裝位置，只用來組出登記用的提示。
         internal const string StarterConfirmPrefabPath = "Assets/UniGameUI/Widgets/Confirm.prefab";
 
@@ -33,6 +39,8 @@ namespace UniGameUI
         [SerializeField, HideInInspector] internal string startPageId;
         [SerializeField, HideInInspector] internal List<UIEntry> entries = new List<UIEntry>();
         [SerializeField, HideInInspector] internal List<UIRoute> routes = new List<UIRoute>();
+        // 藍圖視窗裡「任何畫面」節點的位置。它不是畫面，不在 entries 裡。
+        [SerializeField, HideInInspector] internal Vector2 anySourceGraphPosition = new Vector2(776, 32);
         [SerializeField] private UIActionEvent actionEmitted = new UIActionEvent();
 
         private readonly Dictionary<string, UIEntry> entriesById = new Dictionary<string, UIEntry>();
@@ -43,6 +51,10 @@ namespace UniGameUI
         private readonly Dictionary<UIView, AwaitableCompletionSource<object>> popupResults =
             new Dictionary<UIView, AwaitableCompletionSource<object>>();
         private readonly Dictionary<string, UIView> retainedPopups = new Dictionary<string, UIView>();
+        // 以 history: Clear 開啟、目前還開著的 Popup。它們在最上層時不能返回。
+        private readonly HashSet<UIView> unreturnablePopups = new HashSet<UIView>();
+        // 排隊中的訊號，依送出的順序執行。
+        private readonly List<object> signals = new List<object>();
         private IReadOnlyList<UIView> popupList;
         private List<(AwaitableCompletionSource<object> Source, object Result)> closedPopupResults;
         private RectTransform pageLayer;
@@ -118,7 +130,7 @@ namespace UniGameUI
                 var source = route?.Source;
                 var action = route?.Action;
                 if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(action) ||
-                    !entriesById.ContainsKey(source))
+                    (source != AnySource && !entriesById.ContainsKey(source)))
                     NotFound("Awake", $"路由 '{source}'/'{action}' 的來源或動作缺漏。");
                 else if (!routesByAction.TryAdd((source, action), route))
                     NotFound("Awake", $"路由 '{source}'/'{action}' 重複。");
@@ -178,8 +190,23 @@ namespace UniGameUI
         public Awaitable<UINavResult> OpenPopupAsync(
             string id, object data = null, CancellationToken cancellation = default)
         {
+            return OpenPopupAsync(id, data, UIHistoryMode.Push, cancellation);
+        }
+
+        /// <summary>
+        /// 開啟 Popup 並指定能不能返回。<see cref="UIHistoryMode.Push"/> 是一般的 Popup，可以用返回關閉。
+        /// <see cref="UIHistoryMode.Clear"/> 開啟「不可返回的 Popup」：開啟時清空歷史，它在最上層時返回無效，
+        /// 它開著的期間切頁一律清空歷史；ClosePopup 路由、View.Close() 與點遮罩關閉照常可以關閉它。
+        /// Popup 沒有 <see cref="UIHistoryMode.Replace"/>，傳入會丟出 <see cref="ArgumentException"/>。
+        /// </summary>
+        public Awaitable<UINavResult> OpenPopupAsync(
+            string id, object data, UIHistoryMode history, CancellationToken cancellation = default)
+        {
+            if (history != UIHistoryMode.Push && history != UIHistoryMode.Clear)
+                throw new ArgumentException($"OpenPopup 的 history 只能是 Push 或 Clear，不支援「{history}」。", nameof(history));
             var request = $"OpenPopup '{id}'";
-            return RunAsync(request, token => OpenPopupCoreAsync(id, data, token, request), cancellation);
+            return RunAsync(request, token => OpenPopupCoreAsync(id, data, token, request, null, history),
+                cancellation);
         }
 
         public Awaitable<UIPopupResult<T>> OpenPopupForResultAsync<T>(
@@ -295,6 +322,8 @@ namespace UniGameUI
             if (cancellation.IsCancellationRequested)
                 return UINavResult.Canceled;
 
+            if (source == AnySource)
+                return Unavailable(request, "「任何畫面」的訊號路由要用 SignalAsync 送出。");
             if (!routesByAction.TryGetValue((source, action), out var route))
                 return NotFound(request, "找不到路由。");
             var active = TopPopup ? TopPopup : currentPage;
@@ -327,11 +356,98 @@ namespace UniGameUI
             return result;
         }
 
+        /// <summary>
+        /// 送出訊號：依藍圖上「任何畫面」節點的路由執行。不論目前顯示哪個畫面都成立。
+        /// 訊號不會因為忙碌而被拒絕：有導航正在進行時等它結束再執行，多個訊號依送出的順序執行。
+        /// ShowPage 與 OpenPopup 的訊號會把 <paramref name="data"/> 傳給目標畫面；Emit 的訊號不帶資料。
+        /// 等待期間 token 被取消，或工作區被停用、銷毀時回傳 <see cref="UINavResult.Canceled"/>；
+        /// 找不到這個動作的訊號路由時回傳 <see cref="UINavResult.NotFound"/>。
+        /// </summary>
+        public async Awaitable<UINavResult> SignalAsync(
+            string action, object data = null, CancellationToken cancellation = default)
+        {
+            await Awaitable.MainThreadAsync();
+            var request = $"Signal '{action}'";
+            if (!CanNavigate())
+                return Unavailable(request, "工作區停用或尚未就緒。");
+            if (cancellation.IsCancellationRequested)
+                return UINavResult.Canceled;
+            if (string.IsNullOrEmpty(action) || !routesByAction.TryGetValue((AnySource, action), out var route))
+                return NotFound(request, "找不到這個動作的訊號路由。請在藍圖的「任何畫面」節點加上路由。");
+
+            var ticket = new object();
+            signals.Add(ticket);
+            try
+            {
+                using var waiting = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellation);
+                while (true)
+                {
+                    // 等進行中的導航與排在前面的訊號結束。
+                    while (busy || !ReferenceEquals(signals[0], ticket))
+                        await Awaitable.NextFrameAsync(waiting.Token);
+                    var result = await RunSignalAsync(route, data, request, waiting.Token);
+                    if (result != UINavResult.Busy)
+                        return result;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return UINavResult.Canceled;
+            }
+            finally
+            {
+                signals.Remove(ticket);
+            }
+        }
+
+        private async Awaitable<UINavResult> RunSignalAsync(
+            UIRoute route, object data, string request, CancellationToken cancellation)
+        {
+            void Triggered() => UIEventDispatch.Invoke(ActionTriggered, listener => listener(route),
+                exception => LogNotificationException($"{request} {nameof(ActionTriggered)}", exception));
+
+            UINavResult result;
+            switch (route.Kind)
+            {
+                case UIRouteKind.Emit:
+                    if (!CanNavigate())
+                        return UINavResult.Canceled;
+                    if (data != null)
+                        Debug.LogWarning(Diagnostic(request, "Emit 的訊號不帶資料，傳入的 data 沒有被使用。"), this);
+                    Triggered();
+                    if (!CanNavigate() || cancellation.IsCancellationRequested)
+                        return UINavResult.Canceled;
+                    result = Emit(TopPopup ? TopPopup : currentPage, route, request);
+                    break;
+                case UIRouteKind.ShowPage:
+                case UIRouteKind.OpenPopup:
+                    result = await RunAsync(request, async token =>
+                    {
+                        NotifyDuringNavigation(request, nameof(ActionTriggered), AnySource, Triggered);
+                        token.ThrowIfCancellationRequested();
+                        return route.Kind == UIRouteKind.ShowPage
+                            ? await ShowPageCoreAsync(route.Target, data, route.History, token, request)
+                            : await OpenPopupCoreAsync(route.Target, data, token, request, null, route.History);
+                    }, cancellation);
+                    // 剛好被別的導航搶先：回去排隊，等它結束再試。
+                    if (result == UINavResult.Busy)
+                        return result;
+                    break;
+                default:
+                    return NotFound(request, $"訊號路由的種類只能是 ShowPage、OpenPopup 或 Emit（目前是 {route.Kind}）。");
+            }
+
+            UIEventDispatch.Invoke(ActionCompleted, listener => listener(route, result),
+                exception => LogNotificationException($"{request} {nameof(ActionCompleted)}", exception));
+            return result;
+        }
+
+        // source 是收到動作的畫面。訊號送出時可能還沒有任何畫面，這時只觸發 ActionEmitted。
         private UINavResult Emit(UIView source, UIRoute route, string request)
         {
             try
             {
-                var handlersSucceeded = source.Emit(route.Action,
+                var handlersSucceeded = !source || source.Emit(route.Action,
                     exception => LogFailure($"{request} {nameof(IUIViewHandler.OnAction)}", exception));
                 var eventSucceeded = UIEventDispatch.Invoke(actionEmitted,
                     exception => LogFailure($"{request} {nameof(ActionEmitted)}", exception), route.Source, route.Action);
@@ -481,7 +597,7 @@ namespace UniGameUI
                 case UIRouteKind.ShowPage:
                     return await ShowPageCoreAsync(route.Target, null, route.History, cancellation, request);
                 case UIRouteKind.OpenPopup:
-                    return await OpenPopupCoreAsync(route.Target, null, cancellation, request);
+                    return await OpenPopupCoreAsync(route.Target, null, cancellation, request, null, route.History);
                 case UIRouteKind.Back:
                     return await BackCoreAsync(cancellation, request);
                 case UIRouteKind.ClosePopup:
@@ -503,11 +619,13 @@ namespace UniGameUI
                 throw new InvalidOperationException($"無法識別頁面歷史模式 '{historyMode}'。");
 
             var previousId = CurrentPageId;
+            // 不可返回的 Popup 開著的期間，切頁一律清空歷史：底下的頁面不可以變成能返回的地方。
+            var sealedByPopup = popups.Exists(popup => unreturnablePopups.Contains(popup));
             await ChangePageAsync(next, data, cancellation, request, () =>
             {
                 // 往前切頁視為重新進入，從預設選取元件開始。返回時才恢復上次的選取。
                 next.lastSelected = null;
-                if (historyMode == UIHistoryMode.Clear)
+                if (historyMode == UIHistoryMode.Clear || sealedByPopup)
                     history.Clear();
                 else if (historyMode == UIHistoryMode.Push && previousId != null)
                     history.Add(previousId);
@@ -518,7 +636,12 @@ namespace UniGameUI
         private async Awaitable<UINavResult> BackCoreAsync(CancellationToken cancellation, string request)
         {
             if (popups.Count > 0)
+            {
+                // 不可返回的 Popup 只能用 ClosePopup 路由、View.Close() 或點遮罩關閉。
+                if (unreturnablePopups.Contains(TopPopup))
+                    return UINavResult.Unavailable;
                 return await ClosePopupCoreAsync(cancellation, request, null);
+            }
             RemoveCurrentPageFromHistory();
             if (history.Count == 0)
                 return UINavResult.Unavailable;
@@ -643,8 +766,11 @@ namespace UniGameUI
         }
 
         private async Awaitable<UINavResult> OpenPopupCoreAsync(
-            string id, object data, CancellationToken cancellation, string request, Action<UIView> onOpened = null)
+            string id, object data, CancellationToken cancellation, string request, Action<UIView> onOpened = null,
+            UIHistoryMode historyMode = UIHistoryMode.Push)
         {
+            if (historyMode != UIHistoryMode.Push && historyMode != UIHistoryMode.Clear)
+                throw new InvalidOperationException($"OpenPopup 的 history 只能是 Push 或 Clear（目前是 {historyMode}）。");
             if (string.IsNullOrWhiteSpace(id) || !entriesById.TryGetValue(id, out var entry) ||
                 entry.Kind != UIEntryKind.Popup)
                 return NotFound(request, $"找不到 Popup '{id}'。");
@@ -676,6 +802,12 @@ namespace UniGameUI
             }
 
             popups.Add(popup);
+            if (historyMode == UIHistoryMode.Clear)
+            {
+                // 不可返回的 Popup：開啟時清空歷史。這個狀態只屬於這一次開啟。
+                history.Clear();
+                unreturnablePopups.Add(popup);
+            }
             popup.FinishShowing(request);
             if (popup)
                 onOpened?.Invoke(popup);
@@ -703,6 +835,7 @@ namespace UniGameUI
         private void FinishClosingPopup(UIView popup, object result, string request)
         {
             popups.Remove(popup);
+            unreturnablePopups.Remove(popup);
             if (popupResults.Remove(popup, out var pending))
             {
                 closedPopupResults ??= new List<(AwaitableCompletionSource<object>, object)>();
@@ -726,6 +859,7 @@ namespace UniGameUI
             if (!string.IsNullOrEmpty(view.Id) && retainedPopups.TryGetValue(view.Id, out var retained) &&
                 ReferenceEquals(retained, view))
                 retainedPopups.Remove(view.Id);
+            unreturnablePopups.Remove(view);
             if (popups.Remove(view))
                 RefreshInput();
             if (popupResults.Remove(view, out var pending))

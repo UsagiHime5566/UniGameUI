@@ -67,6 +67,8 @@ namespace UniGameUI.Editor
 
         public const string RouteInvalid = "route.invalid";
         public const string RouteTargetMissing = "route.target-missing";
+        public const string RouteSignalKindInvalid = "route.signal-kind-invalid";
+        public const string RouteHistoryInvalid = "route.history-invalid";
 
         public const string ElementIdDuplicate = "element.id-duplicate";
         public const string ElementKindUnknown = "element.kind-unknown";
@@ -114,6 +116,8 @@ namespace UniGameUI.Editor
                 [StartNone] = UIIssueSeverity.Warning,
                 [RouteInvalid] = UIIssueSeverity.Error,
                 [RouteTargetMissing] = UIIssueSeverity.Error,
+                [RouteSignalKindInvalid] = UIIssueSeverity.Error,
+                [RouteHistoryInvalid] = UIIssueSeverity.Error,
                 [ElementIdDuplicate] = UIIssueSeverity.Error,
                 [ElementKindUnknown] = UIIssueSeverity.Error,
                 [ButtonActionUnrouted] = UIIssueSeverity.Error,

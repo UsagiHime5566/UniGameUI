@@ -77,6 +77,14 @@
     background-color: #c39ced;
 }
 
+.signal-node {
+    border-left-color: #f0b35a;
+}
+
+.signal-node .node-port {
+    background-color: #f0b35a;
+}
+
 .edge-label {
     position: absolute;
     color: #e9f1f9;

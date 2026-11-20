@@ -379,18 +379,33 @@ namespace UniGameUI.Editor
                 var existing = FindRoute(root, route);
                 var kind = Parse(route.kind, existing?.Kind ?? UIRouteKind.ShowPage);
                 var targetId = route.target ?? existing?.Target;
-                if (string.IsNullOrEmpty(route.source) || !kinds.ContainsKey(route.source) ||
+                // "source": "*" 是「任何畫面」的訊號路由，來源不是畫面。
+                var isSignal = route.source == UIRoot.AnySource;
+                if (string.IsNullOrEmpty(route.source) || (!isSignal && !kinds.ContainsKey(route.source)) ||
                     !routeKeys.Add((route.source, route.action)))
                     throw new ArgumentException($"Missing source or duplicate route '{route.source}/{route.action}'.");
-                if (route.history != null && kind != UIRouteKind.ShowPage)
-                    throw new ArgumentException($"路由「{route.source}/{route.action}」的 history 欄位只適用於 ShowPage（目前為 {kind}）。");
+                if (isSignal && !UIAuthoring.IsSignalKind(kind))
+                {
+                    throw new ArgumentException($"路由「{route.source}/{route.action}」是「任何畫面」的訊號路由，" +
+                        $"kind 只能是 ShowPage、OpenPopup 或 Emit（目前為 {kind}）。");
+                }
+                if (route.history != null && kind != UIRouteKind.ShowPage && kind != UIRouteKind.OpenPopup)
+                {
+                    throw new ArgumentException($"路由「{route.source}/{route.action}」的 history 欄位只適用於 " +
+                        $"ShowPage 與 OpenPopup（目前為 {kind}）。");
+                }
                 if (route.result != null && kind != UIRouteKind.ClosePopup)
                     throw new ArgumentException($"路由「{route.source}/{route.action}」的 result 欄位只適用於 ClosePopup（目前為 {kind}）。");
                 if (UIRoute.TargetsEntry(kind) &&
                     (string.IsNullOrEmpty(targetId) || !kinds.TryGetValue(targetId, out var target) ||
                      target != (kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup)))
                     throw new ArgumentException($"{route.source}/{route.action}: invalid target '{targetId}'.");
-                ParseHistory(route, kind, existing);
+                var history = ParseHistory(route, kind, existing);
+                if (!UIAuthoring.AcceptsHistory(kind, history))
+                {
+                    throw new ArgumentException($"路由「{route.source}/{route.action}」是 OpenPopup，history 只能是 " +
+                        $"Push（可以返回）或 Clear（不可返回），不能是 {history}。");
+                }
             }
         }
 
@@ -402,9 +417,11 @@ namespace UniGameUI.Editor
 
         private static UIHistoryMode ParseHistory(RouteSpec route, UIRouteKind kind, UIRoute existing)
         {
-            return kind == UIRouteKind.ShowPage
-                ? Parse(route.history, existing?.History ?? UIHistoryMode.Push)
-                : UIHistoryMode.Push;
+            if (kind != UIRouteKind.ShowPage && kind != UIRouteKind.OpenPopup)
+                return UIHistoryMode.Push;
+            // 沒有寫 history 時沿用原本的設定；種類換了就回到預設值。
+            var current = existing != null && existing.Kind == kind ? existing.History : UIHistoryMode.Push;
+            return Parse(route.history, current);
         }
 
         // 元件含有 TMP 文字，起始元件也要 TMP 的預設字型才建得出來。

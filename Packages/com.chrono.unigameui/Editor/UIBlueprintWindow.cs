@@ -17,6 +17,7 @@ namespace UniGameUI.Editor
         private const string GuidePath = "Packages/com.chrono.unigameui/Documentation~/AgentGuide.md";
         private static readonly Color PageColor = new Color32(109, 184, 238, 255);
         private static readonly Color PopupColor = new Color32(195, 156, 237, 255);
+        internal const string AnySourceTitle = "任何畫面";
 
         [SerializeField] private UIRoot workspace;
         [SerializeField] private string selectedId;
@@ -208,6 +209,9 @@ namespace UniGameUI.Editor
                 positions.Add(entry.Id, entry.GraphPosition);
                 CreateCard(entry);
             }
+            // 「任何畫面」是固定的節點：不是畫面，不能刪除，只能當訊號路由的來源。
+            positions.Add(UIRoot.AnySource, workspace.anySourceGraphPosition);
+            CreateAnySourceCard();
             foreach (var route in workspace.Routes.Where(route => UIRoute.TargetsEntry(route.Kind)))
             {
                 var label = new Label(route.Action) { pickingMode = PickingMode.Ignore };
@@ -247,7 +251,7 @@ namespace UniGameUI.Editor
             var header = new Label(entry.Title);
             header.AddToClassList("node-title");
             card.Add(header);
-            RegisterNodeDrag(header, entry);
+            RegisterNodeDrag(header, entry.Id);
 
             var details = new Label($"{(entry.Kind == UIEntryKind.Popup ? "Popup" : "頁面")}  ·  {entry.Id}" +
                 (entry.Id == workspace.StartPageId ? "  ·  起始" : "") +
@@ -268,7 +272,46 @@ namespace UniGameUI.Editor
             RegisterWireDrag(port, entry.Id);
         }
 
-        private void RegisterNodeDrag(VisualElement handle, UIEntry entry)
+        // 「任何畫面」節點：只有輸出的連接點，沒有線可以連進來。
+        private void CreateAnySourceCard()
+        {
+            var card = new VisualElement { name = "any-source-node" };
+            card.AddToClassList("blueprint-node");
+            card.AddToClassList("signal-node");
+            if (selectedId == UIRoot.AnySource)
+                card.AddToClassList("selected-node");
+            card.style.width = NodeWidth;
+            card.style.height = NodeHeight;
+            cards.Add(UIRoot.AnySource, card);
+            stage.Add(card);
+
+            var header = new Label(AnySourceTitle);
+            header.AddToClassList("node-title");
+            card.Add(header);
+            RegisterNodeDrag(header, UIRoot.AnySource);
+
+            var details = new Label("訊號  ·  SignalAsync")
+            {
+                tooltip = "從這裡拉出去的是訊號路由：不論目前顯示哪個畫面都成立，由遊戲程式用 SignalAsync 送出。",
+            };
+            details.AddToClassList("node-detail");
+            card.Add(details);
+
+            var localActions = workspace.Routes
+                .Where(route => route.IsSignal && !UIRoute.TargetsEntry(route.Kind))
+                .Select(route => $"{route.Action} ({KindLabel(route.Kind)})");
+            var footer = new Label(string.Join("  ·  ", localActions));
+            footer.AddToClassList("node-detail");
+            footer.tooltip = footer.text;
+            card.Add(footer);
+
+            var port = new Label { tooltip = "拖曳到畫面節點以建立或重接訊號路由" };
+            port.AddToClassList("node-port");
+            card.Add(port);
+            RegisterWireDrag(port, UIRoot.AnySource);
+        }
+
+        private void RegisterNodeDrag(VisualElement handle, string id)
         {
             Vector2 pointerStart = default;
             Vector2 nodeStart = default;
@@ -276,9 +319,9 @@ namespace UniGameUI.Editor
             {
                 if (evt.button != 0)
                     return;
-                SelectNode(entry.Id);
+                SelectNode(id);
                 pointerStart = evt.position;
-                nodeStart = positions[entry.Id];
+                nodeStart = positions[id];
                 handle.CapturePointer(evt.pointerId);
                 evt.StopPropagation();
             });
@@ -287,7 +330,7 @@ namespace UniGameUI.Editor
                 if (!handle.HasPointerCapture(evt.pointerId))
                     return;
                 var position = nodeStart + (Vector2)evt.position - pointerStart;
-                positions[entry.Id] = new Vector2(Mathf.Max(12, position.x), Mathf.Max(12, position.y));
+                positions[id] = new Vector2(Mathf.Max(12, position.x), Mathf.Max(12, position.y));
                 UpdateStage();
             });
             handle.RegisterCallback<PointerUpEvent>(evt =>
@@ -295,10 +338,10 @@ namespace UniGameUI.Editor
                 if (!handle.HasPointerCapture(evt.pointerId))
                     return;
                 handle.ReleasePointer(evt.pointerId);
-                if (positions[entry.Id] != nodeStart)
-                    UIAuthoring.PositionNode(workspace, entry.Id, positions[entry.Id]);
-                else
-                    UIAuthoring.FocusReview(workspace, entry.Id);
+                if (positions[id] != nodeStart)
+                    UIAuthoring.PositionNode(workspace, id, positions[id]);
+                else if (id != UIRoot.AnySource)
+                    UIAuthoring.FocusReview(workspace, id);
                 evt.StopPropagation();
             });
         }
@@ -349,9 +392,10 @@ namespace UniGameUI.Editor
                 }
                 var original = workspace.Routes.FirstOrDefault(route => route.Source == source &&
                     route.Action == originalAction);
-                TryEdit(() => SaveRoute(source, originalAction, action,
-                    target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage,
-                    target.Id, original?.History ?? UIHistoryMode.Push, null));
+                var kind = target.Kind == UIEntryKind.Popup ? UIRouteKind.OpenPopup : UIRouteKind.ShowPage;
+                // 重接到另一種畫面時，原本的 history 不一定適用（Popup 沒有 Replace），回到預設值。
+                var history = original != null && original.Kind == kind ? original.History : UIHistoryMode.Push;
+                TryEdit(() => SaveRoute(source, originalAction, action, kind, target.Id, history, null));
                 evt.StopPropagation();
             });
             port.RegisterCallback<PointerCaptureOutEvent>(_ =>
@@ -391,16 +435,128 @@ namespace UniGameUI.Editor
                 Mathf.Max(0, startupChoices.IndexOf(workspace.StartPageId)), DisplayView, DisplayView);
             startup.RegisterValueChangedCallback(evt => TryEdit(() => UIAuthoring.SetStartPage(workspace, evt.newValue)));
             sidebar.Add(startup);
-            var selected = UIAuthoring.FindEntry(workspace, selectedId);
-            if (selected == null)
+            var isAnySource = selectedId == UIRoot.AnySource;
+            var selected = isAnySource ? null : UIAuthoring.FindEntry(workspace, selectedId);
+            if (!isAnySource && selected == null)
             {
                 sidebar.Add(new HelpBox("選取節點以檢視頁面或編輯路由。", HelpBoxMessageType.Info));
                 return;
             }
 
-            var title = new Label(selected.Title);
+            var sourceId = isAnySource ? UIRoot.AnySource : selected.Id;
+            var title = new Label(isAnySource ? AnySourceTitle : selected.Title);
             title.AddToClassList("sidebar-title");
             sidebar.Add(title);
+            if (isAnySource)
+            {
+                sidebar.Add(new HelpBox("從這個節點拉出去的是訊號路由：不論目前顯示哪個畫面都成立。" +
+                    "遊戲程式用 root.SignalAsync(動作, 資料) 送出；有導航正在進行時，訊號會等它結束再執行。",
+                    HelpBoxMessageType.Info) { name = "any-source-help" });
+            }
+            else
+            {
+                DrawViewOptions(selected, pages);
+            }
+
+            var local = workspace.Routes.Where(route => route.Source == sourceId).ToArray();
+            foreach (var route in local)
+            {
+                var target = UIRoute.TargetsEntry(route.Kind) ? $" → {DisplayView(route.Target)}" : "";
+                sidebar.Add(new Button(() =>
+                {
+                    selectedAction = route.Action;
+                    DrawSidebar();
+                }) { text = $"{route.Action}  ·  {KindLabel(route.Kind)}{target}" });
+            }
+            var current = local.FirstOrDefault(route => route.Action == selectedAction);
+            actionField = new TextField("動作") { value = current?.Action ?? "" };
+            sidebar.Add(actionField);
+            // 訊號路由只能切頁、開啟 Popup 或送出事件。
+            var kinds = ((UIRouteKind[])Enum.GetValues(typeof(UIRouteKind)))
+                .Where(kind => !isAnySource || UIAuthoring.IsSignalKind(kind)).ToList();
+            var currentKind = current?.Kind ?? UIRouteKind.ShowPage;
+            var kindField = new PopupField<UIRouteKind>("行為", kinds,
+                kinds.Contains(currentKind) ? currentKind : UIRouteKind.ShowPage, KindName, KindName)
+            {
+                name = "route-kind",
+            };
+            sidebar.Add(kindField);
+            var targetSlot = new VisualElement();
+            sidebar.Add(targetSlot);
+            var historySlot = new VisualElement();
+            sidebar.Add(historySlot);
+            var resultField = new TextField("關閉結果")
+            {
+                name = "route-result",
+                value = current?.Result ?? "",
+                tooltip = "留空時不回傳結果。",
+            };
+            sidebar.Add(resultField);
+            PopupField<string> targetField = null;
+            PopupField<UIHistoryMode> historyField = null;
+            void SetChoices(UIRouteKind kind, string target, UIHistoryMode history)
+            {
+                targetSlot.Clear();
+                targetField = null;
+                // 「返回歷史」只有切頁與開啟 Popup 有。Popup 沒有 Replace：只分可以返回與不可返回。
+                historySlot.Clear();
+                historyField = null;
+                if (kind == UIRouteKind.ShowPage || kind == UIRouteKind.OpenPopup)
+                {
+                    var isPopup = kind == UIRouteKind.OpenPopup;
+                    var modes = isPopup
+                        ? new List<UIHistoryMode> { UIHistoryMode.Push, UIHistoryMode.Clear }
+                        : new List<UIHistoryMode> { UIHistoryMode.Push, UIHistoryMode.Replace, UIHistoryMode.Clear };
+                    Func<UIHistoryMode, string> label = isPopup ? PopupHistoryLabel : HistoryLabel;
+                    historyField = new PopupField<UIHistoryMode>("返回歷史", modes,
+                        modes.Contains(history) ? history : UIHistoryMode.Push, label, label)
+                    {
+                        name = "route-history",
+                        tooltip = isPopup
+                            ? "不可返回的 Popup：開啟時清空歷史，返回鍵與 Back 路由無效，只能用 ClosePopup 路由、" +
+                              "View.Close() 或點遮罩關閉。"
+                            : "切到目的地之後，離開的頁面要不要留在返回歷史裡。",
+                    };
+                    historyField.style.display = DisplayStyle.Flex;
+                    historySlot.Add(historyField);
+                }
+                resultField.style.display = kind == UIRouteKind.ClosePopup ? DisplayStyle.Flex : DisplayStyle.None;
+                if (!UIRoute.TargetsEntry(kind))
+                    return;
+                var type = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
+                var choices = new List<string> { "" };
+                choices.AddRange(workspace.Entries.Where(entry => entry.Kind == type).Select(entry => entry.Id));
+                targetField = new PopupField<string>("目的地", choices, Mathf.Max(0, choices.IndexOf(target)),
+                    DisplayView, DisplayView);
+                targetSlot.Add(targetField);
+            }
+            SetChoices(kindField.value, current?.Target, current?.History ?? UIHistoryMode.Push);
+            kindField.RegisterValueChangedCallback(evt => SetChoices(evt.newValue, null, UIHistoryMode.Push));
+            sidebar.Add(new Button(() => TryEdit(() => SaveRoute(sourceId, current?.Action,
+                actionField.value, kindField.value, targetField?.value,
+                historyField?.value ?? UIHistoryMode.Push, resultField.value)))
+            {
+                name = "save-route",
+                text = "儲存路由",
+            });
+            if (current != null)
+            {
+                sidebar.Add(new Button(() => TryEdit(() =>
+                {
+                    UIAuthoring.Disconnect(workspace, sourceId, current.Action);
+                    selectedAction = null;
+                })) { text = "移除所選路由" });
+                sidebar.Add(new Button(() =>
+                {
+                    selectedAction = null;
+                    DrawSidebar();
+                }) { text = "新增另一條路由" });
+            }
+        }
+
+        // 右欄裡只有畫面才有的部分：定位、預覽疊加、由程式控制、待套用的覆寫。
+        private void DrawViewOptions(UIEntry selected, List<string> pages)
+        {
             sidebar.Add(new Button(() => UIAuthoring.FocusReview(workspace, selected.Id)) { text = "在 Scene 定位" });
             if (selected.Kind == UIEntryKind.Popup && pages.Count > 0)
             {
@@ -428,72 +584,6 @@ namespace UniGameUI.Editor
                 sidebar.Add(new Button(() => TryEdit(() => UIAuthoring.ApplyReviewOverrides(workspace, selected.Id)))
                     { text = "套用到 Prefab" });
             }
-
-            var local = workspace.Routes.Where(route => route.Source == selected.Id).ToArray();
-            foreach (var route in local)
-            {
-                var target = UIRoute.TargetsEntry(route.Kind) ? $" → {DisplayView(route.Target)}" : "";
-                sidebar.Add(new Button(() =>
-                {
-                    selectedAction = route.Action;
-                    DrawSidebar();
-                }) { text = $"{route.Action}  ·  {KindLabel(route.Kind)}{target}" });
-            }
-            var current = local.FirstOrDefault(route => route.Action == selectedAction);
-            actionField = new TextField("動作") { value = current?.Action ?? "" };
-            sidebar.Add(actionField);
-            var kindField = new EnumField("行為", current?.Kind ?? UIRouteKind.ShowPage);
-            sidebar.Add(kindField);
-            var targetSlot = new VisualElement();
-            sidebar.Add(targetSlot);
-            var historyField = new PopupField<UIHistoryMode>("返回歷史",
-                new List<UIHistoryMode> { UIHistoryMode.Push, UIHistoryMode.Replace, UIHistoryMode.Clear },
-                current?.History ?? UIHistoryMode.Push, HistoryLabel, HistoryLabel) { name = "route-history" };
-            sidebar.Add(historyField);
-            var resultField = new TextField("關閉結果")
-            {
-                name = "route-result",
-                value = current?.Result ?? "",
-                tooltip = "留空時不回傳結果。",
-            };
-            sidebar.Add(resultField);
-            PopupField<string> targetField = null;
-            void SetChoices(UIRouteKind kind, string target)
-            {
-                targetSlot.Clear();
-                targetField = null;
-                historyField.style.display = kind == UIRouteKind.ShowPage ? DisplayStyle.Flex : DisplayStyle.None;
-                resultField.style.display = kind == UIRouteKind.ClosePopup ? DisplayStyle.Flex : DisplayStyle.None;
-                if (!UIRoute.TargetsEntry(kind))
-                    return;
-                var type = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
-                var choices = new List<string> { "" };
-                choices.AddRange(workspace.Entries.Where(entry => entry.Kind == type).Select(entry => entry.Id));
-                targetField = new PopupField<string>("目的地", choices, Mathf.Max(0, choices.IndexOf(target)),
-                    DisplayView, DisplayView);
-                targetSlot.Add(targetField);
-            }
-            SetChoices((UIRouteKind)kindField.value, current?.Target);
-            kindField.RegisterValueChangedCallback(evt => SetChoices((UIRouteKind)evt.newValue, null));
-            sidebar.Add(new Button(() => TryEdit(() => SaveRoute(selected.Id, current?.Action,
-                actionField.value, (UIRouteKind)kindField.value, targetField?.value, historyField.value, resultField.value)))
-            {
-                name = "save-route",
-                text = "儲存路由",
-            });
-            if (current != null)
-            {
-                sidebar.Add(new Button(() => TryEdit(() =>
-                {
-                    UIAuthoring.Disconnect(workspace, selected.Id, current.Action);
-                    selectedAction = null;
-                })) { text = "移除所選路由" });
-                sidebar.Add(new Button(() =>
-                {
-                    selectedAction = null;
-                    DrawSidebar();
-                }) { text = "新增另一條路由" });
-            }
         }
 
         // 右欄「由程式控制進出」勾選時呼叫。
@@ -519,6 +609,17 @@ namespace UniGameUI.Editor
             UIHistoryMode.Clear => "清空歷史",
             _ => history.ToString(),
         };
+
+        // OpenPopup 路由的「返回歷史」只有兩個選項。
+        internal static string PopupHistoryLabel(UIHistoryMode history) => history switch
+        {
+            UIHistoryMode.Push => "可以返回",
+            UIHistoryMode.Clear => "不可返回",
+            _ => history.ToString(),
+        };
+
+        // 「行為」選單顯示的文字，和 EnumField 的顯示方式相同。
+        private static string KindName(UIRouteKind kind) => ObjectNames.NicifyVariableName(kind.ToString());
 
         private void DrawEdges(MeshGenerationContext context)
         {
