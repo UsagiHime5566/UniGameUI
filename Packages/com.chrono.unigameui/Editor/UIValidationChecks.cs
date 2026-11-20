@@ -99,11 +99,14 @@ namespace UniGameUI.Editor
                 if (entry.Kind == UIEntryKind.Page)
                 {
                     // 只有一個頁面的工作區沒有別的地方可以去。
+                    // 頁面自己沒有 ShowPage 或 Back，但它開得到的 Popup 有（例如暫停選單的「回標題」），也離得開。
                     if (pages.Length == 1 ||
-                        own.Any(route => route.Kind is UIRouteKind.ShowPage or UIRouteKind.Back))
+                        own.Any(route => route.Kind is UIRouteKind.ShowPage or UIRouteKind.Back) ||
+                        OpensPopupThatLeaves(entry.Id, routes, views))
                         continue;
                     issues.Add(new UIIssue(UIIssueCode.ViewNoExit,
-                        $"頁面「{entry.Id}」沒有任何 ShowPage 或 Back 路由，進來之後離不開。" +
+                        $"頁面「{entry.Id}」沒有任何 ShowPage 或 Back 路由，它開得到的 Popup 也沒有切到別頁的 " +
+                        "ShowPage 路由，進來之後離不開。" +
                         "請補上路由；由程式切換的頁面請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
                         entry.Id, context: ContextOf(root, entry)));
                     continue;
@@ -119,6 +122,30 @@ namespace UniGameUI.Editor
                     "開啟之後關不掉。請補上路由；由程式關閉的 Popup 請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
                     entry.Id, context: ContextOf(root, entry)));
             }
+        }
+
+        // 從這個頁面沿著 OpenPopup 路由開得到的 Popup（Popup 再開的 Popup 也算）裡，
+        // 有沒有切到別的頁面的 ShowPage 路由。切回這個頁面本身不算離開。
+        private static bool OpensPopupThatLeaves(string pageId, UIRoute[] routes, Dictionary<string, UIEntry> views)
+        {
+            var seen = new HashSet<string> { pageId };
+            var pending = new Queue<string>(seen);
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue();
+                foreach (var route in routes)
+                {
+                    if (route.Source != current)
+                        continue;
+                    if (current != pageId && route.Kind == UIRouteKind.ShowPage && route.Target != pageId)
+                        return true;
+                    if (route.Kind == UIRouteKind.OpenPopup && !string.IsNullOrEmpty(route.Target) &&
+                        views.TryGetValue(route.Target, out var popup) && popup.Kind == UIEntryKind.Popup &&
+                        seen.Add(popup.Id))
+                        pending.Enqueue(popup.Id);
+                }
+            }
+            return false;
         }
 
         private static void CheckButtons(UIEntry entry, List<UIIssue> issues)

@@ -1144,7 +1144,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `view.popup-option-on-page` | Error | 頁面開啟了只對 Popup 有意義的選項。 | 在 Inspector 關掉「關閉後保留並重用」與「點遮罩關閉」。 |
 | `view.overlay-missing` | Error | Popup 設定了點遮罩關閉，但沒有遮罩物件。 | 關掉這個選項，或補回遮罩。 |
 | `view.unreachable` | Warning | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到這個頁面或 Popup。起始頁本身、由程式控制的畫面、訊號路由的目標（以及從它們出發走得到的畫面）不算；沒有起始頁時只回報 `start.none`。 | 補上通往它的路由。由程式開啟的畫面標記為由程式控制。 |
-| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉。由程式控制的畫面不算；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上離開的路由。由程式切換或關閉的畫面標記為由程式控制。 |
+| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由，從它沿著 `OpenPopup` 路由開得到的 Popup 也沒有切到別頁的 `ShowPage` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉。由程式控制的畫面不算；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上離開的路由。由程式切換或關閉的畫面標記為由程式控制。 |
 | `start.unknown` | Error | 起始頁不存在，或不是頁面。 | 用計畫的 `startPage` 或藍圖重新指定。 |
 | `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式控制時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式控制。 |
 | `route.invalid` | Error | 路由的來源畫面不存在、動作是空的，或同一個來源有重複的動作（訊號路由之間動作重複也算）。 | 用計畫或藍圖重新建立這條路由。 |

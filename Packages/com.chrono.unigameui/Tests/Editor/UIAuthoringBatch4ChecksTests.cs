@@ -165,6 +165,49 @@ namespace UniGameUI.Editor.Tests
             Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty);
         }
 
+        // K4：遊戲頁只有「開啟暫停選單」，暫停選單有「回標題」：遊戲頁離得開。
+        [Test]
+        public void PagesCanLeaveThroughAPopupTheyOpen()
+        {
+            var root = WorkspaceWithHomePage("Batch4Fix Popup Exits");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.CreatePage(root, "game", "Game");
+            UIAuthoring.CreatePopup(root, "pause", "Pause", $"{folder}/Pause.prefab");
+            UIAuthoring.CreatePopup(root, "confirm", "Confirm quit", $"{folder}/ConfirmQuit.prefab");
+            UIAuthoring.Connect(root, "home", "play", UIRouteKind.ShowPage, "game");
+            UIAuthoring.Connect(root, "game", "pause", UIRouteKind.OpenPopup, "pause");
+            UIAuthoring.Connect(root, "pause", "resume", UIRouteKind.ClosePopup);
+            UIAuthoring.Connect(root, "confirm", "cancel", UIRouteKind.ClosePopup);
+
+            // 暫停選單只能關閉：遊戲頁沒有出口。
+            Assert.That(NoExit(), Is.EqualTo(new[] { "game" }));
+            // 切回遊戲頁本身不算離開。
+            UIAuthoring.Connect(root, "pause", "restart", UIRouteKind.ShowPage, "game");
+            Assert.That(NoExit(), Is.EqualTo(new[] { "game" }));
+
+            // 暫停選單有切到別頁的 ShowPage：算有出口。
+            UIAuthoring.Connect(root, "pause", "quit", UIRouteKind.ShowPage, "home");
+            Assert.That(NoExit(), Is.Empty);
+            UIAuthoring.Disconnect(root, "pause", "quit");
+            Assert.That(NoExit(), Is.EqualTo(new[] { "game" }));
+
+            // Popup 再開的 Popup 也算。
+            UIAuthoring.Connect(root, "pause", "askQuit", UIRouteKind.OpenPopup, "confirm");
+            Assert.That(NoExit(), Is.EqualTo(new[] { "game" }));
+            UIAuthoring.Connect(root, "confirm", "quit", UIRouteKind.ShowPage, "home");
+            Assert.That(NoExit(), Is.Empty);
+
+            // 訊號開啟的 Popup 不算這個頁面的出口：訊號路由不屬於任何畫面。
+            UIAuthoring.Disconnect(root, "pause", "askQuit");
+            UIAuthoring.Connect(root, UIRoot.AnySource, "askQuit", UIRouteKind.OpenPopup, "confirm");
+            Assert.That(NoExit(), Is.EqualTo(new[] { "game" }));
+
+            string[] NoExit()
+            {
+                return Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId).ToArray();
+            }
+        }
+
         [Test]
         public void ButtonsThatDoNothingAreWarnings()
         {
