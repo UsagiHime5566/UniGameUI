@@ -17,7 +17,7 @@ UniGameUI 需要 [DOTween 標準版](https://assetstore.unity.com/packages/tools
 
 遊戲程式以 `UIViewBehaviour` 接收頁面生命週期，從 `View.Root` 導航，並用 `View.Get<T>(id)` 取得元件。切頁可指定返回歷史，選擇視窗可用 `OpenPopupForResultAsync<T>` 等待關閉結果，「確定要……嗎？」用 `await Root.ConfirmAsync(message)`。滑桿、開關、下拉選單、輸入框的值變更直接訂閱 Unity 元件的事件；清單用 `UIList.SetItems`。音效與數據記錄可以訂閱工作區的全域事件。要在 `OnShown` 接續導航，先用 `Awaitable.NextFrameAsync()` 等一個影格，從同步通知直接提出會回傳 `Busy` 並記錄警告。
 
-遊戲事件（挑戰者連線、斷線）用 `root.SignalAsync(動作, 資料)` 送出，要去哪裡畫在藍圖的「任何畫面」節點上。訊號不論當時在哪個畫面都成立，遇到轉場會等它結束再執行，不會漏掉。路由的 `history: Clear` 設定跳過去之後不能返回，`ShowPage` 與 `OpenPopup` 都適用。
+在某一頁發生、依遊戲邏輯的結果去不同地方的換頁（「進入下一天」可能到開店前、週結或結局），畫成那一頁的路由，每個去處各一條，頁面腳本用 `NavigateAsync(動作)` 挑其中一條；它遇到轉場會等它結束再執行。任何畫面都可能發生的遊戲事件（挑戰者連線、斷線）才用 `root.SignalAsync(動作, 資料)` 送出，要去哪裡畫在藍圖的「任何畫面」節點上。路由的 `history: Clear` 設定跳過去之後不能返回，`ShowPage` 與 `OpenPopup` 都適用。
 
 手把與鍵盤可以操作所有畫面，改用滑鼠時不留下選取外框；Esc 與手把的取消鍵等同返回，個別畫面可以關掉或用 `OnBackRequested` 接手。多語系只開接口：文字、圖片與下拉選項可以帶鍵值，專案實作 `IUILocalizer` 提供翻譯，切換語言後呼叫 `root.RefreshLocalization()`。
 
@@ -25,7 +25,8 @@ UniGameUI 需要 [DOTween 標準版](https://assetstore.unity.com/packages/tools
 
 ## 驗收工具
 
-- **藍圖視窗** 的畫布可以用滾輪縮放、按住中鍵（或 Alt 加左鍵）拖曳平移，**顯示全部** 一次看到所有節點。整個節點都可以點選與拖曳，雙擊定位到 Scene 裡的畫面。右欄分成有標題的區塊：畫面、畫面設定、從這裡出發的路由、編輯路由、通到這裡的路由。
+- **藍圖視窗** 的畫布可以用滾輪縮放、按住中鍵（或 Alt 加左鍵）拖曳平移，**顯示全部** 一次看到所有節點。整個節點都可以點選與拖曳，雙擊定位到 Scene 裡的畫面。右欄分成有標題的區塊：畫面、畫面設定、從這裡出發的路由、編輯路由、通到這裡的路由。訊號路由畫成比較淡的虛線，也可以整個關掉。
+- **執行中的藍圖**：Play Mode 時藍圖照常顯示，即時標示目前的頁面、疊放的 Popup 與轉場中的畫面，剛走過的路由會亮起再淡掉；右欄列出執行中的狀態與最近 20 筆導航，每條路由可以按「觸發」走一次。這時藍圖是唯讀的。
 - **Validate** 檢查藍圖的設定，每一筆問題有穩定的代碼：路由的目的地不存在、走不到的畫面、沒有出口的畫面、沒有動作的按鈕、字型缺少的字元等。
 - **自動走訪** 進入 Play Mode，把藍圖上的每條路由實際觸發一次，確認走得通。
 - 兩個工具都能從命令列執行（`UIValidation.RunFromCommandLine`、`UIWalk.RunFromCommandLine`），用結束代碼表示結果並寫出 JSON 報告，也可以從藍圖視窗的 **Validate** 與 **走訪** 按鈕執行。agent 交付前的固定步驟、報告格式與問題代碼表在操作指南的「驗收」一節。

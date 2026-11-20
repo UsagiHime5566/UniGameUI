@@ -1,6 +1,6 @@
 # UniGameUI
 
-給 Unity 6.3 用的 uGUI 框架。用 JSON 計畫或藍圖視窗建立頁面與 Popup，附可以直接改美術的起始元件、手把與鍵盤導覽、多語系接口、遊戲事件訊號，以及能從命令列執行的 Validate 與自動走訪。設計上假設框架之上的遊戲程式由 agent 撰寫。
+給 Unity 6.3 用的 uGUI 框架。用 JSON 計畫或藍圖視窗建立頁面與 Popup，附可以直接改美術的起始元件、手把與鍵盤導覽、多語系接口、遊戲事件訊號，能從命令列執行的 Validate 與自動走訪，以及在 Play Mode 即時標示目前畫面的執行中藍圖。設計上假設框架之上的遊戲程式由 agent 撰寫。
 
 這個 repo 同時是套件的開發專案，套件本體在 [Packages/com.chrono.unigameui](Packages/com.chrono.unigameui)。
 
