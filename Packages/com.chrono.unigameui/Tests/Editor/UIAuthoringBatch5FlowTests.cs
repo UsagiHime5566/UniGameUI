@@ -3,7 +3,7 @@ using NUnit.Framework;
 
 namespace UniGameUI.Editor.Tests
 {
-    // 第五批 5-8：頁面自己的流程。「由程式控制」只代表進來的方式，頁面照樣要有出口；起始頁不需要這個標記。
+    // 第五批 5-8：頁面自己的流程。「由程式開啟」只代表進來的方式，頁面照樣要有出口；起始頁不需要這個標記。
     public sealed partial class UIAuthoringTests
     {
         [Test]
@@ -24,14 +24,14 @@ namespace UniGameUI.Editor.Tests
             var plain = Issues(root, UIIssueCode.ViewNoExit).Single();
             Assert.That(plain.ViewId, Is.EqualTo("dayEnd"));
             Assert.That(plain.Message, Does.Contain("dayEnd").And.Contain("這一頁的路由").And.Contain("NavigateAsync")
-                .And.Not.Contain("由程式控制只表示進來的方式"));
+                .And.Not.Contain("由程式開啟只表示進來的方式"));
 
-            // 標記為由程式控制：照樣回報，並說明標記只代表進來的方式。
+            // 標記為由程式開啟：照樣回報，並說明標記只代表進來的方式。
             UIAuthoring.SetNavigatedByCode(root, "dayEnd", true);
             var marked = Issues(root, UIIssueCode.ViewNoExit).Single();
             Assert.That(marked.ViewId, Is.EqualTo("dayEnd"));
             Assert.That(marked.Severity, Is.EqualTo(UIIssueSeverity.Warning));
-            Assert.That(marked.Message, Does.Contain("由程式控制只表示進來的方式").And.Contain("NavigateAsync"));
+            Assert.That(marked.Message, Does.Contain("由程式開啟只表示進來的方式").And.Contain("NavigateAsync"));
             // 只被訊號路由帶進來的頁面也一樣：訊號路由不是任何畫面的出口。
             UIAuthoring.Connect(root, UIRoot.AnySource, "showDayEnd", UIRouteKind.ShowPage, "dayEnd");
             Assert.That(Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId),
@@ -41,7 +41,7 @@ namespace UniGameUI.Editor.Tests
             UIAuthoring.Connect(root, "dayEnd", "toMorning", UIRouteKind.ShowPage, "morning", UIHistoryMode.Clear);
             Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty);
 
-            // Popup 標記為由程式控制：照舊不檢查出口（確認框這類 Popup 是自己用 View.Close() 關閉的）。
+            // Popup 標記為由程式開啟：照舊不檢查出口（確認框這類 Popup 是自己用 View.Close() 關閉的）。
             UIAuthoring.Disconnect(root, "picker", "close");
             Assert.That(Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId),
                 Is.EqualTo(new[] { "picker" }));

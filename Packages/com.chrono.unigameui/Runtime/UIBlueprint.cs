@@ -34,7 +34,7 @@ namespace UniGameUI
         public Vector2 GraphPosition => graphPosition;
 
         /// <summary>
-        /// 這個畫面在藍圖上標記為「由程式控制進出」，不靠路由開啟或關閉。
+        /// 這個畫面在藍圖上標記為「由程式開啟」：進來的方式不靠路由。頁面標記之後照樣要有自己的出口路由。
         /// 只影響 Editor 的 Validate 與走訪，執行期的行為不變。
         /// </summary>
         public bool NavigatedByCode => navigatedByCode;

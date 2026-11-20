@@ -268,16 +268,16 @@ namespace UniGameUI.Editor
         private void DrawViewSettingsSection(UIEntry selected)
         {
             var section = AddSection("view-settings", "畫面設定");
-            // 確認框用 ConfirmAsync 開啟、自己關閉，自動視為由程式控制，不能取消。
+            // 確認框用 ConfirmAsync 開啟、自己關閉，自動視為由程式開啟，不能取消。
             var isConfirm = UIAuthoring.IsConfirmPopup(selected.Review) || UIAuthoring.IsConfirmPopup(selected.Prefab);
             var help = isConfirm
-                ? "確認框由 ConfirmAsync 開啟並自己關閉，自動視為由程式控制，不能取消。"
+                ? "確認框由 ConfirmAsync 開啟並自己關閉，自動視為由程式開啟，不能取消。"
                 : selected.Kind == UIEntryKind.Page
                     ? "進來的方式不靠路由時勾選，例如需要程式給資料才能顯示的畫面。勾選後 Validate 不檢查它走不走得到，" +
                       "但頁面照樣要有出口：這一頁發生的換頁請畫成這一頁的路由。去處由遊戲狀態決定，不等於不靠路由。"
                     : "進來的方式不靠路由時勾選，例如程式開啟、自己關閉的 Popup。" +
                       "勾選後 Validate 不檢查它走不走得到、有沒有出口。";
-            var byCode = new Toggle("由程式控制進出")
+            var byCode = new Toggle("由程式開啟")
             {
                 name = "navigated-by-code",
                 value = UIAuthoring.IsNavigatedByCode(selected),

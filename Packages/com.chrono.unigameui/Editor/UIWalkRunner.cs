@@ -259,9 +259,9 @@ namespace UniGameUI.Editor
                                 }
                                 else if (source != null && byCode.Contains(source.Id))
                                 {
-                                    // 由程式控制的畫面需要程式給資料才開得起來，走訪不傳資料，所以不算失敗。
+                                    // 由程式開啟的畫面需要程式給資料才開得起來，走訪不傳資料，所以不算失敗。
                                     Finish(step, UIWalkStepStatus.Skipped,
-                                        "來源畫面由程式控制，需要由程式提供資料才能開啟。" + prepared.Reason);
+                                        "來源畫面標記為由程式開啟，需要由程式提供資料才能開啟。" + prepared.Reason);
                                 }
                                 else
                                 {
@@ -309,9 +309,9 @@ namespace UniGameUI.Editor
                         Finish(step, UIWalkStepStatus.Failed, Timeout("觸發路由"));
                     else if (result == UINavResult.Failed && targetByCode)
                     {
-                        // 由程式控制的目標畫面沒有資料就顯示不出來，走訪不傳資料，所以不算失敗。
+                        // 由程式開啟的目標畫面沒有資料就顯示不出來，走訪不傳資料，所以不算失敗。
                         Finish(step, UIWalkStepStatus.Skipped,
-                            $"目標畫面「{route.Target}」由程式控制，需要由程式提供資料才能顯示。" + logs.ErrorText());
+                            $"目標畫面「{route.Target}」標記為由程式開啟，需要由程式提供資料才能顯示。" + logs.ErrorText());
                     }
                     else if (verdict != null)
                         Finish(step, UIWalkStepStatus.Failed, verdict);
@@ -461,7 +461,7 @@ namespace UniGameUI.Editor
             private async Awaitable<Prepared> PrepareSignal(UIRoute route, StepClock clock)
             {
                 var avoid = route.Kind == UIRouteKind.ShowPage ? route.Target : null;
-                // 起始頁優先，其次是其他頁面。由程式控制的頁面可能需要資料，沒有其他候選時才用。
+                // 起始頁優先，其次是其他頁面。由程式開啟的頁面可能需要資料，沒有其他候選時才用。
                 var candidates = PreferRouted(new[] { root.StartPageId }
                     .Concat(pages.Select(page => page.Id))
                     .Where(id => !string.IsNullOrEmpty(id) && id != avoid &&
@@ -488,9 +488,9 @@ namespace UniGameUI.Editor
                     // 這個頁面當不成出發點，改試下一個。它記的訊息不算進這一步的判定。
                     logs.Abandon(attempt, AbandonedNote(id));
                 }
-                // 能當出發點的頁面全部由程式控制、沒有資料開不起來：不算失敗。
+                // 能當出發點的頁面全部由程式開啟、沒有資料開不起來：不算失敗。
                 return candidates.All(byCode.Contains)
-                    ? Prepared.Skipped("能當出發點的頁面都由程式控制，需要由程式提供資料才能顯示。" + reason)
+                    ? Prepared.Skipped("能當出發點的頁面都標記為由程式開啟，需要由程式提供資料才能顯示。" + reason)
                     : Prepared.Failed(reason);
             }
 
@@ -530,10 +530,10 @@ namespace UniGameUI.Editor
                     }
                     if (previous == null && needsPrevious)
                     {
-                        // 能當上一頁的只有由程式控制、沒有資料開不起來的頁面：不是這條路由的問題。
+                        // 能當上一頁的只有由程式開啟、沒有資料開不起來的頁面：不是這條路由的問題。
                         if (others.Length > 0 && others.All(byCode.Contains))
                         {
-                            return Prepared.Skipped("能當上一頁的頁面都由程式控制，需要由程式提供資料才能顯示，" +
+                            return Prepared.Skipped("能當上一頁的頁面都標記為由程式開啟，需要由程式提供資料才能顯示，" +
                                 "Back 沒有上一頁可以回去。");
                         }
                         return Prepared.Failed("沒有其他頁面可以先顯示，Back 沒有上一頁可以回去。");
@@ -593,7 +593,7 @@ namespace UniGameUI.Editor
                 return $"準備時被放棄的候選頁面「{pageId}」，不算進這一步的判定。";
             }
 
-            // 候選頁面先排除由程式控制的頁面：它們可能要資料才顯示得出來。
+            // 候選頁面先排除由程式開啟的頁面：它們可能要資料才顯示得出來。
             // 沒有其他候選時，allowByCode 才把它們拿來用。
             private string[] PreferRouted(string[] candidates, bool allowByCode)
             {
@@ -603,7 +603,7 @@ namespace UniGameUI.Editor
 
             // 準備來源頁之前先顯示的「另一個頁面」：有路由通到來源頁的頁面，再來是起始頁。
             // anyPage：想要有上一頁時，前兩種都沒有，其餘的頁面也拿來試。
-            // needed：非有上一頁不可（Back）。這時沒有其他候選，才會用由程式控制的頁面。
+            // needed：非有上一頁不可（Back）。這時沒有其他候選，才會用由程式開啟的頁面。
             private string[] OtherPages(UIEntry source, bool anyPage, bool needed)
             {
                 var candidates = routes
@@ -712,9 +712,9 @@ namespace UniGameUI.Editor
                         var isSource = routes.Any(route => route.Source == entry.Id);
                         var isTarget = routes.Any(route => UIRoute.TargetsEntry(route.Kind) && route.Target == entry.Id);
                         if (byCode.Contains(entry.Id) && !isSource)
-                            reason = "由程式控制，而且沒有以它為來源的路由，不在走訪範圍。";
+                            reason = "標記為由程式開啟，而且沒有以它為來源的路由，不在走訪範圍。";
                         else if (byCode.Contains(entry.Id))
-                            reason = "由程式控制，沒有資料無法開啟。";
+                            reason = "標記為由程式開啟，沒有資料就開不起來。";
                         else if (!isSource && !isTarget && entry.Id != root.StartPageId)
                             reason = "沒有任何路由通到它，也沒有以它為來源的路由。";
                         else

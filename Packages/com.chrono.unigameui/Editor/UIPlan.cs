@@ -467,7 +467,7 @@ namespace UniGameUI.Editor
             if (newView || spec.updateExisting)
             {
                 ApplyViewOptions(view, spec);
-                // 由程式控制進出是藍圖上的設定，記在工作區，不在 View 上。
+                // 由程式開啟是藍圖上的設定，記在工作區，不在 View 上。
                 if (!string.IsNullOrEmpty(spec.navigation))
                 {
                     UIAuthoring.SetNavigatedByCode(root, spec.id,

@@ -522,10 +522,10 @@ namespace UniGameUI.Editor.Tests
             try
             {
                 window.CreateGUI();
-                // 種類、起始頁、由程式控制各是一個徽章。
+                // 種類、起始頁、由程式開啟各是一個徽章。
                 Assert.That(Badges("node-home"), Is.EqualTo(new[] { "頁面", "起始頁" }));
                 Assert.That(Badges("node-next"), Is.EqualTo(new[] { "頁面" }));
-                Assert.That(Badges("node-tip"), Is.EqualTo(new[] { "Popup", "程式控制" }));
+                Assert.That(Badges("node-tip"), Is.EqualTo(new[] { "Popup", "程式開啟" }));
                 Assert.That(Badges("any-source-node"), Is.EqualTo(new[] { "訊號" }));
                 Assert.That(Node("node-home").ClassListContains("page-node"), Is.True);
                 Assert.That(Node("node-tip").ClassListContains("popup-node"), Is.True);

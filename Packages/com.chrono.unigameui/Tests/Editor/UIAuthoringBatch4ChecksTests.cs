@@ -35,9 +35,9 @@ namespace UniGameUI.Editor.Tests
             Assert.That(none.Message, Does.Contain("startPage"));
             Assert.That(Issues(root, UIIssueCode.ViewUnreachable), Is.Empty);
 
-            // 不算：所有頁面都由程式控制。
+            // 不算：所有頁面都由程式開啟。
             UIAuthoring.SetNavigatedByCode(root, "home", true);
-            Assert.That(Issues(root, UIIssueCode.StartNone), Is.Not.Empty, "還有一個頁面不是由程式控制");
+            Assert.That(Issues(root, UIIssueCode.StartNone), Is.Not.Empty, "還有一個頁面不是由程式開啟");
             UIAuthoring.SetNavigatedByCode(root, "orphan", true);
             Assert.That(Issues(root, UIIssueCode.StartNone), Is.Empty);
             UIAuthoring.SetNavigatedByCode(root, "home", false);
@@ -63,7 +63,7 @@ namespace UniGameUI.Editor.Tests
                 Assert.That(issue.Message, Does.Contain(issue.ViewId).And.Contain("home"));
             }
 
-            // 不算：由程式控制的畫面。它是程式打開的，所以從它出發的路由也算走得到。
+            // 不算：由程式開啟的畫面。它是程式打開的，所以從它出發的路由也算走得到。
             UIAuthoring.SetNavigatedByCode(root, "lost", true);
             UIAuthoring.Connect(root, "lost", "openOrphan", UIRouteKind.ShowPage, "orphan");
             Assert.That(Issues(root, UIIssueCode.ViewUnreachable), Is.Empty);
@@ -140,10 +140,10 @@ namespace UniGameUI.Editor.Tests
             Assert.That(page.ViewId, Is.EqualTo("shop"));
             Assert.That(page.Severity, Is.EqualTo(UIIssueSeverity.Warning));
             Assert.That(page.Message, Does.Contain("shop").And.Contain("Back"));
-            // 0.6.0：由程式控制只代表進來的方式，頁面標記之後照樣要有出口。
+            // 0.6.0：由程式開啟只代表進來的方式，頁面標記之後照樣要有出口。
             UIAuthoring.SetNavigatedByCode(root, "shop", true);
             Assert.That(Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId), Is.EqualTo(new[] { "shop" }),
-                "由程式控制的頁面照樣檢查出口");
+                "由程式開啟的頁面照樣檢查出口");
             UIAuthoring.SetNavigatedByCode(root, "shop", false);
             UIAuthoring.Connect(root, "shop", "back", UIRouteKind.Back);
             Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty);
@@ -219,7 +219,7 @@ namespace UniGameUI.Editor.Tests
             UIAuthoring.Connect(root, "other", "open_stuck", UIRouteKind.OpenPopup, "stuck");
             Assert.That(NoExit(), Is.EquivalentTo(new[] { "stuck", "bySignal" }));
 
-            // 補上 ClosePopup、ShowPage、點遮罩關閉，或標記為由程式控制之後不回報。
+            // 補上 ClosePopup、ShowPage、點遮罩關閉，或標記為由程式開啟之後不回報。
             UIAuthoring.Connect(root, "stuck", "close", UIRouteKind.ClosePopup);
             Assert.That(NoExit(), Is.EqualTo(new[] { "bySignal" }));
             UIAuthoring.SetNavigatedByCode(root, "bySignal", true);
@@ -315,7 +315,7 @@ namespace UniGameUI.Editor.Tests
             var item = new GameObject("Item", typeof(RectTransform), typeof(Image), typeof(Button));
             item.transform.SetParent(listContent.transform, false);
 
-            // 不算：由程式控制的畫面裡的按鈕。
+            // 不算：由程式開啟的畫面裡的按鈕。
             var loading = UIAuthoring.CreatePage(root, "loading", "Loading");
             NewButton(loading, "Skip");
             UIAuthoring.SetNavigatedByCode(root, "loading", true);

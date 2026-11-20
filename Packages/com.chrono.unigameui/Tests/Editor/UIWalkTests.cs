@@ -379,7 +379,7 @@ namespace UniGameUI.Editor.Tests
             UIAuthoring.Connect(root, "needsData", "close", UIRouteKind.ClosePopup);
             UIAuthoring.Connect(root, "home", "openSlow", UIRouteKind.ShowPage, "slow");
             UIAuthoring.Connect(root, "fine", "back", UIRouteKind.Back);
-            // 目標由程式控制、沒有資料就顯示不出來：一般路由與訊號路由都略過。
+            // 目標由程式開啟、沒有資料就顯示不出來：一般路由與訊號路由都略過。
             UIAuthoring.Connect(root, "home", "openNeedsData", UIRouteKind.OpenPopup, "needsData");
             UIAuthoring.Connect(root, UIRoot.AnySource, "needsData", UIRouteKind.OpenPopup, "needsData");
             AssertNoValidationErrors(root);
@@ -427,18 +427,18 @@ namespace UniGameUI.Editor.Tests
             Assert.That(report.Steps[4].Logs, Is.Empty);
             Assert.That(report.Steps[5].Logs, Is.Empty);
 
-            // 由程式控制的來源畫面準備失敗：略過，原因是需要由程式提供資料。
+            // 由程式開啟的來源畫面準備失敗：略過，原因是需要由程式提供資料。
             var needsData = report.Steps[6];
-            Assert.That(needsData.Reason, Does.Contain("由程式控制").And.Contain("資料"));
+            Assert.That(needsData.Reason, Does.Contain("由程式開啟").And.Contain("資料"));
             Assert.That(needsData.Result, Is.Empty);
             Assert.That(needsData.Logs.Any(log => log.Type == "Exception"), Is.True);
 
-            // 目標畫面由程式控制而顯示失敗：略過，原因是需要由程式提供資料。導航的結果照實記錄。
+            // 目標畫面由程式開啟而顯示失敗：略過，原因是需要由程式提供資料。導航的結果照實記錄。
             foreach (var skipped in new[] { report.Steps[9], report.Steps[10] })
             {
                 Assert.That(skipped.Kind, Is.EqualTo("OpenPopup"));
                 Assert.That(skipped.Result, Is.EqualTo("Failed"));
-                Assert.That(skipped.Reason, Does.Contain("needsData").And.Contain("由程式控制").And.Contain("資料"));
+                Assert.That(skipped.Reason, Does.Contain("needsData").And.Contain("由程式開啟").And.Contain("資料"));
                 Assert.That(skipped.Logs.Any(log => log.Type == "Exception"), Is.True);
             }
 
@@ -456,7 +456,7 @@ namespace UniGameUI.Editor.Tests
             }));
             Assert.That(views.Values.Where(view => view.Visited).Select(view => view.Id),
                 Is.EquivalentTo(new[] { "home", "noisy", "warned", "launch", "fine" }));
-            Assert.That(views["needsData"].Reason, Does.Contain("由程式控制"));
+            Assert.That(views["needsData"].Reason, Does.Contain("由程式開啟"));
             Assert.That(views["broken"].Reason, Is.Not.Empty);
             Assert.That(views["home"].Reason, Is.Empty);
         }
@@ -468,7 +468,7 @@ namespace UniGameUI.Editor.Tests
             var root = NewWorkspace();
             Page(root, "solo");
             Popup(root, "tip");
-            // 由程式控制、而且沒有以它為來源的路由：不會被開啟，只列在畫面清單裡。
+            // 由程式開啟、而且沒有以它為來源的路由：不會被開啟，只列在畫面清單裡。
             Popup(root, "dialog", UIWalkTestPage.Behaviour.RequireData);
             UIAuthoring.SetNavigatedByCode(root, "dialog", true);
             UIAuthoring.Connect(root, "solo", "back", UIRouteKind.Back);
@@ -491,7 +491,7 @@ namespace UniGameUI.Editor.Tests
             Assert.That((report.PassedCount, report.FailedCount, report.SkippedCount), Is.EqualTo((2, 0, 2)));
             var dialog = report.Views.Single(view => view.Id == "dialog");
             Assert.That(dialog.Visited, Is.False);
-            Assert.That(dialog.Reason, Does.Contain("由程式控制").And.Contain("不在走訪範圍"));
+            Assert.That(dialog.Reason, Does.Contain("由程式開啟").And.Contain("不在走訪範圍"));
             Assert.That(report.Views.Where(view => view.Visited).Select(view => view.Id),
                 Is.EquivalentTo(new[] { "solo", "tip" }));
         }
@@ -568,7 +568,7 @@ namespace UniGameUI.Editor.Tests
             Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"logsOmitted\": 11"));
         }
 
-        // K2：準備時先顯示的頁面不選由程式控制的；顯示不出來而被放棄的候選，它記的錯誤不算在這一步上。
+        // K2：準備時先顯示的頁面不選由程式開啟的；顯示不出來而被放棄的候選，它記的錯誤不算在這一步上。
         [UnityTest]
         [Timeout(300000)]
         public IEnumerator PreparationCandidatesDoNotFailUnrelatedSteps()
@@ -578,7 +578,7 @@ namespace UniGameUI.Editor.Tests
             Page(root, "game");
             // 靠路由進出、但顯示不出來的頁面：以它為來源的步驟會失敗，別的步驟拿它當候選時不受影響。
             Page(root, "broken", UIWalkTestPage.Behaviour.ThrowOnShowing);
-            // 由程式控制、需要資料的頁面：不會被拿來當候選。
+            // 由程式開啟、需要資料的頁面：不會被拿來當候選。
             Page(root, "result", UIWalkTestPage.Behaviour.ThrowOnShowing);
             UIAuthoring.SetNavigatedByCode(root, "result", true);
             Popup(root, "pause");
@@ -617,16 +617,16 @@ namespace UniGameUI.Editor.Tests
                 Assert.That(step.Logs.Select(log => log.Note), Is.All.Contains("被放棄的候選頁面「broken」"));
                 Assert.That(step.Logs.Any(log => log.Type == "Exception"), Is.True);
                 Assert.That(step.Logs.Any(log => log.Message.Contains("「result」")), Is.False,
-                    "由程式控制的頁面不應該被拿來試");
+                    "由程式開啟的頁面不應該被拿來試");
             }
-            // 來源是 Popup 的步驟：底下的頁面選 game，不選由程式控制的 result。
+            // 來源是 Popup 的步驟：底下的頁面選 game，不選由程式開啟的 result。
             Assert.That(report.Steps[7].Logs.Any(log => log.Message.Contains("「result」")), Is.False);
             // 沒有用到候選的步驟，訊息沒有註記。
             Assert.That(report.Steps[1].Logs.Select(log => log.Note), Is.All.Empty);
             Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"note\": \"準備時被放棄的候選頁面"));
         }
 
-        // K2：來源是一般頁面的 Back，唯一的另一個頁面是開不起來的由程式控制頁面：略過，不是失敗。
+        // K2：來源是一般頁面的 Back，唯一的另一個頁面是開不起來的由程式開啟頁面：略過，不是失敗。
         [UnityTest]
         [Timeout(300000)]
         public IEnumerator BackIsSkippedWhenTheOnlyOtherPageNeedsDataFromCode()
@@ -651,7 +651,7 @@ namespace UniGameUI.Editor.Tests
             {
                 "/=Passed", "home/back=Skipped"
             }), Describe(report));
-            Assert.That(report.Steps[1].Reason, Does.Contain("由程式控制").And.Contain("Back"));
+            Assert.That(report.Steps[1].Reason, Does.Contain("由程式開啟").And.Contain("Back"));
             Assert.That(report.Steps[1].Logs.Select(log => log.Note), Is.All.Contains("被放棄的候選頁面「result」"));
         }
 

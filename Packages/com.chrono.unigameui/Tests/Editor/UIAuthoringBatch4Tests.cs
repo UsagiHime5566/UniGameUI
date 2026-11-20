@@ -21,7 +21,7 @@ using Slider = UnityEngine.UI.Slider;
 
 namespace UniGameUI.Editor.Tests
 {
-    // 第四批：驗收工具（問題代碼、由程式控制的畫面、Validate 新增的檢查）。
+    // 第四批：驗收工具（問題代碼、由程式開啟的畫面、Validate 新增的檢查）。
     public sealed partial class UIAuthoringTests
     {
         private static IEnumerable<string> IssueCodes =>
@@ -173,7 +173,7 @@ namespace UniGameUI.Editor.Tests
             Assert.That(Marked("tip"), Is.True);
             Assert.That(Marked("home"), Is.False);
 
-            // 根節點掛了 UIConfirmPopup 的畫面自動視為由程式控制，藍圖上不必標記。
+            // 根節點掛了 UIConfirmPopup 的畫面自動視為由程式開啟，藍圖上不必標記。
             var confirm = UIAuthoring.FindEntry(root, "confirm");
             Assert.That(confirm.NavigatedByCode, Is.False);
             Assert.That(UIAuthoring.IsNavigatedByCode(confirm), Is.True);

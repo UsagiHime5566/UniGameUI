@@ -596,15 +596,15 @@ namespace UniGameUI.Editor
             var isPopup = entry.Kind == UIEntryKind.Popup;
             var card = NewCard("node-" + entry.Id, entry.Id, isPopup ? "popup-node" : "page-node");
 
-            // 種類、起始頁、由程式控制各用一個徽章，不擠在同一行小字裡。
+            // 種類、起始頁、由程式開啟各用一個徽章，不擠在同一行小字裡。
             var badges = AddBadgeRow(card);
             AddBadge(badges, EntryKindLabel(entry.Kind), isPopup ? "badge-popup" : "badge-page");
             if (entry.Id == workspace.StartPageId)
                 AddBadge(badges, "起始頁", "badge-start").tooltip = "載入 Scene 之後第一個顯示的頁面。";
             if (UIAuthoring.IsNavigatedByCode(entry))
-                AddBadge(badges, "程式控制", "badge-code").tooltip = isPopup
-                    ? "由程式控制：進來的方式不靠路由，例如程式開啟、自己關閉的 Popup。"
-                    : "由程式控制：進來的方式不靠路由。頁面照樣要有自己的出口路由。";
+                AddBadge(badges, "程式開啟", "badge-code").tooltip = isPopup
+                    ? "由程式開啟：進來的方式不靠路由，例如用程式開啟、自己關閉的 Popup。"
+                    : "由程式開啟：進來的方式不靠路由。頁面照樣要有自己的出口路由。";
 
             AddNodeText(card, entry.Title, "node-title");
             AddNodeText(card, entry.Id, "node-id").tooltip = "畫面 ID";
@@ -964,7 +964,7 @@ namespace UniGameUI.Editor
             RefreshSelection();
         }
 
-        // 右欄「由程式控制進出」勾選時呼叫。
+        // 右欄「由程式開啟」勾選時呼叫。
         internal void SetNavigatedByCode(string id, bool value)
         {
             TryEdit(() => UIAuthoring.SetNavigatedByCode(workspace, id, value));

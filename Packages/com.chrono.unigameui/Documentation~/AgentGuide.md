@@ -151,7 +151,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 | `backKey` | `Back`（預設）、`Ignore` | `Ignore` 時這個畫面不回應返回鍵。 |
 | `popupCache` | `Recreate`（預設）、`Reuse` | 只能寫在 Popup。`Reuse` 時關閉後保留實例，下次開啟重用。 |
 | `overlayClick` | `Ignore`（預設）、`Close` | 只能寫在 Popup。`Close` 時點擊遮罩等同不帶結果的關閉。 |
-| `navigation` | `Routes`（預設）、`Code` | `Code` 表示這個畫面由程式控制：進來的方式不靠路由。頁面照樣要有自己的出口路由。只影響 Validate 與走訪，見「驗收」的「由程式控制的畫面」。 |
+| `navigation` | `Routes`（預設）、`Code` | `Code` 表示這個畫面由程式開啟：進來的方式不靠路由。頁面照樣要有自己的出口路由。只影響 Validate 與走訪，見「驗收」的「由程式開啟的畫面」。 |
 
 ## 元件
 
@@ -252,7 +252,7 @@ var result = await root.TriggerAsync(WorkshopUI.Views.Workshop, WorkshopUI.Actio
 - `UIAuthoring.SetTransition(view, entering, preset, duration, direction, ease, distance, angle, zoomScale)` 和 `SetPageTransitionMode(root, mode)`。
 - `UIAuthoring.ArrangeReview(root)`、`FocusReview(root, id)`、`PreviewPopupOnPage(root, popupId, pageId)`、`HasReviewOverrides(entry)`、`ApplyReviewOverrides(root, id)`。最後一項適合提交本次新建立的 Prefab。既有實例的覆寫先交給使用者審核。
 - `UIWidgets.Find()` 回傳元件集（沒有時是 null），`Install()` 補上缺少的起始元件，`Register(name, prefabPath, like)` 登記自訂元件，`SetDefaultFont(fontAssetPath)` 設定預設字型，`ConfirmPrefabPath` 是起始確認框的路徑。
-- `UIAuthoring.SetNavigatedByCode(root, id, value)` 標記畫面由程式控制進出，`UIEntry.NavigatedByCode` 讀取這個標記。
+- `UIAuthoring.SetNavigatedByCode(root, id, value)` 標記畫面由程式開啟，`UIEntry.NavigatedByCode` 讀取這個標記。
 - `UIValidation.Check(root)` 回傳目前工作區的問題，每一筆有穩定的代碼。`UIValidation.CheckScenes(scenePaths, strict)` 依序檢查多個 Scene 並回傳報告。`UIWalk.Start(options)` 開始自動走訪。三者的用法見「驗收」。對於自訂子階層，用 Unity Editor 的 Undo 和序列化 API 儲存變更。
 
 ## 遊戲程式
@@ -680,7 +680,7 @@ Unity 的逐一通知方法無法取得時，框架會警告一次，並以 `Uni
 | 只在某一頁才會發生的遊戲事件（HUD 上的角色死亡、這一頁的計時器） | 那一頁自己的路由 | 頁面腳本 `await NavigateAsync(動作)` |
 | 任何頁面都可能發生的事（挑戰者連線、斷線、讀檔後跳到存檔當時的畫面） | 「任何畫面」的訊號路由 | `root.SignalAsync(動作, 資料)` |
 
-**不要把每一頁的換頁都做成訊號，再把所有頁面標記為由程式控制。** 功能上能動，Validate 與走訪也可能都通過，但藍圖上所有的線都從「任何畫面」放射出去，看不出「標題 → 開店前 → 營業中 → 打烊後」的順序；走訪只驗證得到每一頁都叫得出來，驗證不到順序。由程式控制只代表進來的方式不靠路由，這種頁面沒有自己的出口時，Validate 會回報 `view.no-exit`；起始頁標記為由程式控制時回報 `start.navigated-by-code`。
+**不要把每一頁的換頁都做成訊號，再把所有頁面標記為由程式開啟。** 功能上能動，Validate 與走訪也可能都通過，但藍圖上所有的線都從「任何畫面」放射出去，看不出「標題 → 開店前 → 營業中 → 打烊後」的順序；走訪只驗證得到每一頁都叫得出來，驗證不到順序。由程式開啟只代表進來的方式不靠路由，這種頁面沒有自己的出口時，Validate 會回報 `view.no-exit`；起始頁標記為由程式開啟時回報 `start.navigated-by-code`。
 
 `NavigateAsync(action)` 是頁面腳本（`UIViewBehaviour`）的方法，等於 `Root.TriggerWhenIdleAsync(View.Id, action)`：走這一頁自己的路由，有導航正在進行時等它結束再執行，不會回傳 `Busy`。輪到它的時候：
 
@@ -858,7 +858,7 @@ public sealed class DayEndPage : UIViewBehaviour
 - **訊號不會因為忙碌而被拒絕。** 有導航正在進行時，訊號等它結束再執行；多個訊號依送出的順序執行，和 `NavigateAsync` 也是同一個順序；在生命週期方法裡送出也一樣，等這次導航結束後執行。所以 `await` 拿到的是實際執行之後的結果，不會是 `Busy`。這不改變其他 API：`ShowPageAsync`、`OpenPopupAsync`、`TriggerAsync` 等照舊回傳 `Busy`。
 - 等待期間 token 被取消，或工作區被停用、銷毀：回傳 `Canceled`。找不到這個動作的訊號路由：回傳 `NotFound` 並記錄錯誤。
 - `ActionTriggered` 在訊號開始執行時觸發，`ActionCompleted` 在結束時觸發，和一般路由相同。
-- 一般路由不傳資料，訊號可以。目標畫面一定要有資料才能顯示時，請在藍圖把它標記為由程式控制（計畫的 `"navigation": "Code"`，如上面的 `challenger`），走訪才知道這一步需要由程式提供資料。
+- 一般路由不傳資料，訊號可以。目標畫面一定要有資料才能顯示時，請在藍圖把它標記為由程式開啟（計畫的 `"navigation": "Code"`，如上面的 `challenger`），走訪才知道這一步需要由程式提供資料。
 
 送出訊號的是遊戲程式，不必是頁面腳本。下列範本對應上面的計畫，掛在場景裡的任何物件上，並在 Inspector 指定工作區。
 
@@ -1019,9 +1019,9 @@ public sealed class HudPage : UIViewBehaviour
 
 1. **Tools → UniGameUI → Blueprint** 會開啟藍圖。左邊是畫布，右邊是右欄。工具列的 **Validate** 檢查目前的工作區，**走訪** 進入 Play Mode 把每條路由走一遍，兩者的說明在「驗收」。在 Play Mode 用實際按鈕試走新增的互動。
    - **畫布的視角。** 滾輪以游標為中心縮放（25%～200%）；按住滑鼠中鍵拖曳，或按住 Alt 加左鍵拖曳，可以平移。畫布沒有邊界，節點可以放在任何位置。工具列的 **顯示全部** 把所有節點放進視窗（焦點在畫布上時也可以按 F），旁邊的百分比是目前的縮放，點一下回到 100%。每個 Scene 的視角在這個 Editor 工作階段內記住，不會寫進 Scene。
-   - **節點。** 虛線的範圍框圍住這個工作區全部的節點，左上角寫著 Scene 名稱與頁面、Popup 的數量。節點上的徽章標示種類（頁面、Popup、訊號）、起始頁與由程式控制。整個節點都可以點選與拖曳；單擊只選取，雙擊才把 Scene 視窗定位到那個畫面；點畫布空白的地方取消選取。
+   - **節點。** 虛線的範圍框圍住這個工作區全部的節點，左上角寫著 Scene 名稱與頁面、Popup 的數量。節點上的徽章標示種類（頁面、Popup、訊號）、起始頁與「程式開啟」。整個節點都可以點選與拖曳；單擊只選取，雙擊才把 Scene 視窗定位到那個畫面；點畫布空白的地方取消選取。
    - **拉線。** 從節點右邊的連接點拖到另一個節點，建立路由（目標是頁面就是 `ShowPage`，是 Popup 就是 `OpenPopup`）；右欄選著一條路由時拖線，是把那條路由重接到新的目標。線上的動作標籤可以點，會選取來源節點與那條路由。固定的「任何畫面」節點用來畫訊號路由，它的行為只有 `ShowPage`、`OpenPopup`、`Emit` 三種。
-   - **右欄。** 寬度可以拖曳，每個區塊可以收合，兩者都在這個 Editor 工作階段內記住。沒有選取時是「工作區」：Scene、模式、起始頁（可以改）、頁面與 Popup 的數量、訊號路由的數量。選取畫面時依序是「畫面」（名稱、ID、種類、**設為起始頁**、**在 Scene 中定位**，Popup 另有疊在頁面上預覽）、「畫面設定」（由程式控制進出）、「從這裡出發的路由」（點一列選取，最下面是 **新增路由**）、「編輯路由」（選了路由或按了新增才出現）、「通到這裡的路由」（唯讀，包含訊號路由，點一列會選取來源節點）。選取「任何畫面」時是說明、「訊號路由」與「編輯路由」。
+   - **右欄。** 寬度可以拖曳，每個區塊可以收合，兩者都在這個 Editor 工作階段內記住。沒有選取時是「工作區」：Scene、模式、起始頁（可以改）、頁面與 Popup 的數量、訊號路由的數量。選取畫面時依序是「畫面」（名稱、ID、種類、**設為起始頁**、**在 Scene 中定位**，Popup 另有疊在頁面上預覽）、「畫面設定」（由程式開啟）、「從這裡出發的路由」（點一列選取，最下面是 **新增路由**）、「編輯路由」（選了路由或按了新增才出現）、「通到這裡的路由」（唯讀，包含訊號路由，點一列會選取來源節點）。選取「任何畫面」時是說明、「訊號路由」與「編輯路由」。
    - **編輯路由。** 欄位是動作、行為、目的地、返回歷史、關閉結果，只顯示這個行為用得到的：`Back` 與 `Emit` 沒有其他欄位，`ShowPage` 的返回歷史有三種，`OpenPopup` 有兩種（可以返回、不可返回），`ClosePopup` 有關閉結果。動作重複、動作名稱不合規則或沒有選目的地時不會儲存，原因顯示在那個欄位下面。**刪除這條路由** 和 **儲存** 分開放。
    - **訊號路由的線。** 「任何畫面」拉出去的線是比較淡的虛線，滑鼠移到線或標籤上、或選取「任何畫面」時變清楚。工具列的 **顯示訊號路由** 可以把它們的線與標籤關掉（在這個 Editor 工作階段內記住），這時「任何畫面」節點上標出它有幾條路由；剛走過的訊號路由仍會短暫亮起。
    - **執行中的藍圖。** Play Mode 時藍圖照常顯示執行中的工作區，但不能修改：不能拖曳節點、不能拉線，右欄都是唯讀，因為 Play Mode 中的修改離開時會被 Unity 還原。可以平移、縮放、顯示全部、選取節點、點線上的標籤。
@@ -1096,18 +1096,19 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 - 命令列與 `CheckScenes` 只檢查，不會產生或更新 ID 常數。常數過期時回報 `constants.outdated`。
 - 藍圖視窗的 **Validate** 檢查目前的工作區，並先更新 ID 常數。對話框顯示 Error 與 Warning 各幾筆；每一筆問題連同代碼記到 Console，點擊可以定位到相關的畫面物件。
 
-### 由程式控制的畫面
+### 由程式開啟的畫面
 
-有些畫面**進來的方式不靠路由**：確認框是 `ConfirmAsync` 開啟、自己關閉的；挑戰者登場的畫面一定要由訊號帶資料過來才能顯示。請在藍圖把這種畫面標記為**由程式控制**，否則 Validate 會提醒它走不到。
+有些畫面**進來的方式不靠路由**：確認框是 `ConfirmAsync` 開啟、自己關閉的；挑戰者登場的畫面一定要由訊號帶資料過來才能顯示。請在藍圖把這種畫面標記為**由程式開啟**，否則 Validate 會提醒它走不到。
 
-- 設定方式有三種：計畫的 View 欄位 `"navigation": "Code"`（預設是 `Routes`，和其他 View 選項一樣只在新建畫面或設了 `updateExisting` 時寫入）；藍圖視窗右欄的「由程式控制進出」；`UIAuthoring.SetNavigatedByCode(root, id, true)`。
-- 標記之後：Validate 不檢查它走不走得到（`view.unreachable`）、裡面的按鈕有沒有動作（`button.unbound`）；所有頁面都由程式控制時不回報 `start.none`；走訪不要求它能單靠路由開啟。
+- 這個標記在 0.6.0 以前叫「由程式控制進出」。只有名稱改了，計畫的 `"navigation": "Code"`、`UIEntry.NavigatedByCode` 與 `UIAuthoring.SetNavigatedByCode` 都不變。
+- 設定方式有三種：計畫的 View 欄位 `"navigation": "Code"`（預設是 `Routes`，和其他 View 選項一樣只在新建畫面或設了 `updateExisting` 時寫入）；藍圖視窗右欄的「由程式開啟」；`UIAuthoring.SetNavigatedByCode(root, id, true)`。
+- 標記之後：Validate 不檢查它走不走得到（`view.unreachable`）、裡面的按鈕有沒有動作（`button.unbound`）；所有頁面都由程式開啟時不回報 `start.none`；走訪不要求它能單靠路由開啟。
 - **標記只代表進來的方式，不代表離開的方式。** Popup 標記之後不檢查有沒有出口（確認框這類 Popup 是自己用 `View.Close()` 關閉的），頁面照樣檢查 `view.no-exit`：這一頁發生的換頁請畫成這一頁的路由，用 `NavigateAsync` 依結果挑其中一條，見「頁面之間的流程」。
 - **去處由遊戲狀態決定，不等於不靠路由。** 「進入下一天」的去處由遊戲邏輯決定，但它發生在日終結算頁，三個去處都是那一頁的路由，日終結算頁不必標記。
-- 起始頁不需要這個標記：它是框架在 `Start` 時顯示的，不帶資料。起始頁標記為由程式控制時回報 `start.navigated-by-code`。
-- 由程式控制的畫面是程式打開的，所以從它出發的路由通到的畫面也算走得到。
+- 起始頁不需要這個標記：它是框架在 `Start` 時顯示的，不帶資料。起始頁標記為由程式開啟時回報 `start.navigated-by-code`。
+- 由程式開啟的畫面是程式打開的，所以從它出發的路由通到的畫面也算走得到。
 - **一定要有資料才能顯示的畫面請這樣標記**，例如由訊號帶資料過來的挑戰者登場畫面。走訪不傳資料，路由的目標是這種畫面而顯示失敗時，那一步記為略過而不是失敗。
-- 根節點掛了 `UIConfirmPopup` 的畫面自動視為由程式控制，不必設定，藍圖上也不能取消。
+- 根節點掛了 `UIConfirmPopup` 的畫面自動視為由程式開啟，不必設定，藍圖上也不能取消。
 - 這個設定存在工作區的藍圖裡，不在 View Prefab 裡；同一個 Popup Prefab 在不同 Scene 可以有不同的設定。它只影響 Validate 與走訪，不影響執行期的行為。
 - 靠路由進出的畫面不要為了消除 Warning 而標記。真的走不到，就補上路由。
 
@@ -1144,7 +1145,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 **每一步**
 
 1. 準備：關掉所有 Popup、清空歷史，讓來源畫面成為最上層。來源是頁面時，先顯示一個有路由通到它的頁面（沒有就用起始頁），再顯示來源頁，`Back` 才有地方回去。來源是 Popup 時，先顯示有 `OpenPopup` 路由指到它的頁面（經由別的 Popup 開啟的也算；沒有就用起始頁），再開啟它。走訪照實際遊玩時 Popup 會開在哪裡來選，不會為了讓這一步通過而換到別的頁面：Popup 只會開在某一頁上面、而它的 `ShowPage` 路由正好要切到那一頁時，這一步如實失敗（導航結果是 `Unavailable`），原因會說明這個 Popup 只會開在哪一頁。有好幾個頁面開得到它時，用目標以外的頁面；由程式或訊號開啟的 Popup 可能出現在任何頁面上，起始頁剛好是目標時改用其他頁面。訊號路由沒有來源畫面，準備時顯示起始頁；`ShowPage` 的目標剛好是起始頁時，改從別的頁面出發。`history` 是 `Clear` 的路由會盡量先讓歷史裡有一筆，才看得出歷史真的被清空了。
-   - 準備時先顯示的這些頁面是候選：先排除由程式控制的頁面（它們可能要資料才顯示得出來），沒有其他候選時才用。候選顯示不出來時改試下一個；它記的訊息留在報告裡，`note` 會註明是準備時被放棄的候選，**不算進這一步的判定**。那個頁面的問題由以它為來源或目標的步驟回報。
+   - 準備時先顯示的這些頁面是候選：先排除由程式開啟的頁面（它們可能要資料才顯示得出來），沒有其他候選時才用。候選顯示不出來時改試下一個；它記的訊息留在報告裡，`note` 會註明是準備時被放棄的候選，**不算進這一步的判定**。那個頁面的問題由以它為來源或目標的步驟回報。
 2. 觸發：一般路由是 `root.TriggerAsync(來源, 動作)`，訊號路由是 `root.SignalAsync(動作)`，不傳資料。
 3. 判定：依下表。另外，這一步從準備到穩定的期間，Console 不可以出現 Error 或 Exception；只有 Warning 不影響結果。Unity Editor 自己的錯誤（堆疊全部在 `UnityEditor` 命名空間裡，例如 Editor 建立搜尋索引失敗）和專案的 UI 無關，不算。
 4. 等待穩定：連續幾個影格沒有導航在進行，才開始下一步。頁面腳本在 `OnShown` 之後接著導航（上面 `LaunchPage` 的寫法）不算失敗。
@@ -1167,9 +1168,9 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 
 每一步的結果是 `Passed`、`Failed` 或 `Skipped`，加上原因。需要由程式提供資料的情況記為 `Skipped`，不算失敗：
 
-- 準備來源畫面失敗，而來源是由程式控制的畫面。
-- 來源是頁面的 `Back`，而能當上一頁的只有由程式控制、沒有資料顯示不出來的頁面。
-- 目標畫面是由程式控制的畫面，而觸發的結果是 `Failed`（顯示不出來）。這一步的 `result` 仍然照實記為 `Failed`。
+- 準備來源畫面失敗，而來源是由程式開啟的畫面。
+- 來源是頁面的 `Back`，而能當上一頁的只有由程式開啟、沒有資料顯示不出來的頁面。
+- 目標畫面是由程式開啟的畫面，而觸發的結果是 `Failed`（顯示不出來）。這一步的 `result` 仍然照實記為 `Failed`。
 
 其他情況記為 `Failed`，因為靠路由到得了的畫面本來就收不到資料，沒有資料就顯示不出來是真的問題。
 
@@ -1179,7 +1180,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 - **不模擬輸入。** 走訪直接觸發路由，不按按鈕，也不操作滑鼠、鍵盤或手把。按鈕有沒有接到路由由 Validate 檢查。
 - **不看外觀。** 不檢查畫面長什麼樣子，不截圖。
 - **會執行頁面腳本。** 生命週期方法和實際遊玩時一樣會被呼叫。`Emit` 預設略過，所以 `OnAction` 預設不會被呼叫。
-- 由程式控制、而且沒有任何路由以它為來源的畫面不會被開啟；它列在報告的 `views` 裡，註明沒有走訪。
+- 由程式開啟、而且沒有任何路由以它為來源的畫面不會被開啟；它列在報告的 `views` 裡，註明沒有走訪。
 - 走訪用的是目前 Scene 在 Editor 裡的內容，不必先存檔。Enter Play Mode Options 的 Reload Domain 與 Reload Scene 開啟或關閉的專案都可以用。
 - Console 開著 Error Pause 時，步驟裡的 `Debug.LogError` 會暫停 Play Mode。走訪會自動讓它繼續，並在報告的 `notes` 記一筆；那一步照常因為有 Error 而失敗。
 - 和 Validate 的命令列一樣，走訪只載入這一個 Scene。
@@ -1207,7 +1208,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
     }
   ],
   "views": [
-    { "id": "confirm", "kind": "Popup", "visited": false, "reason": "由程式控制，而且沒有以它為來源的路由，不在走訪範圍。" }
+    { "id": "confirm", "kind": "Popup", "visited": false, "reason": "標記為由程式開啟，而且沒有以它為來源的路由，不在走訪範圍。" }
   ],
   "validation": { "errorCount": 0, "warningCount": 2, "issues": [] },
   "notes": []
@@ -1247,11 +1248,11 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `view.default-selected-outside` | Error | 預設選取元件不在這個畫面裡。 | 改指到這個畫面裡的元件。 |
 | `view.popup-option-on-page` | Error | 頁面開啟了只對 Popup 有意義的選項。 | 在 Inspector 關掉「關閉後保留並重用」與「點遮罩關閉」。 |
 | `view.overlay-missing` | Error | Popup 設定了點遮罩關閉，但沒有遮罩物件。 | 關掉這個選項，或補回遮罩。 |
-| `view.unreachable` | Warning | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到這個頁面或 Popup。起始頁本身、由程式控制的畫面、訊號路由的目標（以及從它們出發走得到的畫面）不算；沒有起始頁時只回報 `start.none`。 | 補上通往它的路由。由程式開啟的畫面標記為由程式控制。 |
-| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由，從它沿著 `OpenPopup` 路由開得到的 Popup 也沒有切到別頁的 `ShowPage` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉；或 Popup 被 `history: Clear` 的 `OpenPopup` 路由（一般路由或訊號路由）以不可返回的方式開啟，卻只有 `Back` 路由（不可返回的 Popup 上 `Back` 無效，不算出口）。由程式控制的 Popup 不算，**由程式控制的頁面照樣檢查**；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上這一頁的路由，每個可能的去處各一條，用 `NavigateAsync` 依結果挑其中一條。由程式關閉的 Popup 標記為由程式控制。 |
+| `view.unreachable` | Warning | 從起始頁沿著 `ShowPage` 與 `OpenPopup` 路由走不到這個頁面或 Popup。起始頁本身、由程式開啟的畫面、訊號路由的目標（以及從它們出發走得到的畫面）不算；沒有起始頁時只回報 `start.none`。 | 補上通往它的路由。進來的方式不靠路由的畫面在藍圖標記為「由程式開啟」。 |
+| `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由，從它沿著 `OpenPopup` 路由開得到的 Popup 也沒有切到別頁的 `ShowPage` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉；或 Popup 被 `history: Clear` 的 `OpenPopup` 路由（一般路由或訊號路由）以不可返回的方式開啟，卻只有 `Back` 路由（不可返回的 Popup 上 `Back` 無效，不算出口）。由程式開啟的 Popup 不算，**由程式開啟的頁面照樣檢查**；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上這一頁的路由，每個可能的去處各一條，用 `NavigateAsync` 依結果挑其中一條。由程式開啟、自己關閉的 Popup 標記為「由程式開啟」。 |
 | `start.unknown` | Error | 起始頁不存在，或不是頁面。 | 用計畫的 `startPage` 或藍圖重新指定。 |
-| `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式控制時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式控制。 |
-| `start.navigated-by-code` | Warning | 起始頁標記為由程式控制。起始頁是框架在 `Start` 時顯示的，不帶資料，不需要這個標記；它常是「把所有頁面都標記」的跡象。 | 拿掉起始頁的標記。頁面之間的換頁畫成各頁自己的路由，見「頁面之間的流程」。 |
+| `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式開啟時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式開啟。 |
+| `start.navigated-by-code` | Warning | 起始頁標記為由程式開啟。起始頁是框架在 `Start` 時顯示的，不帶資料，不需要這個標記；它常是「把所有頁面都標記」的跡象。 | 拿掉起始頁的標記。頁面之間的換頁畫成各頁自己的路由，見「頁面之間的流程」。 |
 | `route.incomplete` | Error | 路由的來源或動作是空的。 | 用計畫或藍圖重新建立這條路由。 |
 | `route.source-missing` | Error | 路由的來源畫面不存在。 | 補上來源畫面，或移除這條路由。 |
 | `route.duplicate` | Error | 同一個來源有重複的動作（訊號路由之間動作重複也算）。 | 移除多出來的那一條，或改用不同的動作名稱。 |
@@ -1263,7 +1264,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `element.id-duplicate` | Error | 同一個畫面裡有重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
 | `element.kind-unknown` | Error | 元件記錄的元件名稱不在元件集裡。 | 把元件登記回元件集，或刪掉這個元件重新建立。 |
 | `button.action-unrouted` | Error | 按鈕的動作找不到對應的路由。 | 補上路由，或修改按鈕的 `action`。訊息提到 Prefab 本體時，請修正審核實例並套用覆寫。 |
-| `button.unbound` | Warning | 畫面裡的 `Button` 沒有動作（沒有 `UIButtonAction`，或動作是空的），`onClick` 也沒有在 Inspector 接監聽（Call State 設成 Off 的監聽不會被呼叫，不算有接）。由程式控制的畫面與清單項目裡的按鈕不算。 | 給按鈕 `action` 並接一條路由；要由程式處理時用 `Emit` 路由，在頁面腳本的 `OnAction` 接收。 |
+| `button.unbound` | Warning | 畫面裡的 `Button` 沒有動作（沒有 `UIButtonAction`，或動作是空的），`onClick` 也沒有在 Inspector 接監聽（Call State 設成 Off 的監聽不會被呼叫，不算有接）。由程式開啟的畫面與清單項目裡的按鈕不算。 | 給按鈕 `action` 並接一條路由；要由程式處理時用 `Emit` 路由，在頁面腳本的 `OnAction` 接收。 |
 | `text.missing-glyph` | Warning | TMP 文字的預設內容（包含輸入框的 placeholder、下拉選單的選項，以及放在清單項目裡的文字）有字型和它的 fallback 都沒有的字元。空白與控制字元不算；開著富文字時，TMP 認得的標籤本身（例如 `<size=120%>`、`<sprite name=…>`）不算，`<font>` 裡換了字型的文字不檢查；文字的 Sprite Asset 或 TMP Settings 的預設 Sprite Asset 補得到的字元（例如表情符號）不算。訊息列出缺少的字元，最多十個。 | 設定含有這些字元的預設字型（`defaultFontPath`），或修改預設文字。 |
 | `input.event-system-multiple` | Error | 工作區所在的 Scene 有超過一個啟用的 EventSystem。 | 只保留一個。 |
 | `input.event-system-missing` | Error | 載入的 Scene 裡沒有 EventSystem。 | 在工作區的 Scene 或共用的 Scene 加回一個。 |
