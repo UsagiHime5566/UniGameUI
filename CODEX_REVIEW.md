@@ -15,9 +15,11 @@
 - 第七輪：2026-11-20，commit `ea61890`（Claude 複驗第三批修正，通過）
 - 第四批改進：2026-11-20，commit `d0e395f`（0.5.0，Claude 子 session 實作，尚未打標籤）
 - 第四批追加 4-7：2026-11-20，commit `b8cc23a`（訊號與「任何畫面」節點，版本維持 0.5.0，Claude 子 session 實作）
+- 第八輪：2026-11-20，commit `ccb981c`（Claude 初步審核第四批的 4-1～4-6，發現 K1～K8）
+- 第四批修正：2026-11-20，commit `9de72df`（Claude 子 session 修正 K1～K8，版本維持 0.5.0）
 - 環境：Unity 6000.3.19f1、uGUI 2.0；在獨立的暫存專案驗證，有無 DOTween 都測過
 
-**現況：** 三批都已通過獨立審核。第二批的 G1～G5、第三批的 J1～J8 都已修正並由 Claude 複驗通過，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第三批的複驗結果見「第七輪審核」，剩下的互動操作見「未驗證」。第六輪「與規格不同的地方」第 7 點（複製確認框換畫面 ID 的工具），使用者在 2026-11-20 決定不加。第四批（0.5.0，驗收工具）的七項已由實作者完成，其中 4-7（訊號與「任何畫面」節點）是 2026-11-20 追加的。紀錄見驗證紀錄的「第四批改進（0.5.0）」與「第四批追加：4-7 訊號與「任何畫面」節點（0.5.0）」，**等 Claude 審核；審核通過之前不要打 `v0.5.0` 標籤**。
+**現況：** 三批都已通過獨立審核。第二批的 G1～G5、第三批的 J1～J8 都已修正並由 Claude 複驗通過，`v0.3.0`（`0a60b1d`）與 `v0.4.0`（`19fa121`）標籤已在 2026-11-20 打上。第三批的複驗結果見「第七輪審核」，剩下的互動操作見「未驗證」。第六輪「與規格不同的地方」第 7 點（複製確認框換畫面 ID 的工具），使用者在 2026-11-20 決定不加。第四批（0.5.0，驗收工具）的七項已由實作者完成，其中 4-7（訊號與「任何畫面」節點）是 2026-11-20 追加的。紀錄見驗證紀錄的「第四批改進（0.5.0）」與「第四批追加：4-7 訊號與「任何畫面」節點（0.5.0）」，第八輪審核對 4-1～4-6 提出的 K1～K8 已由實作者修正，紀錄見「第四批修正（K1～K8）」。**等 Claude 複驗與審核 4-7；通過之前不要打 `v0.5.0` 標籤**。
 
 **分工：** 2026-11-20 起，實作改由 Claude 的子 session 負責，Claude 主 session 負責寫規格與驗收。在這之前的實作者是 codex，這份文件裡提到 codex 的地方是當時的紀錄。
 
@@ -71,7 +73,86 @@
 | J5～J7 | 選項的鍵值殘留、套用到一半才報錯、不存在的「待套用」 | 已修正。Claude 用第六輪的步驟複驗，三項都已改正 |
 | J8 | 讀程式碼發現的四點 | 前三點確認是問題並已修正，由實作者的測試覆蓋，Claude 讀過修正的程式碼。第四點沒有重現 |
 | 4-1～4-6 | 第四批：驗收工具（0.5.0） | 已實作，待審核。四組測試通過；Validate 與走訪的命令列在副本專案實際執行，十八種情況的結束代碼都符合預期，沒有卡住。藍圖視窗的按鈕與對話框待人工確認 |
+| K1 | 警告太多時，真正的錯誤被丟掉，步驟回報成通過 | 已修正，待複驗。走訪測試與審核者的重現場景（命令列）都確認 |
+| K2 | 準備時選到由程式控制的頁面，害無關的步驟失敗 | 已修正，待複驗 |
+| K3 | Popup 的 `ShowPage` 路由指回唯一會開啟它的頁面時誤報通過 | 已修正，待複驗。由程式或訊號開啟的 Popup 仍然避開目標頁，請判斷 |
+| K4 | `view.no-exit` 的規則太嚴 | 已依新規則修正，待複驗 |
+| K5 | 幾個問題代碼一碼多用 | 已拆開（41 個變 46 個），待複驗。另外三個代碼也有類似情況，沒有動，請決定 |
+| K6 | `CheckScenes`：沒檢查到也算通過、重複的 Scene、未命名的 Scene | 已修正，待複驗 |
+| K7 | 讀程式碼發現的七點 | 六點在修正前重現並已修正；`EnteredEditMode` 那一點沒有重現，仍然加了檢查。待複驗 |
+| K8 | Editor 結束時偶發當機 | 指南已註明；結束前多等幾次更新。沒辦法確定驗證 |
 | 4-7 | 第四批追加：訊號與「任何畫面」節點（0.5.0） | 已實作，待審核。四組測試通過；命令列對有訊號路由的 Scene 實際執行過；Windows Player（Mono、High stripping）實際執行通過。4-3 與 4-5 已一併調整。藍圖視窗的「任何畫面」節點與 `OpenPopup` 的「返回歷史」選單待人工確認 |
+
+## 第八輪審核：第四批（0.5.0）初步結果
+
+這一節由實作者依主 session（Claude）在 2026-11-20 傳來的審核訊息記錄；主 session 當時沒有動這個 checkout。審核的對象是 4-1～4-6（`ccb981c`），4-7 還沒有審核。
+
+**已確認沒問題的：**
+
+- 四組測試和實作者的紀錄相同（131/0/0、68/0/1、74/0/57、64/0/5）。
+- Validate 命令列：示例場景結束代碼 0、只有確認框兩筆 `text.missing-glyph`；嚴格模式 1；Scene 不存在 2。
+- 走訪命令列：示例場景 `Passed`、結束代碼 0（起始加四步通過、`Emit` 略過）；加 `-unigameui-include-emit` 六步通過；弄壞商店頁後結束代碼 1 並指出失敗的步驟；Scene 不存在與整體逾時都是 2，沒有卡住。
+
+**當時的結論：** 測試與命令列都符合紀錄，但自動走訪有幾個會誤判的情況，請和 4-7 一起修正後再交付。K1～K4 審核者實際執行重現過；K7 是讀程式碼發現的，請實作者先各寫測試確認，是真的才修。修正的紀錄見「驗證紀錄」的「第四批修正（K1～K8）」。
+
+審核者重現 K1～K4 用的場景：頁面 `title`（起始）、`game`、`result`（`"navigation": "Code"`，`OnShowing` 一定丟例外）、`noisy`（`OnShowing` 記 60 筆 Warning 再記一筆 Error），Popup `pause`。路由依序是 `result/retry → ShowPage game`、`title/play → ShowPage game`、`game/pause → OpenPopup pause`、`pause/resume → ClosePopup`、`pause/restart → ShowPage game`、`pause/quit → ShowPage title（Clear）`、`title/noisy → ShowPage noisy`、`noisy/back → Back`。當時的結果：`game/pause` 是 `Failed`（K2）、`pause/restart` 是 `Passed`（K3）、`title/noisy` 與 `noisy/back` 都是 `Passed`（K1）、Validate 對 `game` 回報 `view.no-exit`（K4）。
+
+### K1. 警告太多時，真正的錯誤被丟掉，步驟回報成通過
+
+- **嚴重度：** 高。
+- **原因：** `UIWalkRunner` 每一步最多收 50 筆記錄，而且先比數量才看種類。頁面在 `OnShowing` 先記 60 筆 Warning 再 `Debug.LogError`，這一步是 `Passed`，報告裡也沒有那筆 Error。
+- **規則：** 「這一步有沒有 Error／Exception」要獨立判斷，不受筆數上限影響。報告裡的記錄可以有上限，但 Error、Exception 優先保留，被省略的筆數要寫出來。
+
+### K2. 準備時選到「由程式控制」的頁面，害無關的步驟失敗
+
+- **嚴重度：** 中。
+- **原因：** 選「另一個頁面」或「Popup 底下的頁面」時沒有排除由程式控制的頁面。它顯示失敗後雖然會換下一個候選，但失敗時的 Error 留在這一步的記錄裡，結果路由明明 `Completed`，步驟卻是 `Failed`。
+- **規則：** 候選頁面先排除由程式控制的頁面，沒有其他候選時才用。候選顯示失敗而後來有別的候選成功時，那次失敗的記錄不算進這一步的判定（可以留在報告裡，但要標明是準備時被放棄的候選）。來源是一般頁面的 `Back`，唯一的另一個頁面是開不起來的由程式控制頁面時，記為 `Skipped`，不是 `Failed`。
+
+### K3. Popup 的 `ShowPage` 路由指回唯一會開啟它的頁面時，誤報通過
+
+- **嚴重度：** 中。
+- **原因：** `game/pause → OpenPopup pause`、`pause/restart → ShowPage game`：走訪為了避開目標，把 Popup 開在別的頁面上，於是 `restart` 是 `Passed`。實際遊玩時 `pause` 一定開在 `game` 上，這條路由會回傳 `Unavailable`，按鈕沒有反應。
+- **規則：** 照規格選底下的頁面（有 `OpenPopup` 路由指到這個 Popup 的頁面），不要為了避開目標而換頁。這一步如實失敗，原因要說明「這個 Popup 只會開在 X 上面，而這條路由要切到 X」。4-1～4-6「與規格不同的地方」第 12 點的做法改回來。
+
+### K4. `view.no-exit` 的規則太嚴（規格修正）
+
+- **嚴重度：** 中。這是規格的問題。
+- **原因：** 遊戲頁只有「開啟暫停選單」一條路由、暫停選單有「回標題」時，遊戲頁會被報成沒有出口。
+- **新規則：** 頁面自己有 `ShowPage` 或 `Back` 路由，或者從它沿著 `OpenPopup` 路由開得到的任何一個 Popup 有 `ShowPage` 路由，就算有出口。Popup 的規則不變。同步更新 `ROADMAP.md` 4-3 的表格、AgentGuide 與測試。
+
+### K5. 幾個問題代碼一碼多用
+
+- **嚴重度：** 低。代碼定下來之後不能改，趁現在拆開，並更新指南的表格。
+- `route.invalid`：空的來源或動作、重複的（來源, 動作）、來源不存在，各一個代碼。
+- `element.id-duplicate` 也用在空的 ID。
+- `route.target-missing` 也用在目標種類不對。
+- `constants.outdated` 也用在只缺產生的 asmdef。
+
+### K6. `CheckScenes` 的結果與還原
+
+- **嚴重度：** 低。
+- 沒有任何 Scene 有工作區時，C# 回傳的 `Passed` 是 true、JSON 也是 `"passed": true`，只有命令列會轉成 2。指南建議 Editor 開著時用 C# 入口，「什麼都沒檢查」不應該讀成通過。
+- 同一個 Scene 給兩次會被開兩次、數量算兩次。
+- 開著多個 Scene 時未命名的 Scene 沒有還原。
+
+### K7. 讀程式碼發現、沒有實際執行的項目
+
+請先各寫測試確認，是真的才修，結果寫進交付說明。
+
+- `UIWalk.cs` 的 `EnteredEditMode` 沒有檢查階段：還在 `Entering` 就回到 Edit Mode（別的工具取消了進入 Play Mode）時，結果是「`Passed`、0 步」，應該是 `NotRun`。
+- 命令列啟動後的前幾個 tick 還沒有寫 SessionState、也沒有設期限。這段時間發生 Domain Reload 的話，批次模式的 Editor 不會結束。
+- `text.missing-glyph`：`LoadFace` 用快取判斷要不要重新載入字型，但讀另一個動態字型的 `characterLookupTable` 會讓 TMP 自己換掉 FontEngine 目前的字型，之後的 `TryGetGlyphIndex` 可能問錯字型。
+- `text.missing-glyph`：富文字標籤被當成一般字元檢查；Sprite Asset 補得到的字元會被報成缺字；清單項目裡的文字被略過，但規格只有 `button.unbound` 才不算清單項目。
+- Console 開著「Error Pause」時，步驟裡第一筆 `Debug.LogError` 會暫停 Play Mode，走訪停住直到整體逾時，結果變成 `NotRun` 而不是 `Failed`。
+- 進入 Play Mode 時關閉「Reload Scene」的專案，走訪可能接不到起始頁。
+- `HasInspectorListener` 把 Call State 是 Off 的監聽也算進去。
+
+### K8. Editor 結束時偶發當機（觀察）
+
+- 十一次走訪裡有一次，報告已經正確寫出（`Passed`），但 Unity 結束時當掉，結束代碼 139。堆疊在 Unity 內部（`WorkerManagerASIO::OnMessageReceived`），不在套件的程式裡，重跑六次沒有再發生。
+- 請在 AgentGuide 註明：結束代碼不是 0、1、2 時代表 Editor 本身異常結束，請以報告檔為準。
+- 有簡單的做法可以降低機率就加，但這一項沒辦法確定驗證，交付說明要寫清楚做了什麼。
 
 ## 第七輪審核：第三批修正（0.4.0）
 
@@ -457,6 +538,101 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 - `IProcessSceneWithReport` 的剝除只作用在 build 用的 Scene 複本，磁碟上的 Scene 檔不變。
 
 ## 驗證紀錄
+
+### 第四批修正（K1～K8）
+
+以下是實作者（Claude 的子 session）自己的紀錄，等主 session 複驗。修正的對象是「第八輪審核」的 K1～K8，版本維持 0.5.0。分支 `feat/batch-4`，每一項各自 commit（K7 分成 Validate 與走訪兩個），已快轉合併回 `main`，沒有 push，沒有打標籤。
+
+| 項目 | commit | 怎麼修 |
+|---|---|---|
+| K1 | `cec8059` | 一步期間的訊息改由 `StepLogs` 管理。「有沒有 Error」看的是每一筆收到的訊息，和報告留幾筆無關。報告每一步最多 50 筆，Error、Exception、Assert 優先，其餘位置給 Warning，留下來的照原本的順序；沒有列出來的筆數寫在 `logsOmitted`。 |
+| K2 | `62cbd6d` | 候選頁面（來源頁之前的「另一個頁面」、Popup 底下的頁面、訊號路由的出發頁）先排除由程式控制的頁面，沒有其他候選時才用。候選顯示不出來而改試下一個時，它記的訊息標上 `note`、不算進判定。來源是頁面的 `Back`，候選只有由程式控制而且都顯示不出來時，記為 `Skipped`。 |
+| K3 | `424e333` | Popup 底下的頁面改成沿著 `OpenPopup` 路由往回找（經由別的 Popup 開啟的也算）。只會開在目標頁上面時就開在那一頁，這一步如實失敗，原因說明這件事。 |
+| K4 | `06ebb1d` | `view.no-exit`：頁面開得到的 Popup（Popup 再開的 Popup 也算）有切到別頁的 `ShowPage` 路由，就算有出口。`ROADMAP.md` 4-3 的表格與 AgentGuide 已更新。 |
+| K5 | `18888c8` | 拆成一個代碼一種問題，見下面的對照表。問題代碼從 41 個變成 46 個。 |
+| K6 | `ed32386` | `UIValidationReport` 多一個 `Error`：每一個 Scene 都沒有工作區時是原因，`Passed` 是 false，JSON 相同。同一個 Scene 只檢查一次。未命名的 Scene 和存過檔的 Scene 一起開著時會補回來，作用中的 Scene 不變。 |
+| K7 | `6f30547` | Validate 這一側：Call State 是 Off 的監聽、缺字檢查的四點。 |
+| K7 | `8db903b` | 走訪這一側：進入途中回到 Edit Mode、命令列啟動時的 Domain Reload、Error Pause、關閉 Reload Scene。 |
+| K8 | `9de72df` | 命令列的走訪寫完報告後多等 10 次 Editor 更新才結束 Editor；AgentGuide 註明異常的結束代碼。 |
+
+**K5 的代碼對照**
+
+| 原本 | 現在 |
+|---|---|
+| `route.invalid`（三種情況） | `route.incomplete`（來源或動作是空的）、`route.source-missing`（來源畫面不存在）、`route.duplicate`（同一個來源有重複的動作）。`route.invalid` 不再使用。 |
+| `route.target-missing`（不存在，或種類不符） | `route.target-missing`（不存在或沒有填）、`route.target-kind-mismatch`（種類不符）。 |
+| `element.id-duplicate`（空的，或重複） | `element.id-empty`、`element.id-duplicate`。 |
+| `constants.outdated`（沒有產生、過期，或只缺 asmdef） | `constants.outdated`、`constants.asmdef-missing`（常數檔是最新的，只缺 asmdef）。 |
+
+**K7 各點的確認結果**
+
+每一點都先寫了測試（或實際執行），在修正前確認，再修。
+
+| 項目 | 修正前的確認 | 結論與修正 |
+|---|---|---|
+| `EnteredEditMode` 沒有檢查階段 | **沒有重現。** 在 `ExitingEditMode` 用 `EditorApplication.isPlaying = false` 取消進入 Play Mode，Unity 不會發出 `EnteredEditMode`；走訪走的是既有的後備路徑，30 秒後結果本來就是 `NotRun`（案例 `WalkCancelledWhileEnteringPlayModeIsNotRun` 在修正前就通過）。 | 讀程式碼，這個分支確實會得到「`Passed`、0 步」，只是找不到會觸發它的操作。仍然加上階段檢查（成本很低），另用直接呼叫處理函式的案例 `ReturningToEditModeBeforePlayModeWasEnteredIsNotRun` 確認結果是 `NotRun`。 |
+| 命令列啟動時的 Domain Reload | **重現。** 在副本專案加一個只在命令列帶 `-probe-reload` 時、啟動後第二次更新要求重新載入腳本的 Editor 腳本。修正前：沒有報告，Editor 不結束，150 秒後由外部終止。 | 排定的走訪一解析完參數就存進 SessionState 並設好期限，重新載入之後由 `Watch` 接著開始。修正後同一個指令結束代碼 0、有報告（見命令列的表格）。自動測試 `CommandLineStartSurvivesADomainReload`。 |
+| `LoadFace` 的快取 | **重現。** 兩個來源不同的動態字型（標楷體、LiberationSans），中間讀一次另一個字型還沒建立的對照表：第三段文字的「定」被誤報為缺字。 | 每次查詢前都重新載入字型，不再記目前載入的是哪一個。案例 `GlyphCheckAsksTheRightFontAfterAnotherDynamicFontWasRead`（需要 Windows 的 `kaiu.ttf`，沒有時略過）。 |
+| 富文字標籤 | **重現。** `<size=120%>H</size>` 被報成缺 26 個字元。 | 開著富文字時拿掉 TMP 認得的標籤；不是標籤的角括號、TMP 不認得的標籤、`<noparse>` 的內容照舊檢查；`<font>` 裡的文字不檢查。 |
+| Sprite Asset | **重現。** 文字的 Sprite Asset 有對應的碼位，仍然被報成缺字。 | 依 TMP 的順序加上文字的 Sprite Asset 與 TMP Settings 的預設 Sprite Asset（含各自的 fallback）。從序列化的資料讀，不呼叫會升級舊格式資產的 API。 |
+| 清單項目裡的文字 | **重現。** 清單項目裡的文字沒有被檢查。 | 缺字檢查不再排除清單項目；`button.unbound` 照舊不算清單項目。 |
+| Error Pause | **重現。** 用 Editor 內部的 `ConsoleWindow.SetConsoleErrorPause` 開啟後走訪：停在記錯誤的那一步，92 秒後整體逾時，結果是 `NotRun`。 | 走訪期間 `Watch` 發現 Editor 被暫停就讓它繼續，並在報告的 `notes` 記一筆。修正後結果是 `Failed`，後面的步驟照常。 |
+| 關閉 Reload Scene | **重現。** 走訪通過，但起始頁在 `OnShown` 記的警告沒有收到，畫面清單把起始頁列成沒有顯示過。關閉與開啟 Domain Reload 兩種組合都一樣。 | 另外從 `RuntimeInitializeOnLoadMethod(AfterSceneLoad)` 接上（時間點和 `sceneLoaded` 相同：`Awake` 之後、`Start` 之前），接上時已經顯示著的畫面也算顯示過。 |
+| `HasInspectorListener` | **重現。** Call State 是 Off 的監聽被當成有接監聽。 | 只算 Call State 不是 Off 的監聽。 |
+
+**K8 做了什麼**
+
+- AgentGuide「驗收」開頭註明：結束代碼只有 0、1、2；拿到別的數字代表 Editor 本身異常結束，以報告檔為準，報告不存在才需要重跑。
+- 命令列的走訪寫完報告後不馬上呼叫 `EditorApplication.Exit`，改成再等 10 次 `EditorApplication.update`。結束代碼存在 SessionState，這段時間 Domain 重新載入也不會忘記要結束。
+- **這一項沒辦法確定驗證。** 當機是偶發的，我這邊在這一輪與之前總共幾十次命令列執行裡沒有遇過結束代碼 139，所以無從比較修改前後的機率。能確認的只有：修改後每一種情況的結束代碼都還是對的，沒有任何一次卡住。
+
+**四組測試**
+
+和前幾輪同一組副本專案，Unity 6000.3.19f1。
+
+| 環境 | 測試 | 通過 | 失敗 | 略過 |
+|---|---|---:|---:|---:|
+| 有 DOTween | EditMode | 164 | 0 | 0 |
+| 有 DOTween | PlayMode | 81 | 0 | 1 |
+| 無 DOTween | EditMode | 94 | 0 | 70 |
+| 無 DOTween | PlayMode | 76 | 0 | 6 |
+
+- 4-7 交付時的基準是 140、81 加 1 略過、80 加 60 略過、76 加 6 略過。既有案例全部通過。
+- 新增 EditMode 24 個，PlayMode 沒有新增：走訪 10 個（K1 一個、K2 兩個、K3 一個、K7 六個）、問題代碼的重現案例淨增 5 個、`EachCodeReportsOnlyItsOwnProblem`、K4 一個、K6 兩個、K7 的 Validate 五個。
+- 無 DOTween 時多略過 10 個：八個建立工作區來走訪的案例，與 K6 的兩個案例。
+- 走訪的十個新案例裡，七個實際進出 Play Mode。其餘三個：取消進入 Play Mode 的案例、直接模擬狀態改變的案例，以及只重新載入 Domain 的命令列案例。
+
+**命令列的實際執行**
+
+和之前同一個副本專案，重新建立。另外建立審核者重現用的場景 `Review.unity`（內容見「第八輪審核」）。
+
+| 入口與參數 | 結束代碼 | 報告摘要 |
+|---|---:|---|
+| Validate `Review.unity` 加 `-unigameui-strict` | 0 | `passed: true`，Error 0、Warning 0。`game` 沒有 `view.no-exit`（K4）。 |
+| 走訪 `Review.unity` | 1 | `Failed`，通過 5、失敗 3、略過 1。`game/pause` 通過，而且沒有任何記錄：`result` 沒有被拿來當候選（K2）。`pause/restart` 失敗，`result` 是 `Unavailable`，原因是「Popup『pause』只會開在『game』上面……實際遊玩時這個動作不會有反應」（K3）。`title/noisy` 與 `noisy/back` 失敗，原因是那筆 Error；各列出 49 筆 Warning 加那一筆 Error，`logsOmitted` 是 11（K1）。`result/retry` 略過。 |
+| Validate，同一個沒有工作區的 Scene 給兩次 | 2 | 報告只列一次這個 Scene，`passed: false`，`error` 是「指定的 Scene 都沒有 UniGameUI 工作區」。 |
+| Validate，同一個有 Error 的 Scene 給兩次 | 1 | 報告只列一次這個 Scene，Error 1 筆（`start.unknown`），沒有重複計算。 |
+| 走訪 `Workshop.unity`，啟動後第二次更新發生 Domain Reload | 0 | `Passed`，通過 5、略過 1，和沒有重新載入時相同，整個程序 11 秒。修正前同一個指令不會結束。 |
+
+- 原本的二十一種情況也重新執行，結束代碼和上一次相同。二十六次都由工具自己結束 Editor。
+- 實際打包的執行檔（`Match.unity`，Mono、High stripping）重跑一次：結束代碼 0，六個階段全部通過。這一輪沒有改 `Runtime`。
+
+**與要求不同、或要求沒寫到而由實作者決定的地方**
+
+1. **K1：** 報告的欄位叫 `logsOmitted`（每一步）。留在記憶體裡的訊息另有上限（Error 與 Warning 各 200 筆），超過的只計數，Error 仍然算進判定。
+2. **K2：** 不是非有上一頁不可的路由（`Back` 以外），完全不會拿由程式控制的頁面當候選。被放棄的候選不論後來有沒有別的候選成功，它記的訊息都不算進這一步的判定；那個頁面的問題由以它為來源或目標的步驟回報。每一筆記錄多一個 `note` 欄位。
+3. **K3：** 有好幾個頁面開得到同一個 Popup 時，`ShowPage` 的路由用目標以外的那一個，這一步會通過。**由程式或訊號開啟的 Popup（沒有任何頁面的路由通到它，或它標記為由程式控制）仍然會避開目標頁**：它可能出現在任何頁面上，「只會開在 X 上面」不成立，照規格用起始頁而起始頁剛好是目標時，會把走得通的路由報成失敗（AgentGuide 的 `Match.unity` 示例就是這種情況）。這和「不要為了避開目標而換頁」的要求有出入，請判斷。
+4. **K4：** Popup 的 `ShowPage` 切回這個頁面本身不算出口（`game/pause`、`pause/restart → game`）。訊號開啟的 Popup 不算（訊號路由不屬於任何畫面）。
+5. **K5：** 只拆了審核點名的四個代碼。`view.id-invalid`（空的或重複的畫面 ID）、`view.review-missing` 與 `view.prefab-missing`（遺失、缺少引用，或畫面 ID 不符）也各包了不只一種情況，沒有動，請決定要不要一起拆。`constants.asmdef-missing` 只在常數檔是最新的時候回報；常數檔也過期時只回報 `constants.outdated`。
+6. **K6：** `UIValidationReport` 多了公開的 `Error`。未命名的 Scene 沒有內容可以留，補回來的是一個新的未命名 Scene（原本有物件時用預設的攝影機與燈光）。
+7. **K7：** `EnteredEditMode` 那一點沒有重現，仍然修了（見上表）。富文字只處理 TMP 內建的標籤清單；`<uppercase>` 之類會改變大小寫的標籤與元件的 Font Style 沒有另外處理。`UIWalk` 多了三個只給測試用的 internal 掛點（不結束 Editor、延後開始、模擬 Play Mode 狀態改變）。
+8. **K8：** 見上面的說明。
+
+**沒有驗證的**
+
+- K8 的修改有沒有降低當機的機率。
+- 互動 Editor 裡的 Error Pause（自動測試是用內部 API 在批次模式開啟的）。
+- 4-7 列的項目照舊：藍圖視窗的互動操作、實體裝置、IL2CPP。
 
 ### 第四批追加：4-7 訊號與「任何畫面」節點（0.5.0）
 

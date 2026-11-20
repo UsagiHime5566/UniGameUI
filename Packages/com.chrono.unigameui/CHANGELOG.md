@@ -14,6 +14,18 @@
 - 走訪也會走訊號路由（用 `SignalAsync` 觸發，不傳資料）；`history` 是 `Clear` 的路由另外確認完成後歷史是空的，不可返回的 Popup 另外確認 `BackAsync()` 回傳 `Unavailable`；目標畫面由程式控制而顯示失敗時記為略過；準備或觸發遇到頁面腳本自己的導航（`Busy`）時，等它結束後重來，逾時才算失敗。
 - 操作指南新增「由遊戲事件觸發的跳轉」一節：兩種寫法各自的用途與範本、訊號搭配 `Emit`、`history: Clear` 與不可返回的 Popup 的規則。
 
+第四批審核後的修正（K1～K8，版本維持 0.5.0）：
+
+- 走訪：一步有沒有 Error 不再受記錄筆數的上限影響。之前頁面先記 50 筆以上的 Warning 再記 Error 時，這一步會被當成通過。報告每一步最多列 50 筆，Error 與 Exception 優先保留，沒有列出來的筆數寫在新的 `logsOmitted`。
+- 走訪：準備時先顯示的候選頁面會排除由程式控制的頁面，沒有其他候選時才用。候選顯示不出來而改試下一個時，它記的訊息留在報告裡並在新的 `note` 欄位註明，不算進這一步的判定。來源是頁面的 `Back`，能當上一頁的只有顯示不出來的由程式控制頁面時，記為略過。
+- 走訪：來源是 Popup 時，底下的頁面照實際會開啟它的頁面選。Popup 只會開在某一頁上面、而它的 `ShowPage` 路由正好要切到那一頁時，這一步如實失敗，原因會說明。之前為了避開目標而換頁，這種實際上沒有反應的路由會被當成通過。
+- Validate：`view.no-exit` 的頁面規則放寬。頁面開得到的 Popup 有切到別頁的 `ShowPage` 路由時，這個頁面算有出口。
+- **問題代碼拆開，一個代碼只代表一種問題。** `route.invalid` 拆成 `route.incomplete`（來源或動作是空的）、`route.source-missing`（來源畫面不存在）、`route.duplicate`（重複的動作），`route.invalid` 不再使用。目的地種類不符從 `route.target-missing` 分出來成為 `route.target-kind-mismatch`。空的元件 ID 從 `element.id-duplicate` 分出來成為 `element.id-empty`。只缺產生的 asmdef 從 `constants.outdated` 分出來成為 `constants.asmdef-missing`。
+- `UIValidation.CheckScenes`：每一個 Scene 都沒有工作區時，`UIValidationReport.Passed` 是 false，新的 `Error` 屬性與 JSON 的 `error` 是原因，不再和命令列的結束代碼 2 不一致。同一個 Scene 寫了兩次只檢查一次。未命名的 Scene 和存過檔的 Scene 一起開著時，檢查完也會還原。
+- Validate：Call State 設成 Off 的 `onClick` 監聽不算有接監聽（`button.unbound`）。`text.missing-glyph` 不再把富文字標籤當成字元，Sprite Asset 補得到的字元不算缺字，清單項目裡的文字也會檢查；讀過另一個動態字型之後不會再問錯字型檔。
+- 走訪：命令列啟動後、開始之前發生 Domain Reload 時，排定的走訪會接著開始，批次模式的 Editor 不會停在那裡。還沒進入 Play Mode 就回到 Edit Mode 時，結果是 `NotRun`。Console 開著 Error Pause 時，走訪會讓被暫停的 Play Mode 繼續。Enter Play Mode Options 關閉 Reload Scene 的專案，起始頁的顯示與它記的訊息也接得到。
+- 命令列的走訪寫完報告之後，多等幾次 Editor 更新才結束 Editor。操作指南註明：結束代碼不是 0、1、2 時代表 Editor 本身異常結束，請以報告檔為準。
+
 ## 0.4.0（2026-11-20）
 
 - 新增相依 `com.unity.inputsystem`，只支援新的 Input System。新工作區的 EventSystem 直接使用 `InputSystemUIInputModule`；輸入模組不對，或 Active Input Handling 只啟用舊的 Input Manager 時，Validate 回報錯誤。
