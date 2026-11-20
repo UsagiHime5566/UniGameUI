@@ -22,6 +22,9 @@ namespace UniGameUI.Editor
                 return;
 
             UIAnimationPreview.Stop();
+            // 自動走訪不詢問，直接使用已儲存的 Prefab；它的報告會記一筆說明。
+            if (UIWalk.IsRunning)
+                return;
             var pending = PendingReviews();
             if (pending.Count == 0)
                 return;

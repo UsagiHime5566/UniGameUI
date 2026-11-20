@@ -243,10 +243,12 @@ namespace UniGameUI.Editor
         public static void RunFromCommandLine()
         {
             var code = 2;
-            string reportPath = null;
+            var commandLine = Environment.GetCommandLineArgs();
+            // 參數寫錯時仍然盡量把報告寫到指定的位置。
+            var reportPath = FindReportPath(commandLine);
             try
             {
-                var arguments = ParseArguments(Environment.GetCommandLineArgs());
+                var arguments = ParseArguments(commandLine);
                 reportPath = arguments.ReportPath ?? DefaultReportPath;
                 var report = CheckScenes(arguments.Scenes, arguments.Strict);
                 code = ExitCodeFor(report);
@@ -298,6 +300,16 @@ namespace UniGameUI.Editor
                 }
             }
             return parsed;
+        }
+
+        // 不檢查其他參數，只找出報告的路徑。找不到時是 null。
+        internal static string FindReportPath(string[] arguments)
+        {
+            var index = Array.IndexOf(arguments, ReportArgument);
+            return index >= 0 && index + 1 < arguments.Length &&
+                !arguments[index + 1].StartsWith("-", StringComparison.Ordinal)
+                ? arguments[index + 1]
+                : null;
         }
 
         // 取得參數後面的值。後面沒有東西，或接著另一個參數時報錯。

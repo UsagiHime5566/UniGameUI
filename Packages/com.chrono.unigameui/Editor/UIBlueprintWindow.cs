@@ -185,6 +185,7 @@ namespace UniGameUI.Editor
             AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace));
             AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace));
             AddToolbarButton(toolbar, "Validate", ShowValidation);
+            AddToolbarButton(toolbar, "走訪", StartWalk);
             if (workspace.Entries.Any(entry => entry != null &&
                 (UIAuthoring.NeedsViewCanvas(entry.Review) || UIAuthoring.NeedsViewCanvas(entry.Prefab))))
                 AddToolbarButton(toolbar, "補上子 Canvas", () => TryEdit(() => UIAuthoring.RepairViewCanvases(workspace)));
@@ -596,6 +597,21 @@ namespace UniGameUI.Editor
             // 細節記到 Console：每一筆都帶代碼，點擊可以定位到相關的畫面物件。
             UIValidation.LogIssues(workspace, issues);
             EditorUtility.DisplayDialog("UniGameUI Validate", UIValidation.DialogMessage(issues), "關閉");
+        }
+
+        // 進入 Play Mode 把每條路由走一遍。結束、回到 Edit Mode 之後會跳出摘要，失敗的步驟也記在 Console。
+        private void StartWalk()
+        {
+            try
+            {
+                if (workspace)
+                    SceneManager.SetActiveScene(workspace.gameObject.scene);
+                UIWalk.StartFromWindow();
+            }
+            catch (Exception exception)
+            {
+                EditorUtility.DisplayDialog("UniGameUI 走訪", exception.Message, "關閉");
+            }
         }
 
         private void TryEdit(Action change)
