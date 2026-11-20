@@ -22,8 +22,13 @@ namespace UniGameUI.Editor
             var pages = views.Values.Where(entry => entry.Kind == UIEntryKind.Page).ToArray();
             var routes = root.Routes.Where(route => route != null && !string.IsNullOrEmpty(route.Source) &&
                 views.ContainsKey(route.Source)).ToArray();
+            // 「任何畫面」的訊號路由：目標算走得到，但它們不是任何畫面的出口。
+            var signalTargets = root.Routes.Where(route => route != null && route.IsSignal &&
+                    UIRoute.TargetsEntry(route.Kind) && !string.IsNullOrEmpty(route.Target) &&
+                    views.ContainsKey(route.Target))
+                .Select(route => route.Target).ToArray();
 
-            CheckReachability(root, views, pages, routes, byCode, issues);
+            CheckReachability(root, views, pages, routes, byCode, signalTargets, issues);
             CheckExits(root, views, pages, routes, byCode, issues);
             foreach (var entry in views.Values)
             {
@@ -36,7 +41,7 @@ namespace UniGameUI.Editor
         }
 
         private static void CheckReachability(UIRoot root, Dictionary<string, UIEntry> views, UIEntry[] pages,
-            UIRoute[] routes, HashSet<string> byCode, List<UIIssue> issues)
+            UIRoute[] routes, HashSet<string> byCode, string[] signalTargets, List<UIIssue> issues)
         {
             if (string.IsNullOrEmpty(root.StartPageId))
             {
@@ -53,8 +58,9 @@ namespace UniGameUI.Editor
             if (!views.TryGetValue(root.StartPageId, out var start) || start.Kind != UIEntryKind.Page)
                 return;
 
-            // 由程式控制的畫面是程式打開的，所以它們和起始頁一樣是出發點。
+            // 由程式控制的畫面是程式打開的，訊號路由的目標是訊號帶過去的，所以它們和起始頁一樣是出發點。
             var reached = new HashSet<string>(byCode) { start.Id };
+            reached.UnionWith(signalTargets);
             var pending = new Queue<string>(reached);
             while (pending.Count > 0)
             {
@@ -74,7 +80,8 @@ namespace UniGameUI.Editor
                     continue;
                 var kind = entry.Kind == UIEntryKind.Popup ? "Popup" : "頁面";
                 issues.Add(new UIIssue(UIIssueCode.ViewUnreachable,
-                    $"{kind}「{entry.Id}」從起始頁「{start.Id}」沿著 ShowPage 與 OpenPopup 路由走不到。" +
+                    $"{kind}「{entry.Id}」從起始頁「{start.Id}」沿著 ShowPage 與 OpenPopup 路由走不到，" +
+                    "也不是訊號路由的目標。" +
                     "請補上通往它的路由；由程式開啟的畫面請標記為由程式控制（計畫的 \"navigation\": \"Code\"）。",
                     entry.Id, context: ContextOf(root, entry)));
             }

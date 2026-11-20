@@ -76,6 +76,47 @@ namespace UniGameUI.Editor.Tests
             Assert.That(Issues(root, UIIssueCode.ViewUnreachable), Is.Empty);
         }
 
+        // 4-7 追加：「任何畫面」的訊號路由。
+        [Test]
+        public void SignalRouteTargetsCountAsReachableButNotAsExits()
+        {
+            var root = WorkspaceWithHomePage("Signal Reachability");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.CreatePage(root, "challenger", "Challenger");
+            UIAuthoring.CreatePage(root, "versus", "Versus");
+            UIAuthoring.CreatePopup(root, "alert", "Alert", $"{folder}/Alert.prefab");
+            Assert.That(Unreachable(), Is.EquivalentTo(new[] { "challenger", "versus", "alert" }));
+
+            // 訊號路由的目標算走得到；Emit 的訊號不會帶玩家到新的畫面。
+            UIAuthoring.Connect(root, UIRoot.AnySource, "joined", UIRouteKind.ShowPage, "challenger", UIHistoryMode.Clear);
+            UIAuthoring.Connect(root, UIRoot.AnySource, "tick", UIRouteKind.Emit);
+            Assert.That(Unreachable(), Is.EquivalentTo(new[] { "versus", "alert" }));
+            UIAuthoring.Connect(root, UIRoot.AnySource, "lost", UIRouteKind.OpenPopup, "alert");
+            Assert.That(Unreachable(), Is.EqualTo(new[] { "versus" }));
+
+            // 從訊號路由的目標出發的路由也算。
+            UIAuthoring.Connect(root, "challenger", "fight", UIRouteKind.ShowPage, "versus");
+            Assert.That(Unreachable(), Is.Empty);
+
+            // 訊號路由不算任何畫面的出口：home 與 versus 沒有自己的 ShowPage 或 Back，alert 關不掉。
+            Assert.That(Issues(root, UIIssueCode.ViewNoExit).Select(issue => issue.ViewId),
+                Is.EquivalentTo(new[] { "home", "versus", "alert" }));
+            UIAuthoring.Connect(root, "home", "start", UIRouteKind.ShowPage, "versus");
+            UIAuthoring.Connect(root, "versus", "back", UIRouteKind.Back);
+            UIAuthoring.Connect(root, "alert", "close", UIRouteKind.ClosePopup);
+            Assert.That(Issues(root, UIIssueCode.ViewNoExit), Is.Empty);
+
+            // 沒有起始頁時照舊只回報 start.none，不逐一回報走不到的畫面。
+            UIAuthoring.SetStartPage(root, null);
+            Assert.That(Issues(root, UIIssueCode.StartNone).Length, Is.EqualTo(1));
+            Assert.That(Unreachable(), Is.Empty);
+
+            string[] Unreachable()
+            {
+                return Issues(root, UIIssueCode.ViewUnreachable).Select(issue => issue.ViewId).ToArray();
+            }
+        }
+
         [Test]
         public void ViewsWithoutAWayOutAreWarnings()
         {
