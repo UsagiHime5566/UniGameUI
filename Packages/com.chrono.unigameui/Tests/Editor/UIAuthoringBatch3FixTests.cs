@@ -371,6 +371,54 @@ namespace UniGameUI.Editor.Tests
             Assert.That(error.Message, Does.Contain("cancel").And.Contain("Button").And.Contain("Toggle"));
         }
 
+        [Test]
+        public void StarterDropdownTemplateHasAVerticalScrollbarWithItsFullWidth()
+        {
+            var widgets = UseIsolatedWidgets();
+            UIWidgets.Install();
+            var scene = NewScene("Batch3Fix Dropdown Scrollbar");
+            var parent = new GameObject("Parent", typeof(RectTransform));
+            SceneManager.MoveGameObjectToScene(parent, scene);
+            ((RectTransform)parent.transform).sizeDelta = new Vector2(800, 600);
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(
+                AssetDatabase.LoadAssetAtPath<GameObject>($"{widgets}/Dropdown.prefab"), parent.transform);
+
+            var template = instance.GetComponent<TMP_Dropdown>().template;
+            var scrollbar = template.GetComponent<ScrollRect>().verticalScrollbar;
+            var bar = (RectTransform)scrollbar.transform;
+            Assert.That(scrollbar.direction, Is.EqualTo(Scrollbar.Direction.BottomToTop));
+            Assert.That(bar.anchorMin, Is.EqualTo(new Vector2(1f, 0f)));
+            Assert.That(bar.anchorMax, Is.EqualTo(Vector2.one));
+            Assert.That(bar.pivot, Is.EqualTo(Vector2.one));
+            Assert.That(bar.sizeDelta, Is.EqualTo(new Vector2(40f, 0f)));
+
+            // 捲軸是貼在範本右側、和範本一樣高的直條。
+            Assert.That(bar.rect.width, Is.EqualTo(40f).Within(0.01f));
+            Assert.That(bar.rect.height, Is.EqualTo(template.rect.height).Within(0.01f));
+            Assert.That(template.rect.height, Is.GreaterThan(100f));
+            AssertInside(bar, template, "捲軸");
+
+            // 滑動區域與把手都落在捲軸範圍內，把手和捲軸一樣寬。
+            var handle = scrollbar.handleRect;
+            var area = (RectTransform)handle.parent;
+            Assert.That(area.rect.height, Is.EqualTo(bar.rect.height - 40f).Within(0.01f));
+            AssertInside(area, bar, "滑動區域");
+            Assert.That(handle.rect.width, Is.EqualTo(40f).Within(0.01f));
+            AssertInside(handle, bar, "把手");
+
+            static void AssertInside(RectTransform inner, RectTransform outer, string what)
+            {
+                var innerCorners = new Vector3[4];
+                var outerCorners = new Vector3[4];
+                inner.GetWorldCorners(innerCorners);
+                outer.GetWorldCorners(outerCorners);
+                Assert.That(innerCorners[0].x, Is.GreaterThanOrEqualTo(outerCorners[0].x - 0.01f), what + "的左邊");
+                Assert.That(innerCorners[0].y, Is.GreaterThanOrEqualTo(outerCorners[0].y - 0.01f), what + "的下邊");
+                Assert.That(innerCorners[2].x, Is.LessThanOrEqualTo(outerCorners[2].x + 0.01f), what + "的右邊");
+                Assert.That(innerCorners[2].y, Is.LessThanOrEqualTo(outerCorners[2].y + 0.01f), what + "的上邊");
+            }
+        }
+
         private static string[] LoadedScenes()
         {
             return Enumerable.Range(0, SceneManager.sceneCount).Select(SceneManager.GetSceneAt)

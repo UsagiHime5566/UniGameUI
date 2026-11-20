@@ -258,7 +258,8 @@ namespace UniGameUI.Editor
             var scrollbar = scrollbarRect.gameObject.AddComponent<Scrollbar>();
             scrollbar.handleRect = scrollbarHandle;
             scrollbar.targetGraphic = scrollbarHandleImage;
-            scrollbar.SetDirection(Scrollbar.Direction.BottomToTop, true);
+            // 上面已經照直向捲軸排好版面。第二個參數給 true 會把寬高對調，捲軸的寬度就變成 0。
+            scrollbar.SetDirection(Scrollbar.Direction.BottomToTop, false);
 
             var templateScroll = template.gameObject.AddComponent<ScrollRect>();
             templateScroll.content = content;
