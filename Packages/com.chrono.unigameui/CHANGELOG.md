@@ -8,6 +8,11 @@
 - 新增 Validate 的命令列入口 `UIValidation.RunFromCommandLine`（`-unigameui-scene`、`-unigameui-report`、`-unigameui-strict`）、JSON 報告與結束代碼，以及 `UIValidation.CheckScenes` 與 `UIValidationReport`。藍圖視窗的 Validate 改為顯示 Error 與 Warning 的數量，每一筆問題連同代碼記到 Console，點擊可以定位。
 - 新增自動走訪：`UIWalk.Start`、`UIWalkOptions`、`UIWalk.IsRunning`、`UIWalk.LastReport`、`UIWalk.Finished`、`UIWalkReport`，命令列入口 `UIWalk.RunFromCommandLine`（`-unigameui-scene`、`-unigameui-report`、`-unigameui-include-emit`、`-unigameui-step-timeout`、`-unigameui-timeout`），以及藍圖視窗工具列的「走訪」。走訪在 Play Mode 把每條路由觸發一次，寫出 JSON 報告，用結束代碼表示結果。
 - 操作指南新增「驗收」一節：交付前的固定步驟、兩個工具的用法、由程式控制的畫面、走訪的範圍與限制、問題代碼表。
+- 新增訊號：藍圖多一個固定的「任何畫面」節點，從它拉出去的訊號路由不論目前顯示哪個畫面都成立。`UIRoot.AnySource`（`"*"`）、`UIRoot.SignalAsync(action, data, cancellation)` 與 `UIRoute.IsSignal`；計畫寫 `"source": "*"`；`UIAuthoring.Connect`、`UpdateRoute`、`Disconnect`、`PositionNode` 接受 `UIRoot.AnySource`。訊號路由的種類只能是 `ShowPage`、`OpenPopup`、`Emit`。訊號不會因為忙碌而被拒絕：有導航正在進行時等它結束再執行，多個訊號依送出的順序執行；其他導航 API 照舊回傳 `Busy`。`ShowPage` 與 `OpenPopup` 的訊號可以帶資料。
+- `OpenPopup` 路由接受 `history`（`Push`、`Clear`），`UIRoot.OpenPopupAsync` 新增可以指定 `UIHistoryMode` 的多載。`Clear` 開啟的是不可返回的 Popup：開啟時清空歷史；它在最上層時返回鍵、`BackAsync()` 與 `Back` 路由無效；它開著的期間切頁一律清空歷史；`ClosePopup` 路由、`View.Close()` 與點遮罩關閉照常可以關閉它。藍圖視窗的「返回歷史」選單在 `OpenPopup` 路由顯示「可以返回」與「不可返回」。
+- Validate 新增兩個代碼：`route.signal-kind-invalid`（訊號路由的種類不對）與 `route.history-invalid`（`OpenPopup` 寫 `Replace`）。訊號路由的目標算走得到，訊號路由不算任何畫面的出口。
+- 走訪也會走訊號路由（用 `SignalAsync` 觸發，不傳資料）；`history` 是 `Clear` 的路由另外確認完成後歷史是空的，不可返回的 Popup 另外確認 `BackAsync()` 回傳 `Unavailable`；目標畫面由程式控制而顯示失敗時記為略過；準備或觸發遇到頁面腳本自己的導航（`Busy`）時，等它結束後重來，逾時才算失敗。
+- 操作指南新增「由遊戲事件觸發的跳轉」一節：兩種寫法各自的用途與範本、訊號搭配 `Emit`、`history: Clear` 與不可返回的 Popup 的規則。
 
 ## 0.4.0（2026-11-20）
 

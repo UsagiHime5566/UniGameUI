@@ -17,6 +17,8 @@ UniGameUI 需要 [DOTween 標準版](https://assetstore.unity.com/packages/tools
 
 遊戲程式以 `UIViewBehaviour` 接收頁面生命週期，從 `View.Root` 導航，並用 `View.Get<T>(id)` 取得元件。切頁可指定返回歷史，選擇視窗可用 `OpenPopupForResultAsync<T>` 等待關閉結果，「確定要……嗎？」用 `await Root.ConfirmAsync(message)`。滑桿、開關、下拉選單、輸入框的值變更直接訂閱 Unity 元件的事件；清單用 `UIList.SetItems`。音效與數據記錄可以訂閱工作區的全域事件。要在 `OnShown` 接續導航，先用 `Awaitable.NextFrameAsync()` 等一個影格，從同步通知直接提出會回傳 `Busy` 並記錄警告。
 
+遊戲事件（挑戰者連線、斷線）用 `root.SignalAsync(動作, 資料)` 送出，要去哪裡畫在藍圖的「任何畫面」節點上。訊號不論當時在哪個畫面都成立，遇到轉場會等它結束再執行，不會漏掉。路由的 `history: Clear` 設定跳過去之後不能返回，`ShowPage` 與 `OpenPopup` 都適用。
+
 手把與鍵盤可以操作所有畫面，改用滑鼠時不留下選取外框；Esc 與手把的取消鍵等同返回，個別畫面可以關掉或用 `OnBackRequested` 接手。多語系只開接口：文字、圖片與下拉選項可以帶鍵值，專案實作 `IUILocalizer` 提供翻譯，切換語言後呼叫 `root.RefreshLocalization()`。
 
 儲存場景或套用 JSON 計畫後，工具會在 `Assets/UniGameUI/Generated` 產生 ID 常數。等 Editor 編譯完成再接遊戲腳本。自訂 asmdef 需引用產生常數的 `UniGameUI.Generated` 組件。用法和完整頁面範本見 [AgentGuide 的遊戲程式章節](Documentation~/AgentGuide.md#遊戲程式)。
