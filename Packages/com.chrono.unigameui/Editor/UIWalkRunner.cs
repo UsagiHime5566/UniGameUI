@@ -13,13 +13,12 @@ namespace UniGameUI.Editor
         {
             // 連續幾個影格沒有導航在進行，才算穩定。
             private const int StableFrames = 3;
-            private const int MaxLogsPerStep = 50;
             // 逾時取消之後，給還在收尾的導航一點時間。
             private const double CancelGraceSeconds = 2;
 
             private readonly Session owner;
             private readonly HashSet<string> shown = new HashSet<string>();
-            private readonly List<UIWalkLog> logs = new List<UIWalkLog>();
+            private readonly StepLogs logs = new StepLogs();
             private readonly Dictionary<string, UIEntry> entries = new Dictionary<string, UIEntry>();
             private readonly List<UIEntry> pages = new List<UIEntry>();
             private readonly HashSet<string> byCode = new HashSet<string>();
@@ -73,14 +72,9 @@ namespace UniGameUI.Editor
 
             private void OnLog(string condition, string stackTrace, LogType type)
             {
-                if (type == LogType.Log || logs.Count >= MaxLogsPerStep || IsEditorInternalLog(stackTrace))
+                if (type == LogType.Log || IsEditorInternalLog(stackTrace))
                     return;
-                logs.Add(new UIWalkLog { type = type.ToString(), message = condition });
-            }
-
-            private UIWalkLog FirstError()
-            {
-                return logs.FirstOrDefault(log => log.type != LogType.Warning.ToString());
+                logs.Add(type, condition);
             }
 
             public async void Run(UIRoot target, string problem)
@@ -172,9 +166,9 @@ namespace UniGameUI.Editor
                         if (displayed && quiet >= StableFrames)
                             break;
                         // 起始頁顯示失敗時工作區會記錯誤，之後就閒置了，不必等到逾時。
-                        if (!displayed && quiet >= StableFrames * 4 && FirstError() != null)
+                        if (!displayed && quiet >= StableFrames * 4 && logs.HasError)
                         {
-                            Finish(step, UIWalkStepStatus.Failed, $"起始頁「{start}」沒有顯示出來。" + ErrorText());
+                            Finish(step, UIWalkStepStatus.Failed, $"起始頁「{start}」沒有顯示出來。" + logs.ErrorText());
                             return;
                         }
                         if (Now > deadline)
@@ -187,8 +181,8 @@ namespace UniGameUI.Editor
                         await Awaitable.NextFrameAsync();
                     }
 
-                    if (FirstError() != null)
-                        Finish(step, UIWalkStepStatus.Failed, ErrorText());
+                    if (logs.HasError)
+                        Finish(step, UIWalkStepStatus.Failed, logs.ErrorText());
                     else
                         Finish(step, UIWalkStepStatus.Passed, "");
                 }
@@ -302,12 +296,12 @@ namespace UniGameUI.Editor
                     {
                         // 由程式控制的目標畫面沒有資料就顯示不出來，走訪不傳資料，所以不算失敗。
                         Finish(step, UIWalkStepStatus.Skipped,
-                            $"目標畫面「{route.Target}」由程式控制，需要由程式提供資料才能顯示。" + ErrorText());
+                            $"目標畫面「{route.Target}」由程式控制，需要由程式提供資料才能顯示。" + logs.ErrorText());
                     }
                     else if (verdict != null)
                         Finish(step, UIWalkStepStatus.Failed, verdict);
-                    else if (FirstError() != null)
-                        Finish(step, UIWalkStepStatus.Failed, ErrorText());
+                    else if (logs.HasError)
+                        Finish(step, UIWalkStepStatus.Failed, logs.ErrorText());
                     else
                         Finish(step, UIWalkStepStatus.Passed, "");
                 }
@@ -337,23 +331,13 @@ namespace UniGameUI.Editor
             private void Close(UIWalkStep step, double started)
             {
                 step.seconds = (float)Math.Round(Now - started, 2);
-                step.logs = logs.ToList();
+                logs.WriteTo(step);
                 logs.Clear();
             }
 
             private string Timeout(string doing)
             {
                 return $"逾時：{doing}超過 {owner.stepTimeout:0.##} 秒沒有結束。";
-            }
-
-            private string ErrorText()
-            {
-                var error = FirstError();
-                if (error == null)
-                    return "";
-                var message = error.message ?? "";
-                var line = message.IndexOf('\n');
-                return $"這一步期間 Console 出現 {error.type}：{(line < 0 ? message : message.Substring(0, line))}";
             }
 
             private string Judge(UIRoute route, UIEntry source, string previous, UINavResult result)
@@ -642,6 +626,104 @@ namespace UniGameUI.Editor
                         id = entry.Id, kind = entry.Kind.ToString(), visited = visited, reason = reason
                     });
                 }
+            }
+        }
+
+        // 一步期間 Console 的 Error、Exception、Assert 與 Warning。
+        // 「這一步有沒有 Error」和「報告裡留幾筆」是兩回事：判定看的是每一筆收到的訊息，不受上限影響；
+        // 報告最多留 MaxReported 筆，Error、Exception 優先保留，其餘省略的只記筆數。
+        private sealed class StepLogs
+        {
+            internal const int MaxReported = 50;
+            // 留在記憶體裡的上限，避免頁面腳本不停記訊息時無限成長。超過的只計數，Error 仍然算進判定。
+            private const int MaxKeptPerKind = 200;
+
+            private sealed class Entry
+            {
+                public LogType Type;
+                public string Message;
+                public bool IsError => Type != LogType.Warning;
+            }
+
+            private readonly List<Entry> entries = new List<Entry>();
+            private int total;
+            private int keptErrors;
+            private int keptWarnings;
+            // 超過記憶體上限、沒有留下內容的 Error。
+            private int unkeptErrors;
+
+            /// <summary>這一步期間有沒有 Error、Exception 或 Assert。</summary>
+            public bool HasError => keptErrors > 0 || unkeptErrors > 0;
+
+            public void Clear()
+            {
+                entries.Clear();
+                total = 0;
+                keptErrors = 0;
+                keptWarnings = 0;
+                unkeptErrors = 0;
+            }
+
+            public void Add(LogType type, string message)
+            {
+                total++;
+                var entry = new Entry { Type = type, Message = message ?? "" };
+                if (entry.IsError)
+                {
+                    if (keptErrors >= MaxKeptPerKind)
+                    {
+                        unkeptErrors++;
+                        return;
+                    }
+                    keptErrors++;
+                }
+                else
+                {
+                    if (keptWarnings >= MaxKeptPerKind)
+                        return;
+                    keptWarnings++;
+                }
+                entries.Add(entry);
+            }
+
+            /// <summary>第一筆 Error 的說明，給失敗原因用。沒有 Error 時是空字串。</summary>
+            public string ErrorText()
+            {
+                var error = entries.FirstOrDefault(entry => entry.IsError);
+                if (error == null)
+                    return HasError ? "這一步期間 Console 出現錯誤。" : "";
+                var line = error.Message.IndexOf('\n');
+                return $"這一步期間 Console 出現 {error.Type}：" +
+                    (line < 0 ? error.Message : error.Message.Substring(0, line));
+            }
+
+            // 寫進報告：Error、Exception 優先，剩下的位置給 Warning；留下來的照原本的順序。
+            public void WriteTo(UIWalkStep step)
+            {
+                var keep = new bool[entries.Count];
+                var slots = MaxReported;
+                for (var pass = 0; pass < 2 && slots > 0; pass++)
+                {
+                    for (var index = 0; index < entries.Count && slots > 0; index++)
+                    {
+                        if (keep[index] || entries[index].IsError != (pass == 0))
+                            continue;
+                        keep[index] = true;
+                        slots--;
+                    }
+                }
+
+                step.logs = new List<UIWalkLog>();
+                for (var index = 0; index < entries.Count; index++)
+                {
+                    if (!keep[index])
+                        continue;
+                    step.logs.Add(new UIWalkLog
+                    {
+                        type = entries[index].Type.ToString(), message = entries[index].Message
+                    });
+                }
+                step.logsOmitted = total - step.logs.Count;
             }
         }
 

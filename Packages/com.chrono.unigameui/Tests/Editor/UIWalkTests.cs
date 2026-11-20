@@ -459,6 +459,48 @@ namespace UniGameUI.Editor.Tests
             Assert.That(SessionState.GetBool(FinishedKey, false), Is.True, "Finished 要在回到 Edit Mode 之後觸發");
         }
 
+        // K1：警告再多，步驟裡的 Error 也不可以被丟掉。
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator ErrorsAreNotLostBehindManyWarnings()
+        {
+            var root = NewWorkspace();
+            Page(root, "home");
+            Page(root, "noisy", UIWalkTestPage.Behaviour.LogManyWarningsThenAnErrorOnShowing);
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, "home", "openNoisy", UIRouteKind.ShowPage, "noisy");
+            UIAuthoring.Connect(root, "noisy", "back", UIRouteKind.Back);
+            AssertNoValidationErrors(root);
+
+            SessionState.SetFloat(UIWalk.WarmUpSecondsKey, 5f);
+            LogAssert.ignoreFailingMessages = true;
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            LogAssert.ignoreFailingMessages = true;
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Failed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "home/openNoisy=Failed", "noisy/back=Failed"
+            }), Describe(report));
+            foreach (var step in report.Steps.Skip(1))
+            {
+                // 導航本身完成了；失敗是因為那筆 Error。
+                Assert.That(step.Result, Is.EqualTo("Completed"));
+                Assert.That(step.Reason, Does.Contain("Error").And.Contain("很多警告之後記了一筆錯誤"));
+                // 報告最多留 50 筆：Error 一定在裡面，其餘是照順序的警告；沒有列出來的筆數另外寫。
+                Assert.That(step.Logs.Count, Is.EqualTo(50));
+                Assert.That(step.Logs.Count(log => log.Type == "Error"), Is.EqualTo(1));
+                Assert.That(step.Logs.Last().Type, Is.EqualTo("Error"));
+                Assert.That(step.Logs[0].Message, Does.Contain("第 1 筆警告"));
+                Assert.That(step.Logs[48].Message, Does.Contain("第 49 筆警告"));
+                Assert.That(step.LogsOmitted, Is.EqualTo(UIWalkTestPage.ManyWarnings + 1 - 50));
+            }
+            Assert.That(report.Steps[0].LogsOmitted, Is.Zero);
+            Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"logsOmitted\": 11"));
+        }
+
         private static void RecordFinished(UIWalkReport report)
         {
             SessionState.SetBool(FinishedKey, !EditorApplication.isPlaying && !UIWalk.IsRunning &&

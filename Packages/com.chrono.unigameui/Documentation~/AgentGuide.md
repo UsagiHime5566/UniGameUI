@@ -1093,11 +1093,11 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
   "steps": [
     {
       "source": "", "action": "", "kind": "Start", "target": "workshop",
-      "status": "Passed", "result": "", "reason": "", "seconds": 0.05, "logs": []
+      "status": "Passed", "result": "", "reason": "", "seconds": 0.05, "logs": [], "logsOmitted": 0
     },
     {
       "source": "workshop", "action": "openSettings", "kind": "ShowPage", "target": "settings",
-      "status": "Passed", "result": "Completed", "reason": "", "seconds": 0.42, "logs": []
+      "status": "Passed", "result": "Completed", "reason": "", "seconds": 0.42, "logs": [], "logsOmitted": 0
     }
   ],
   "views": [
@@ -1112,7 +1112,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 - 三個數量包含起始那一步。
 - `result` 是觸發路由得到的導航結果；沒有觸發時是空字串。
 - 訊號路由那一步的 `source` 是 `"*"`。
-- `logs` 是這一步期間 Console 的 Error、Exception、Assert 與 Warning，每一筆有 `type` 與 `message`。
+- `logs` 是這一步期間 Console 的 Error、Exception、Assert 與 Warning，每一筆有 `type` 與 `message`。最多列 50 筆，Error、Exception 與 Assert 優先保留；沒有列出來的筆數是 `logsOmitted`。**步驟的結果看的是全部的訊息，不受這個上限影響**：警告再多，只要有一筆 Error，這一步就是失敗。
 - `views` 列出藍圖上每一個畫面在走訪期間有沒有顯示過，沒有的話 `reason` 是原因。
 - `validation.issues` 的格式和 Validate 報告的 `issues` 相同。
 

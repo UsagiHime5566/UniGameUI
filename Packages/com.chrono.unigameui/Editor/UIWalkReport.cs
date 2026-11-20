@@ -67,6 +67,7 @@ namespace UniGameUI.Editor
         [SerializeField] internal string reason = "";
         [SerializeField] internal float seconds;
         [SerializeField] internal List<UIWalkLog> logs = new List<UIWalkLog>();
+        [SerializeField] internal int logsOmitted;
 
         public string Source => source;
         public string Action => action;
@@ -85,8 +86,14 @@ namespace UniGameUI.Editor
 
         public float Seconds => seconds;
 
-        /// <summary>這一步期間 Console 的 Error、Exception 與 Warning。</summary>
+        /// <summary>
+        /// 這一步期間 Console 的 Error、Exception 與 Warning。最多 50 筆，Error 與 Exception 優先保留；
+        /// 沒有列出來的筆數是 <see cref="LogsOmitted"/>。步驟的結果看的是全部的訊息，不受這個上限影響。
+        /// </summary>
         public IReadOnlyList<UIWalkLog> Logs => logs;
+
+        /// <summary>這一步期間還有幾筆訊息沒有列在 <see cref="Logs"/> 裡。</summary>
+        public int LogsOmitted => logsOmitted;
     }
 
     /// <summary>

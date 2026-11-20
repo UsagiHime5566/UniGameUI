@@ -18,8 +18,12 @@ namespace UniGameUI.Tests
             RequireData,
             LogWarningOnAction,
             // 開一個等結果的 Popup；它一被關掉，就馬上開始切到 target（計時器之類的腳本自己在導航）。
-            NavigateWhenPopupCloses
+            NavigateWhenPopupCloses,
+            // 先記很多筆警告，最後才記一筆錯誤。
+            LogManyWarningsThenAnErrorOnShowing
         }
+
+        public const int ManyWarnings = 60;
 
         public Behaviour behaviour;
         public string target;
@@ -29,6 +33,12 @@ namespace UniGameUI.Tests
         {
             if (behaviour == Behaviour.ThrowOnShowing)
                 throw new InvalidOperationException($"walk-test: 「{View.Id}」的 OnShowing 丟出例外");
+            if (behaviour == Behaviour.LogManyWarningsThenAnErrorOnShowing)
+            {
+                for (var index = 0; index < ManyWarnings; index++)
+                    Debug.LogWarning($"walk-test: 「{View.Id}」的第 {index + 1} 筆警告", this);
+                Debug.LogError($"walk-test: 「{View.Id}」在很多警告之後記了一筆錯誤", this);
+            }
             // 沒有資料就顯示不出來的畫面：GetData 在資料是 null 時會丟出例外。
             if (behaviour == Behaviour.RequireData)
                 View.GetData<string>();
