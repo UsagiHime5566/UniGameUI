@@ -223,6 +223,108 @@
     background-color: #3d4a54;
 }
 
+/* 執行中的藍圖：不能拖曳節點，也沒有連接點。 */
+.blueprint-live .blueprint-node {
+    cursor: arrow;
+}
+
+.blueprint-live .node-port {
+    display: none;
+}
+
+.live-indicator {
+    -unity-text-align: middle-left;
+    -unity-font-style: bold;
+    color: #11181d;
+    background-color: #ffd15c;
+    padding-left: 8px;
+    padding-right: 8px;
+    margin-left: 6px;
+    margin-right: 6px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+}
+
+/* 節點上方的執行中徽章：「目前」、「Popup 1」、「最上層」、「進場中」。 */
+.node-live {
+    position: absolute;
+    left: 0;
+    top: -24px;
+    flex-direction: row;
+}
+
+.node-live .badge {
+    font-size: 11px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.badge-live-current {
+    background-color: #ffd15c;
+}
+
+.badge-live-popup {
+    background-color: #d9bdf7;
+}
+
+.badge-live-top {
+    background-color: #ffffff;
+}
+
+.badge-live-transition {
+    background-color: #7fe0d0;
+}
+
+/* 目前的頁面與開著的 Popup：粗的亮色外框。最上層、可以操作的那一個最亮。 */
+.blueprint-node.live-current,
+.blueprint-node.live-popup {
+    border-top-width: 3px;
+    border-right-width: 3px;
+    border-bottom-width: 3px;
+    border-left-width: 6px;
+}
+
+.blueprint-node.live-current {
+    border-top-color: #ffd15c;
+    border-right-color: #ffd15c;
+    border-bottom-color: #ffd15c;
+    border-left-color: #ffd15c;
+}
+
+.blueprint-node.live-popup {
+    border-top-color: #b48fe0;
+    border-right-color: #b48fe0;
+    border-bottom-color: #b48fe0;
+    border-left-color: #b48fe0;
+}
+
+.blueprint-node.live-top {
+    background-color: #4f5d68;
+}
+
+.blueprint-node.live-popup.live-top {
+    border-top-color: #f3e6ff;
+    border-right-color: #f3e6ff;
+    border-bottom-color: #f3e6ff;
+    border-left-color: #f3e6ff;
+}
+
+.blueprint-node.live-transition {
+    border-top-color: #7fe0d0;
+    border-right-color: #7fe0d0;
+    border-bottom-color: #7fe0d0;
+}
+
+/* 剛走過的路由：線上的標籤亮起來，背景色由程式淡回原本的樣子。 */
+.edge-label.edge-flash {
+    color: #ffffff;
+    border-left-color: #ffe27a;
+}
+
 .blueprint-sidebar {
     background-color: #2b2f33;
 }
@@ -395,6 +497,81 @@
 
 .kind-Emit {
     background-color: #f0b35a;
+}
+
+/* 執行中的藍圖：路由的一列加上「觸發」按鈕。 */
+.route-row-live {
+    flex-direction: row;
+    align-items: center;
+}
+
+.route-row-live > .route-row {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.trigger-button {
+    margin-left: 4px;
+    margin-right: 0;
+    min-width: 44px;
+}
+
+/* 最近的導航：每一筆一列。結果不是 Completed 的用醒目的顏色。 */
+.nav-record {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 1px;
+    margin-bottom: 1px;
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    background-color: #2a2f34;
+    border-left-width: 3px;
+    border-right-width: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    border-left-color: #4c6b52;
+    -unity-text-align: middle-left;
+}
+
+.nav-record:hover {
+    background-color: #3d4a54;
+}
+
+.nav-problem {
+    background-color: #3d2a2a;
+    border-left-color: #e05c5c;
+}
+
+.nav-time {
+    margin-right: 6px;
+    font-size: 10px;
+    color: #9aa7b1;
+}
+
+.nav-main {
+    margin-right: 6px;
+    -unity-font-style: bold;
+    color: #f2f5f7;
+}
+
+.nav-target {
+    margin-left: 4px;
+    margin-right: 6px;
+    color: #c3ccd3;
+}
+
+.nav-result {
+    color: #9fd8a6;
+}
+
+.nav-result-problem {
+    -unity-font-style: bold;
+    color: #ff8f8f;
 }
 
 .route-buttons {

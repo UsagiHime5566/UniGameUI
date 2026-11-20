@@ -111,6 +111,9 @@ namespace UniGameUI.Editor
 
         private void OnDisable()
         {
+            // 視窗關閉或 Domain 重新載入：不留下任何對執行中工作區的訂閱。
+            StopLiveUpdate();
+            UnsubscribeLive();
             Undo.undoRedoPerformed -= Rebuild;
             EditorApplication.playModeStateChanged -= RefreshOnPlayModeChange;
             EditorSceneManager.activeSceneChangedInEditMode -= ActiveSceneChanged;
@@ -153,14 +156,35 @@ namespace UniGameUI.Editor
 
         private void RefreshOnPlayModeChange(PlayModeStateChange change)
         {
-            if (change == PlayModeStateChange.EnteredEditMode || change == PlayModeStateChange.EnteredPlayMode)
-                Rebuild();
+            switch (change)
+            {
+                case PlayModeStateChange.ExitingPlayMode:
+                    EndLive();
+                    break;
+                case PlayModeStateChange.EnteredPlayMode:
+                    EndLive();
+                    Rebuild();
+                    break;
+                case PlayModeStateChange.EnteredEditMode:
+                    EndLive();
+                    // 執行中的工作區已經銷毀，回到 Edit Mode 的那一個。
+                    if (!workspace)
+                        workspace = UIAuthoring.FindWorkspace(SceneManager.GetActiveScene());
+                    Rebuild();
+                    break;
+            }
         }
 
         private void Rebuild()
         {
+            StopLiveUpdate();
+            UnsubscribeLive();
+            liveMode = EditorApplication.isPlaying || injectedLiveState != null;
+            if (liveMode && injectedLiveState == null)
+                ResolveLiveWorkspace();
             selectedAction = SelectedRouteAction();
             rootVisualElement.Clear();
+            rootVisualElement.EnableInClassList("blueprint-live", liveMode);
             cards.Clear();
             positions.Clear();
             edgeLabels.Clear();
@@ -199,6 +223,17 @@ namespace UniGameUI.Editor
 
             if (!workspace)
             {
+                if (liveMode)
+                {
+                    // Play Mode 中沒有可以顯示的工作區：持續找，載入的 Scene 有工作區時切換過去。
+                    rootVisualElement.Add(new HelpBox(liveLost
+                        ? "執行中的 UI 工作區已經停用或銷毀（例如換了 Scene）。載入的 Scene 有啟用中的工作區時，藍圖會自動切換過去。"
+                        : "Play Mode 中沒有啟用中的 UI 工作區。載入的 Scene 有工作區時，藍圖會自動切換過去。",
+                        HelpBoxMessageType.Info) { name = "live-no-workspace" });
+                    if (injectedLiveState == null)
+                        StartLiveUpdate();
+                    return;
+                }
                 rootVisualElement.Add(new HelpBox("目前沒有 UI 工作區。可先請 agent 依需求套用計畫，或在這裡建立空白工作區。",
                     HelpBoxMessageType.Info));
                 if (!EditorApplication.isPlayingOrWillChangePlaymode)
@@ -209,20 +244,33 @@ namespace UniGameUI.Editor
                 return;
             }
 
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            if (!liveMode && EditorApplication.isPlayingOrWillChangePlaymode)
             {
-                rootVisualElement.Add(new HelpBox("結束 Play Mode 後可編輯藍圖。", HelpBoxMessageType.Info));
+                rootVisualElement.Add(new HelpBox("正在切換 Play Mode。", HelpBoxMessageType.Info));
                 return;
             }
 
-            AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace))
-                .tooltip = "在 Scene 視窗框選所有審核畫面。";
-            AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace));
-            AddToolbarButton(toolbar, "Validate", ShowValidation);
-            AddToolbarButton(toolbar, "走訪", StartWalk);
-            if (workspace.Entries.Any(entry => entry != null &&
-                (UIAuthoring.NeedsViewCanvas(entry.Review) || UIAuthoring.NeedsViewCanvas(entry.Prefab))))
-                AddToolbarButton(toolbar, "補上子 Canvas", () => TryEdit(() => UIAuthoring.RepairViewCanvases(workspace)));
+            if (liveMode)
+            {
+                var indicator = new Label("執行中 · 唯讀")
+                {
+                    name = "live-indicator",
+                    tooltip = "Play Mode 中藍圖標示目前的畫面，不能修改：Play Mode 中的修改離開時會被 Unity 還原。",
+                };
+                indicator.AddToClassList("live-indicator");
+                toolbar.Add(indicator);
+            }
+            else
+            {
+                AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace))
+                    .tooltip = "在 Scene 視窗框選所有審核畫面。";
+                AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace));
+                AddToolbarButton(toolbar, "Validate", ShowValidation);
+                AddToolbarButton(toolbar, "走訪", StartWalk);
+                if (workspace.Entries.Any(entry => entry != null &&
+                    (UIAuthoring.NeedsViewCanvas(entry.Review) || UIAuthoring.NeedsViewCanvas(entry.Prefab))))
+                    AddToolbarButton(toolbar, "補上子 Canvas", () => TryEdit(() => UIAuthoring.RepairViewCanvases(workspace)));
+            }
 
             // 藍圖畫布的視角。
             var frameAll = AddToolbarButton(toolbar, "顯示全部", ShowAllNodes);
@@ -255,6 +303,8 @@ namespace UniGameUI.Editor
             split.Add(sidebar);
             UpdateStage();
             LoadView();
+            if (liveMode)
+                BeginLive();
             DrawSidebar();
         }
 
@@ -551,6 +601,10 @@ namespace UniGameUI.Editor
                 card.AddToClassList("selected-node");
             card.style.width = NodeWidth;
             card.style.height = NodeHeight;
+            // 執行中的藍圖在節點上方標示「目前」、「Popup 1」等。
+            var live = new VisualElement { pickingMode = PickingMode.Ignore };
+            live.AddToClassList("node-live");
+            card.Add(live);
             cards.Add(id, card);
             content.Add(card);
             RegisterNodePointer(card, id);
@@ -652,6 +706,14 @@ namespace UniGameUI.Editor
         /// </summary>
         internal void PressNode(string id, VisualElement target, Vector2 windowPoint, int clickCount = 1)
         {
+            // 執行中的藍圖不能修改：只選取，雙擊在 Hierarchy 選取執行中的畫面。
+            if (liveMode)
+            {
+                SelectNode(id);
+                if (clickCount >= 2 && id != UIRoot.AnySource)
+                    SelectRunningView(id);
+                return;
+            }
             if (target != null && target.ClassListContains("node-port"))
             {
                 BeginWire(id, windowPoint);
@@ -746,6 +808,8 @@ namespace UniGameUI.Editor
         /// <summary>開始拖曳節點。<paramref name="windowPoint"/> 是按下的位置（視窗座標）。</summary>
         internal void BeginNodeDrag(string id, Vector2 windowPoint)
         {
+            if (liveMode)
+                return;
             dragId = id;
             dragPointerStart = windowPoint;
             dragNodeStart = positions[id];
@@ -782,6 +846,8 @@ namespace UniGameUI.Editor
         internal void BeginWire(string source, Vector2 windowPoint)
         {
             SelectNode(source);
+            if (liveMode)
+                return;
             wireSource = source;
             wireAction = actionField?.value;
             wireOriginalAction = SelectedRouteAction();
@@ -956,27 +1022,31 @@ namespace UniGameUI.Editor
         {
             var outlet = new Vector2(NodeWidth, NodeHeight * 0.5f);
             var inlet = new Vector2(0, NodeHeight * 0.5f);
+            var now = EditorApplication.timeSinceStartup;
             foreach (var route in workspace.Routes)
             {
                 if (!UIRoute.TargetsEntry(route.Kind) || !positions.TryGetValue(route.Source, out var from) ||
                     !positions.TryGetValue(route.Target, out var to))
                     continue;
+                // 剛走過的路由亮起來，約 2 秒內淡回原本的顏色與粗細。
+                var color = route.Kind == UIRouteKind.OpenPopup ? PopupColor : PageColor;
+                var flash = RouteFlash(route, now);
                 PaintEdge(context.painter2D, view.CanvasToWindow(from + outlet), view.CanvasToWindow(to + inlet),
-                    route.Kind == UIRouteKind.OpenPopup ? PopupColor : PageColor);
+                    Color.Lerp(color, FlashColor, flash), Mathf.Lerp(2f, 4.5f, flash));
             }
             if (wireTip.HasValue && wireSource != null && positions.TryGetValue(wireSource, out var start))
             {
                 PaintEdge(context.painter2D, view.CanvasToWindow(start + outlet), view.CanvasToWindow(wireTip.Value),
-                    Color.white);
+                    Color.white, 2f);
             }
         }
 
-        private void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, Color color)
+        private void PaintEdge(Painter2D painter, Vector2 from, Vector2 to, Color color, float width)
         {
             var curve = Mathf.Max(60f * view.Zoom, Mathf.Abs(from.x - to.x) * 0.45f);
             var arrow = 8f * Mathf.Clamp(view.Zoom, 0.6f, 1.25f);
             painter.strokeColor = color;
-            painter.lineWidth = 2;
+            painter.lineWidth = width;
             painter.BeginPath();
             painter.MoveTo(from);
             painter.BezierCurveTo(from + Vector2.right * curve, to - Vector2.right * curve, to);

@@ -11,6 +11,25 @@ namespace UniGameUI
     [Serializable]
     public sealed class UIActionEvent : UnityEvent<string, string> { }
 
+    // 給 Editor 的藍圖視窗用（不是公開 API）：一次不是透過路由的導航，例如程式直接呼叫 ShowPageAsync。
+    internal readonly struct UIDirectNavigation
+    {
+        internal UIDirectNavigation(UIRouteKind kind, string target, UINavResult result, bool backKey)
+        {
+            Kind = kind;
+            Target = target;
+            Result = result;
+            BackKey = backKey;
+        }
+
+        // ShowPage、OpenPopup、ClosePopup 或 Back。
+        internal UIRouteKind Kind { get; }
+        internal string Target { get; }
+        internal UINavResult Result { get; }
+        // 由返回鍵觸發的 Back。
+        internal bool BackKey { get; }
+    }
+
     [DisallowMultipleComponent]
     [DefaultExecutionOrder(-100)]
     [RequireComponent(typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster))]
@@ -56,6 +75,7 @@ namespace UniGameUI
         // 排隊中的訊號，依送出的順序執行。
         private readonly List<object> signals = new List<object>();
         private IReadOnlyList<UIView> popupList;
+        private IReadOnlyList<string> historyList;
         private List<(AwaitableCompletionSource<object> Source, object Result)> closedPopupResults;
         private RectTransform pageLayer;
         private RectTransform popupLayer;
@@ -88,6 +108,13 @@ namespace UniGameUI
         public event Action<UIView> ViewHidden;
         public event Action<UIRoute> ActionTriggered;
         public event Action<UIRoute, UINavResult> ActionCompleted;
+
+        // 給 Editor 的藍圖視窗用（不是公開 API）：返回歷史裡的頁面，由遠到近。
+        internal IReadOnlyList<string> HistoryIds => historyList ??= history.AsReadOnly();
+
+        // 給 Editor 的藍圖視窗用（不是公開 API）：不是透過路由的導航結束時通知。
+        // 透過路由的導航由 ActionCompleted 通知。沒有人訂閱時不做任何事，也不多一層等待。
+        internal event Action<UIDirectNavigation> DirectNavigationFinished;
 
         private void Awake()
         {
@@ -168,7 +195,10 @@ namespace UniGameUI
             string id, object data, UIHistoryMode history, CancellationToken cancellation = default)
         {
             var request = $"ShowPage '{id}'";
-            return RunAsync(request, token => ShowPageCoreAsync(id, data, history, token, request), cancellation);
+            var navigation = RunAsync(request, token => ShowPageCoreAsync(id, data, history, token, request), cancellation);
+            return DirectNavigationFinished == null
+                ? navigation
+                : ReportDirectAsync(UIRouteKind.ShowPage, id, navigation);
         }
 
         public bool TryGetView(string id, out UIView view)
@@ -205,8 +235,11 @@ namespace UniGameUI
             if (history != UIHistoryMode.Push && history != UIHistoryMode.Clear)
                 throw new ArgumentException($"OpenPopup 的 history 只能是 Push 或 Clear，不支援「{history}」。", nameof(history));
             var request = $"OpenPopup '{id}'";
-            return RunAsync(request, token => OpenPopupCoreAsync(id, data, token, request, null, history),
+            var navigation = RunAsync(request, token => OpenPopupCoreAsync(id, data, token, request, null, history),
                 cancellation);
+            return DirectNavigationFinished == null
+                ? navigation
+                : ReportDirectAsync(UIRouteKind.OpenPopup, id, navigation);
         }
 
         public Awaitable<UIPopupResult<T>> OpenPopupForResultAsync<T>(
@@ -257,6 +290,7 @@ namespace UniGameUI
                 popupResults.Add(popup, resultSource);
             }), cancellation);
             opened?.Invoke(status);
+            ReportDirect(UIRouteKind.OpenPopup, id, status);
             if (status != UINavResult.Completed)
                 return new UIPopupResult<T>(status);
             if (resultSource == null)
@@ -289,25 +323,61 @@ namespace UniGameUI
         public async Awaitable<UINavResult> ClosePopupAsync(CancellationToken cancellation = default)
         {
             await Awaitable.MainThreadAsync();
-            var request = $"ClosePopup '{CurrentPopupId ?? "(無)"}'";
-            return await RunAsync(request, token => ClosePopupCoreAsync(token, request, null), cancellation);
+            var popupId = CurrentPopupId;
+            var request = $"ClosePopup '{popupId ?? "(無)"}'";
+            var status = await RunAsync(request, token => ClosePopupCoreAsync(token, request, null), cancellation);
+            ReportDirect(UIRouteKind.ClosePopup, popupId, status);
+            return status;
         }
 
         internal async Awaitable<UINavResult> ClosePopupAsync(UIView popup, object result)
         {
-            var request = $"Close '{popup.Id}'";
+            var popupId = popup ? popup.Id : null;
+            var request = $"Close '{popupId}'";
+            UINavResult status;
             if (busy && notification.HasValue)
-                return Busy(request);
-            if (!popup || popup != TopPopup)
-                return Unavailable(request, "只有目前最上層且開著的 Popup 能關閉。");
-            return await RunAsync(request, token => ClosePopupCoreAsync(token, request, result), default);
+                status = Busy(request);
+            else if (!popup || popup != TopPopup)
+                status = Unavailable(request, "只有目前最上層且開著的 Popup 能關閉。");
+            else
+                status = await RunAsync(request, token => ClosePopupCoreAsync(token, request, result), default);
+            ReportDirect(UIRouteKind.ClosePopup, popupId, status);
+            return status;
         }
 
-        public async Awaitable<UINavResult> BackAsync(CancellationToken cancellation = default)
+        public Awaitable<UINavResult> BackAsync(CancellationToken cancellation = default)
+        {
+            return BackAsync(cancellation, false);
+        }
+
+        private async Awaitable<UINavResult> BackAsync(CancellationToken cancellation, bool backKey)
         {
             await Awaitable.MainThreadAsync();
             var request = $"Back '{CurrentPopupId ?? CurrentPageId ?? "(無)"}'";
-            return await RunAsync(request, token => BackCoreAsync(token, request), cancellation);
+            var status = await RunAsync(request, token => BackCoreAsync(token, request), cancellation);
+            if (DirectNavigationFinished != null)
+                ReportDirect(new UIDirectNavigation(UIRouteKind.Back, null, status, backKey));
+            return status;
+        }
+
+        private async Awaitable<UINavResult> ReportDirectAsync(
+            UIRouteKind kind, string target, Awaitable<UINavResult> navigation)
+        {
+            var status = await navigation;
+            ReportDirect(kind, target, status);
+            return status;
+        }
+
+        private void ReportDirect(UIRouteKind kind, string target, UINavResult result)
+        {
+            if (DirectNavigationFinished != null)
+                ReportDirect(new UIDirectNavigation(kind, target, result, false));
+        }
+
+        private void ReportDirect(UIDirectNavigation navigation)
+        {
+            UIEventDispatch.Invoke(DirectNavigationFinished, listener => listener(navigation),
+                exception => LogReceiverException(nameof(DirectNavigationFinished), exception));
         }
 
         public async Awaitable<UINavResult> TriggerAsync(

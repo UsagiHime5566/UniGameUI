@@ -69,6 +69,13 @@ namespace UniGameUI.Editor
             resultField = null;
             routeFields = null;
 
+            // 執行中的藍圖：最上面是執行中的狀態與最近的導航，其餘的區塊照常顯示但都是唯讀。
+            if (liveMode)
+            {
+                DrawLiveSection();
+                DrawNavigationLogSection();
+            }
+
             var isAnySource = selectedId == UIRoot.AnySource;
             var selected = isAnySource ? null : UIAuthoring.FindEntry(workspace, selectedId);
             if (!isAnySource && selected == null)
@@ -91,7 +98,7 @@ namespace UniGameUI.Editor
 
             var outgoing = workspace.Routes.Where(route => route.Source == sourceId).ToArray();
             var current = outgoing.FirstOrDefault(route => route.Action == selectedAction);
-            if (current != null)
+            if (current != null || liveMode)
                 addingRoute = false;
             DrawOutgoingSection(sourceId, outgoing, current, isAnySource);
             if (current != null || addingRoute)
@@ -172,14 +179,17 @@ namespace UniGameUI.Editor
                 tooltip = "載入 Scene 之後第一個顯示的頁面。",
             };
             start.RegisterValueChangedCallback(evt => TryEdit(() => UIAuthoring.SetStartPage(workspace, evt.newValue)));
+            start.SetEnabled(!liveMode);
             section.Add(start);
 
             AddInfo(section, "頁面", $"{pages.Count} 個", "workspace-pages");
             AddInfo(section, "Popup", $"{workspace.Entries.Count(entry => entry.Kind == UIEntryKind.Popup)} 個",
                 "workspace-popups");
             AddInfo(section, "訊號路由", $"{workspace.Routes.Count(route => route.IsSignal)} 條", "workspace-signals");
-            AddHelp(section, "選取節點可以檢視畫面、編輯它的路由。從節點右邊的連接點拖線到另一個節點，可以建立路由。" +
-                "雙擊節點會定位到 Scene 裡的畫面。", "workspace-hint");
+            AddHelp(section, liveMode
+                ? "選取節點可以查看畫面與它的路由，用「觸發」按鈕走一條路由。Play Mode 中不能修改藍圖。"
+                : "選取節點可以檢視畫面、編輯它的路由。從節點右邊的連接點拖線到另一個節點，可以建立路由。" +
+                  "雙擊節點會定位到 Scene 裡的畫面。", "workspace-hint");
         }
 
         // 選取畫面：名稱、ID、種類、起始頁、定位，Popup 另有疊在頁面上預覽。
@@ -202,7 +212,7 @@ namespace UniGameUI.Editor
                 {
                     AddInfo(section, "起始頁", "是。載入 Scene 之後第一個顯示的就是這個頁面。", "view-is-start");
                 }
-                else
+                else if (!liveMode)
                 {
                     section.Add(new Button(() => TryEdit(() => UIAuthoring.SetStartPage(workspace, selected.Id)))
                     {
@@ -213,12 +223,18 @@ namespace UniGameUI.Editor
                 }
             }
 
-            section.Add(new Button(() => RequestFocus(selected.Id))
+            var focus = new Button(() => RequestFocus(selected.Id))
             {
                 name = "focus-view",
-                text = "在 Scene 中定位",
-                tooltip = "把 Scene 視窗移到這個畫面。在藍圖上雙擊節點也可以。",
-            });
+                text = liveMode ? "在 Hierarchy 選取" : "在 Scene 中定位",
+                tooltip = liveMode
+                    ? "在 Hierarchy 選取執行中的這個畫面。畫面還沒建立（例如沒開過的 Popup）時不能按。在藍圖上雙擊節點也可以。"
+                    : "把 Scene 視窗移到這個畫面。在藍圖上雙擊節點也可以。",
+            };
+            focus.SetEnabled(!liveMode || HasRunningView(selected.Id));
+            section.Add(focus);
+            if (liveMode)
+                return;
 
             var pages = workspace.Entries.Where(entry => entry.Kind == UIEntryKind.Page).Select(entry => entry.Id).ToList();
             if (selected.Kind == UIEntryKind.Popup && pages.Count > 0)
@@ -264,7 +280,7 @@ namespace UniGameUI.Editor
                 value = UIAuthoring.IsNavigatedByCode(selected),
                 tooltip = help,
             };
-            byCode.SetEnabled(!isConfirm);
+            byCode.SetEnabled(!isConfirm && !liveMode);
             byCode.RegisterValueChangedCallback(evt =>
             {
                 if (evt.target == byCode)
@@ -296,15 +312,40 @@ namespace UniGameUI.Editor
             var section = AddSection("routes", isAnySource ? "訊號路由" : "從這裡出發的路由");
             if (outgoing.Length == 0)
             {
-                AddHelp(section, isAnySource
-                    ? "還沒有訊號路由。按「新增路由」，或從節點右邊的連接點拖線到目標畫面。"
-                    : "這個畫面還沒有路由。按「新增路由」，或從節點右邊的連接點拖線到另一個節點。", "routes-empty");
+                AddHelp(section, liveMode
+                    ? (isAnySource ? "沒有訊號路由。" : "這個畫面沒有路由。")
+                    : isAnySource
+                        ? "還沒有訊號路由。按「新增路由」，或從節點右邊的連接點拖線到目標畫面。"
+                        : "這個畫面還沒有路由。按「新增路由」，或從節點右邊的連接點拖線到另一個節點。", "routes-empty");
             }
             foreach (var route in outgoing)
             {
-                var row = AddRouteRow(section, "route-row", route, route.Action, RouteTargetText(route),
+                // 執行中的藍圖：每一列右邊多一個「觸發」按鈕。
+                VisualElement parent = section;
+                if (liveMode)
+                {
+                    parent = new VisualElement();
+                    parent.AddToClassList("route-row-live");
+                    section.Add(parent);
+                }
+                var row = AddRouteRow(parent, "route-row", route, route.Action, RouteTargetText(route),
                     () => SelectRoute(sourceId, route.Action));
                 row.EnableInClassList("route-row-selected", route == current);
+                if (liveMode)
+                    AddTriggerButton(parent, route);
+            }
+            if (liveMode)
+            {
+                if (outgoing.Length > 0)
+                {
+                    AddHelp(section, UIWalk.IsRunning
+                        ? "走訪進行中，暫時不能觸發。"
+                        : isAnySource
+                            ? "「觸發」用 SignalAsync 送出訊號，隨時可以按。不帶資料，需要資料的畫面會顯示失敗。"
+                            : "「觸發」用 TriggerAsync 走這條路由，這個畫面是最上層時才能按。不帶資料，需要資料的畫面會顯示失敗。",
+                        "trigger-help");
+                }
+                return;
             }
             section.Add(new Button(BeginAddRoute)
             {
@@ -379,7 +420,7 @@ namespace UniGameUI.Editor
         // 編輯路由：選了路由或按了新增才出現。只顯示這個行為用得到的欄位。
         private void DrawRouteEditorSection(string sourceId, UIRoute current, bool isAnySource)
         {
-            var section = AddSection("route-editor", current == null ? "新增路由" : "編輯路由");
+            var section = AddSection("route-editor", liveMode ? "路由內容" : current == null ? "新增路由" : "編輯路由");
             var values = draft ?? new RouteDraft
             {
                 Action = current?.Action ?? "",
@@ -413,6 +454,15 @@ namespace UniGameUI.Editor
             BuildRouteFields(routeFields, kindField.value, values.Target, values.History, values.Result);
             kindField.RegisterValueChangedCallback(evt => RouteKindChanged(evt.newValue));
             AddError(section, routeError, "route-error");
+            if (liveMode)
+            {
+                // 唯讀：看得到內容，不能修改，也沒有儲存與刪除。
+                actionField.SetEnabled(false);
+                kindField.SetEnabled(false);
+                routeFields.SetEnabled(false);
+                AddHelp(section, "Play Mode 中不能修改路由。", "route-read-only");
+                return;
+            }
 
             var buttons = new VisualElement();
             buttons.AddToClassList("route-buttons");
@@ -578,6 +628,11 @@ namespace UniGameUI.Editor
 
         private void RequestFocus(string id)
         {
+            if (liveMode)
+            {
+                SelectRunningView(id);
+                return;
+            }
             if (FocusRequested != null)
                 FocusRequested(id);
             else

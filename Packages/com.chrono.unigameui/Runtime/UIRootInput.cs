@@ -421,7 +421,7 @@ namespace UniGameUI
         {
             try
             {
-                await BackAsync();
+                await BackAsync(default, true);
             }
             catch (Exception exception)
             {
