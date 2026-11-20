@@ -37,6 +37,9 @@ namespace UniGameUI.Editor
         internal const string WarmUpSecondsKey = "UniGameUI.Walk.WarmUpSeconds";
         // 測試用：命令列的走訪結束時不要結束 Editor；命令列排定之後至少等幾秒才開始。
         internal const string NoExitKey = "UniGameUI.Walk.NoExitForTests";
+        private const string ExitCodeKey = "UniGameUI.Walk.ExitCode";
+        // 命令列的走訪結束後，回到 Edit Mode 再等這麼多次更新才結束 Editor。
+        private const int ExitDelayTicks = 10;
         internal const string StartDelaySecondsKey = "UniGameUI.Walk.StartDelaySecondsForTests";
         private const double EnterPlayModeGraceSeconds = 30;
 
@@ -71,10 +74,14 @@ namespace UniGameUI.Editor
         private static Walker walker;
         private static UIWalkReport lastReport;
         private static int pendingTicks;
+        // 等著結束 Editor 時是結束代碼，否則是 -1。
+        private static int exitCode = -1;
+        private static int exitTicks;
 
         static UIWalk()
         {
             session = LoadSession();
+            exitCode = SessionState.GetInt(ExitCodeKey, -1);
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
             SceneManager.sceneLoaded += OnSceneLoaded;
             EditorApplication.update += Watch;
@@ -326,6 +333,8 @@ namespace UniGameUI.Editor
             }
             session = null;
             SessionState.EraseString(SessionKey);
+            exitCode = -1;
+            SessionState.EraseInt(ExitCodeKey);
         }
 
         // 0：Passed。1：Failed。2：NotRun。
@@ -539,8 +548,27 @@ namespace UniGameUI.Editor
             SaveSession();
         }
 
+        // 報告寫完之後不馬上結束 Editor：多等幾次更新，讓 Editor 把離開 Play Mode 的收尾做完。
+        // 結束代碼存在 SessionState，這段時間 Domain 重新載入也不會忘記要結束。
+        private static void ExitSoon(int code)
+        {
+            exitCode = code;
+            exitTicks = 0;
+            SessionState.SetInt(ExitCodeKey, code);
+        }
+
         private static void Watch()
         {
+            if (exitCode >= 0 && session == null)
+            {
+                if (++exitTicks < ExitDelayTicks)
+                    return;
+                var code = exitCode;
+                exitCode = -1;
+                SessionState.EraseInt(ExitCodeKey);
+                EditorApplication.Exit(code);
+                return;
+            }
             if (session == null)
                 return;
             if (session.deadline > 0 && EditorApplication.timeSinceStartup > session.deadline)
@@ -642,7 +670,7 @@ namespace UniGameUI.Editor
             if (finished.fromWindow && !Application.isBatchMode)
                 EditorUtility.DisplayDialog("UniGameUI 走訪", Summary(report), "關閉");
             if (finished.commandLine && !SessionState.GetBool(NoExitKey, false))
-                EditorApplication.Exit(ExitCodeFor(report));
+                ExitSoon(ExitCodeFor(report));
         }
 
         internal static string Describe(UIWalkStep step)

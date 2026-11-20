@@ -945,7 +945,7 @@ Player 建置處理器會從複製的 Scene 中移除審核框與 Prefab 審核�
 2. **執行走訪。** 結果要是 `Passed`。
 3. **在交付說明附上兩份報告的摘要：** Validate 的 Error 與 Warning 數量、留下的每一筆 Warning 與原因；走訪通過、失敗、略過各幾步。
 
-兩個工具都能從命令列執行，用結束代碼表示結果，並寫出 JSON 報告；也都有 C# 入口與藍圖視窗的按鈕。專案已經由另一個 Editor 開啟時，命令列拿不到專案鎖，請改用那個 Editor 裡的 C# 入口，或在專案的副本上執行。
+兩個工具都能從命令列執行，用結束代碼表示結果，並寫出 JSON 報告；也都有 C# 入口與藍圖視窗的按鈕。**結束代碼只有 0、1、2 三種。拿到別的數字（例如 139）代表 Unity Editor 本身異常結束，不是工具的結果，這時請以報告檔為準**：報告在結束 Editor 之前就寫好了，報告不存在才需要重跑。專案已經由另一個 Editor 開啟時，命令列拿不到專案鎖，請改用那個 Editor 裡的 C# 入口，或在專案的副本上執行。
 
 ### Validate
 
@@ -1020,7 +1020,7 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 ```
 
 - 一次走訪一個 Scene，`-unigameui-scene` 必填。
-- **不要加 `-quit`。** 工具在走訪結束、回到 Edit Mode 之後自己結束 Editor。
+- **不要加 `-quit`。** 工具在走訪結束、回到 Edit Mode 並寫出報告之後自己結束 Editor（寫完報告後會再等幾次 Editor 更新才結束）。
 - `-unigameui-step-timeout` 是每一步的時間上限，預設 10 秒。`-unigameui-timeout` 是整體的時間上限，預設 300 秒；超過就結束，結果是 `NotRun`，批次工作不會卡住。
 - 報告預設寫到 `Library/UniGameUI/walk-<Scene 名稱>.json`，摘要同時印到記錄檔。
 
