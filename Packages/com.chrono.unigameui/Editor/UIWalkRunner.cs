@@ -213,7 +213,10 @@ namespace UniGameUI.Editor
                 StepClock clock = null;
                 try
                 {
-                    if (!entries.TryGetValue(step.source, out var source))
+                    // 訊號路由的來源是「任何畫面」，沒有來源畫面。
+                    var isSignal = route.IsSignal;
+                    UIEntry source = null;
+                    if (!isSignal && !entries.TryGetValue(step.source, out source))
                     {
                         Finish(step, UIWalkStepStatus.Failed, $"藍圖裡沒有來源畫面「{step.source}」。");
                         return;
@@ -224,44 +227,83 @@ namespace UniGameUI.Editor
                             "Emit 路由預設略過。要觸發請開啟 IncludeEmit（命令列是 -unigameui-include-emit）。");
                         return;
                     }
-                    if (route.Kind == UIRouteKind.Back && source.Kind == UIEntryKind.Page && pages.Count <= 1)
+                    if (route.Kind == UIRouteKind.Back && source != null && source.Kind == UIEntryKind.Page &&
+                        pages.Count <= 1)
                     {
                         Finish(step, UIWalkStepStatus.Skipped, "工作區只有一個頁面，沒有上一頁可以返回。");
                         return;
                     }
 
                     clock = new StepClock(owner.stepTimeout);
-                    // 準備：關掉所有 Popup、清空歷史，讓來源畫面成為最上層。準備時不傳資料。
-                    var prepared = await Prepare(source, route, clock);
-                    if (!prepared.Ok)
+                    Prepared prepared;
+                    var result = UINavResult.Busy;
+                    while (true)
                     {
-                        if (clock.TimedOut)
+                        // 準備：關掉所有 Popup、清空歷史，讓來源畫面成為最上層。準備時不傳資料。
+                        // 訊號路由沒有來源畫面，準備時顯示起始頁。
+                        prepared = isSignal ? await PrepareSignal(route, clock) : await Prepare(source, route, clock);
+                        var busy = prepared.Busy;
+                        if (!busy)
                         {
-                            Finish(step, UIWalkStepStatus.Failed, Timeout("準備來源畫面"));
+                            if (!prepared.Ok)
+                            {
+                                if (clock.TimedOut)
+                                {
+                                    Finish(step, UIWalkStepStatus.Failed, Timeout("準備來源畫面"));
+                                }
+                                else if (prepared.Skip)
+                                {
+                                    Finish(step, UIWalkStepStatus.Skipped, prepared.Reason);
+                                }
+                                else if (source != null && byCode.Contains(source.Id))
+                                {
+                                    // 由程式控制的畫面需要程式給資料才開得起來，走訪不傳資料，所以不算失敗。
+                                    Finish(step, UIWalkStepStatus.Skipped,
+                                        "來源畫面由程式控制，需要由程式提供資料才能開啟。" + prepared.Reason);
+                                }
+                                else
+                                {
+                                    // 靠路由到得了的畫面本來就收不到資料，沒有資料就顯示不出來是真的問題。
+                                    Finish(step, UIWalkStepStatus.Failed, "準備來源畫面失敗：" + prepared.Reason);
+                                }
+                                await Settle(clock);
+                                return;
+                            }
+
+                            // 觸發。訊號不傳資料：走訪沒有遊戲的資料可以給。
+                            result = isSignal
+                                ? await root.SignalAsync(route.Action, null, clock.Token)
+                                : await root.TriggerAsync(route.Source, route.Action, clock.Token);
+                            busy = result == UINavResult.Busy;
                         }
-                        else if (byCode.Contains(source.Id))
+                        if (!busy)
+                            break;
+
+                        // 頁面腳本剛好自己在導航（例如計時器）：等這次導航結束，從準備重新來過。逾時才算失敗。
+                        if (clock.TimedOut || !await WaitIdle(clock.Deadline))
                         {
-                            // 由程式控制的畫面需要程式給資料才開得起來，走訪不傳資料，所以不算失敗。
-                            Finish(step, UIWalkStepStatus.Skipped,
-                                "來源畫面由程式控制，需要由程式提供資料才能開啟。" + prepared.Reason);
+                            Finish(step, UIWalkStepStatus.Failed, Timeout("等頁面腳本自己的導航結束"));
+                            await Settle(clock);
+                            return;
                         }
-                        else
-                        {
-                            // 靠路由到得了的畫面本來就收不到資料，沒有資料就顯示不出來是真的問題。
-                            Finish(step, UIWalkStepStatus.Failed, "準備來源畫面失敗：" + prepared.Reason);
-                        }
-                        await Settle(clock);
-                        return;
                     }
 
-                    // 觸發與判定。判定在導航一結束就做，之後頁面腳本接著導航不影響結果。
-                    var result = await root.TriggerAsync(route.Source, route.Action, clock.Token);
+                    // 判定在導航一結束就做，之後頁面腳本接著導航不影響結果。
                     step.result = result.ToString();
-                    var verdict = Judge(route, source, prepared.Previous, result);
+                    var verdict = Judge(route, source, prepared.Previous, result) ??
+                        await JudgeClearedHistory(route, clock);
                     await Settle(clock);
 
+                    var targetByCode = UIRoute.TargetsEntry(route.Kind) && !string.IsNullOrEmpty(route.Target) &&
+                        byCode.Contains(route.Target);
                     if (clock.TimedOut)
                         Finish(step, UIWalkStepStatus.Failed, Timeout("觸發路由"));
+                    else if (result == UINavResult.Failed && targetByCode)
+                    {
+                        // 由程式控制的目標畫面沒有資料就顯示不出來，走訪不傳資料，所以不算失敗。
+                        Finish(step, UIWalkStepStatus.Skipped,
+                            $"目標畫面「{route.Target}」由程式控制，需要由程式提供資料才能顯示。" + ErrorText());
+                    }
                     else if (verdict != null)
                         Finish(step, UIWalkStepStatus.Failed, verdict);
                     else if (FirstError() != null)
@@ -346,63 +388,168 @@ namespace UniGameUI.Editor
                 return root.Popups.Any(popup => popup && popup.Id == popupId);
             }
 
-            private async Awaitable<(bool Ok, string Previous, string Reason)> Prepare(
-                UIEntry source, UIRoute route, StepClock clock)
+            // history 是 Clear 的路由另外確認：完成後歷史是空的；不可返回的 Popup 還要確認 BackAsync() 無效。
+            // 一般路由與訊號路由都適用。前面的判定沒有通過時不會執行到這裡。
+            private async Awaitable<string> JudgeClearedHistory(UIRoute route, StepClock clock)
+            {
+                if (route.History != UIHistoryMode.Clear ||
+                    (route.Kind != UIRouteKind.ShowPage && route.Kind != UIRouteKind.OpenPopup))
+                    return null;
+                if (root.HistoryCount != 0)
+                    return $"路由的 history 是 Clear，完成後歷史裡卻還有 {root.HistoryCount} 筆。";
+                if (route.Kind != UIRouteKind.OpenPopup)
+                    return null;
+
+                var back = await root.BackAsync(clock.Token);
+                // 頁面腳本剛好自己在導航時沒辦法確認，不算失敗。
+                if (back == UINavResult.Unavailable || back == UINavResult.Busy)
+                    return null;
+                return $"不可返回的 Popup「{route.Target}」開啟之後，BackAsync() 的結果是 {back}，預期是 Unavailable。";
+            }
+
+            // 準備的結果。Busy：準備途中遇到頁面腳本自己的導航，要等它結束後整個重來。
+            // Skip：準備不起來，但原因不是問題（需要由程式提供資料），這一步記為略過。
+            private readonly struct Prepared
+            {
+                public readonly bool Ok;
+                public readonly bool Skip;
+                public readonly bool Busy;
+                public readonly string Previous;
+                public readonly string Reason;
+
+                private Prepared(bool ok, bool skip, bool busy, string previous, string reason)
+                {
+                    Ok = ok;
+                    Skip = skip;
+                    Busy = busy;
+                    Previous = previous;
+                    Reason = reason ?? "";
+                }
+
+                public static Prepared Ready(string previous) => new Prepared(true, false, false, previous, "");
+                public static Prepared Failed(string reason) => new Prepared(false, false, false, null, reason);
+                public static Prepared Skipped(string reason) => new Prepared(false, true, false, null, reason);
+                public static Prepared Interrupted() => new Prepared(false, false, true, null, "");
+            }
+
+            // 關掉所有 Popup、清空歷史。
+            private async Awaitable<Prepared> ClosePopups(StepClock clock)
             {
                 if (!await WaitIdle(clock.Deadline))
-                    return (false, null, "工作區一直有導航在進行。");
+                    return Prepared.Failed("工作區一直有導航在進行。");
 
                 for (var guard = 0; root.TopPopup && guard < 64; guard++)
                 {
                     var open = root.CurrentPopupId;
                     var closed = await root.ClosePopupAsync(clock.Token);
+                    if (closed == UINavResult.Busy)
+                        return Prepared.Interrupted();
                     if (closed != UINavResult.Completed)
-                        return (false, null, $"關閉 Popup「{open}」的結果是 {closed}。");
+                        return Prepared.Failed($"關閉 Popup「{open}」的結果是 {closed}。");
                 }
                 root.ClearHistory();
+                return Prepared.Ready(null);
+            }
+
+            // 訊號路由的準備：顯示起始頁，讓訊號從一個確定的畫面出發。
+            // ShowPage 的目標剛好是起始頁時改用別的頁面，否則訊號會因為「已經在那一頁」而無法執行。
+            private async Awaitable<Prepared> PrepareSignal(UIRoute route, StepClock clock)
+            {
+                var avoid = route.Kind == UIRouteKind.ShowPage ? route.Target : null;
+                // 起始頁優先，其次是靠路由進出的頁面，最後才是由程式控制的頁面（它們可能需要資料）。
+                var candidates = new[] { root.StartPageId }
+                    .Concat(pages.Where(page => !byCode.Contains(page.Id)).Select(page => page.Id))
+                    .Concat(pages.Select(page => page.Id))
+                    .Where(id => !string.IsNullOrEmpty(id) && id != avoid &&
+                        entries.TryGetValue(id, out var entry) && entry.Kind == UIEntryKind.Page)
+                    .Distinct().ToArray();
+                if (candidates.Length == 0)
+                {
+                    if (route.Kind == UIRouteKind.ShowPage)
+                        return Prepared.Skipped("沒有其他頁面可以當出發點：訊號要切到的就是唯一的頁面。");
+                    // 工作區沒有頁面：關掉 Popup 之後直接送出。
+                    return await ClosePopups(clock);
+                }
+
+                string reason = null;
+                foreach (var id in candidates)
+                {
+                    var prepared = await Prepare(entries[id], route, clock);
+                    if (prepared.Ok || prepared.Busy)
+                        return prepared;
+                    reason ??= prepared.Reason;
+                    if (clock.TimedOut)
+                        return Prepared.Failed(reason);
+                }
+                // 能當出發點的頁面全部由程式控制、沒有資料開不起來：不算失敗。
+                return candidates.All(byCode.Contains)
+                    ? Prepared.Skipped("能當出發點的頁面都由程式控制，需要由程式提供資料才能顯示。" + reason)
+                    : Prepared.Failed(reason);
+            }
+
+            // 途中任何一次導航遇到 Busy，表示頁面腳本自己在導航（例如計時器）：回報 Busy，
+            // 由呼叫端等它結束後整個重來。
+            private async Awaitable<Prepared> Prepare(UIEntry source, UIRoute route, StepClock clock)
+            {
+                var cleared = await ClosePopups(clock);
+                if (!cleared.Ok)
+                    return cleared;
 
                 if (source.Kind == UIEntryKind.Page)
                 {
                     // 先顯示另一個頁面，再顯示來源頁，讓歷史裡有一筆，Back 路由才有地方回去。
                     // 另一個頁面優先選有路由通到來源頁的，沒有就用起始頁。只有一個頁面時不必。
+                    // history 是 Clear 的路由也盡量先放一筆，才看得出歷史真的被清空了。
+                    var needsPrevious = route.Kind == UIRouteKind.Back;
+                    var wantsPrevious = needsPrevious || route.History == UIHistoryMode.Clear;
                     string previous = null;
-                    foreach (var candidate in OtherPages(source, route.Kind == UIRouteKind.Back))
+                    foreach (var candidate in OtherPages(source, wantsPrevious, needsPrevious))
                     {
-                        if (await Show(candidate, UIHistoryMode.Clear, clock) == UINavResult.Completed)
+                        var shownCandidate = await Show(candidate, UIHistoryMode.Clear, clock);
+                        if (shownCandidate == UINavResult.Busy)
+                            return Prepared.Interrupted();
+                        if (shownCandidate == UINavResult.Completed)
                         {
                             previous = candidate;
                             break;
                         }
                         if (clock.TimedOut)
-                            return (false, null, $"顯示頁面「{candidate}」逾時。");
+                            return Prepared.Failed($"顯示頁面「{candidate}」逾時。");
                     }
                     if (previous == null && route.Kind == UIRouteKind.Back)
-                        return (false, null, "沒有其他頁面可以先顯示，Back 沒有上一頁可以回去。");
+                        return Prepared.Failed("沒有其他頁面可以先顯示，Back 沒有上一頁可以回去。");
 
                     var shownSource = await Show(source.Id, previous == null ? UIHistoryMode.Clear : UIHistoryMode.Push,
                         clock);
+                    if (shownSource == UINavResult.Busy)
+                        return Prepared.Interrupted();
                     if (shownSource != UINavResult.Completed)
-                        return (false, null, $"顯示頁面「{source.Id}」的結果是 {shownSource}。");
+                        return Prepared.Failed($"顯示頁面「{source.Id}」的結果是 {shownSource}。");
                     if (root.CurrentPageId != source.Id || root.TopPopup)
-                        return (false, null, $"顯示之後最上層的畫面不是「{source.Id}」。");
-                    return (true, previous, "");
+                        return Prepared.Failed($"顯示之後最上層的畫面不是「{source.Id}」。");
+                    return Prepared.Ready(previous);
                 }
 
                 // 來源是 Popup：先顯示一個頁面，再開啟這個 Popup。
                 // 頁面優先選有 OpenPopup 路由指到它的，沒有就用起始頁。
                 foreach (var candidate in PagesUnder(source, route))
                 {
-                    if (await Show(candidate, UIHistoryMode.Clear, clock) == UINavResult.Completed)
+                    var shownCandidate = await Show(candidate, UIHistoryMode.Clear, clock);
+                    if (shownCandidate == UINavResult.Busy)
+                        return Prepared.Interrupted();
+                    if (shownCandidate == UINavResult.Completed)
                         break;
                     if (clock.TimedOut)
-                        return (false, null, $"顯示頁面「{candidate}」逾時。");
+                        return Prepared.Failed($"顯示頁面「{candidate}」逾時。");
                 }
                 var opened = await root.OpenPopupAsync(source.Id, null, clock.Token);
+                if (opened == UINavResult.Busy)
+                    return Prepared.Interrupted();
                 if (opened != UINavResult.Completed)
-                    return (false, null, $"開啟 Popup「{source.Id}」的結果是 {opened}。");
+                    return Prepared.Failed($"開啟 Popup「{source.Id}」的結果是 {opened}。");
                 if (root.CurrentPopupId != source.Id)
-                    return (false, null, $"開啟之後最上層的畫面不是「{source.Id}」。");
-                return (true, root.CurrentPageId, "");
+                    return Prepared.Failed($"開啟之後最上層的畫面不是「{source.Id}」。");
+                return Prepared.Ready(root.CurrentPageId);
             }
 
             // 已經在那一頁時不必再切；工作區對「切到目前頁」回傳 Unavailable。
@@ -417,15 +564,19 @@ namespace UniGameUI.Editor
                 return await root.ShowPageAsync(pageId, null, history, clock.Token);
             }
 
-            // anyPage：Back 一定要有上一頁，前兩種都沒有時，其餘的頁面也拿來試。
-            private IEnumerable<string> OtherPages(UIEntry source, bool anyPage)
+            // anyPage：想要有上一頁時，前兩種都沒有，其餘的頁面也拿來試。
+            // includeByCode：由程式控制的頁面可能要資料才顯示得出來，只有非有上一頁不可（Back）時才拿來試。
+            private IEnumerable<string> OtherPages(UIEntry source, bool anyPage, bool includeByCode)
             {
                 var candidates = routes
                     .Where(route => route.Kind == UIRouteKind.ShowPage && route.Target == source.Id)
                     .Select(route => route.Source)
                     .Append(root.StartPageId);
                 if (anyPage)
-                    candidates = candidates.Concat(pages.Select(page => page.Id));
+                {
+                    candidates = candidates.Concat(pages
+                        .Where(page => includeByCode || !byCode.Contains(page.Id)).Select(page => page.Id));
+                }
                 return candidates.Where(id => !string.IsNullOrEmpty(id) && id != source.Id &&
                     entries.TryGetValue(id, out var entry) && entry.Kind == UIEntryKind.Page).Distinct().ToArray();
             }

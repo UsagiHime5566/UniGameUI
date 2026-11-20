@@ -128,6 +128,8 @@ namespace UniGameUI.Editor.Tests
             UIAuthoring.Connect(root, "tip", "close", UIRouteKind.ClosePopup);
             UIAuthoring.Connect(root, "tip", "back", UIRouteKind.Back);
             UIAuthoring.Connect(root, "home", "ping", UIRouteKind.Emit);
+            // 「任何畫面」的訊號路由也是一步，來源是 "*"。
+            UIAuthoring.Connect(root, UIRoot.AnySource, "tick", UIRouteKind.Emit);
             AssertNoValidationErrors(root);
 
             yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
@@ -140,7 +142,8 @@ namespace UniGameUI.Editor.Tests
                 Is.EqualTo(new[]
                 {
                     "/ Start home", "home/openSettings ShowPage settings", "settings/back Back ",
-                    "home/openTip OpenPopup tip", "tip/close ClosePopup ", "tip/back Back ", "home/ping Emit "
+                    "home/openTip OpenPopup tip", "tip/close ClosePopup ", "tip/back Back ", "home/ping Emit ",
+                    "*/tick Emit "
                 }));
             Assert.That(report.Steps.Take(6).Select(step => step.Status), Is.All.EqualTo(UIWalkStepStatus.Passed),
                 Describe(report));
@@ -152,7 +155,9 @@ namespace UniGameUI.Editor.Tests
             Assert.That(emit.Result, Is.Empty);
             Assert.That(emit.Reason, Does.Contain("Emit").And.Contain("IncludeEmit"));
             Assert.That(emit.Logs, Is.Empty);
-            Assert.That((report.PassedCount, report.FailedCount, report.SkippedCount), Is.EqualTo((6, 0, 1)));
+            Assert.That(report.Steps[7].Status, Is.EqualTo(UIWalkStepStatus.Skipped));
+            Assert.That(report.Steps[7].Reason, Does.Contain("IncludeEmit"));
+            Assert.That((report.PassedCount, report.FailedCount, report.SkippedCount), Is.EqualTo((6, 0, 2)));
             Assert.That(report.Views.Select(view => (view.Id, view.Kind, view.Visited)), Is.EquivalentTo(new[]
             {
                 ("home", "Page", true), ("settings", "Page", true), ("tip", "Popup", true)
@@ -181,12 +186,104 @@ namespace UniGameUI.Editor.Tests
 
             var withEmit = UIWalk.LastReport;
             Assert.That(withEmit.Outcome, Is.EqualTo(UIWalkOutcome.Passed), Describe(withEmit));
-            Assert.That((withEmit.PassedCount, withEmit.FailedCount, withEmit.SkippedCount), Is.EqualTo((7, 0, 0)));
+            Assert.That((withEmit.PassedCount, withEmit.FailedCount, withEmit.SkippedCount), Is.EqualTo((8, 0, 0)));
             var triggered = withEmit.Steps[6];
             Assert.That(triggered.Status, Is.EqualTo(UIWalkStepStatus.Passed));
             Assert.That(triggered.Result, Is.EqualTo("Completed"));
             Assert.That(triggered.Logs.Select(log => (log.Type, log.Message.Contains("收到動作 ping"))),
                 Is.EqualTo(new[] { ("Warning", true) }));
+            // Emit 的訊號送到起始頁（準備時顯示的畫面）的 OnAction。
+            var signaled = withEmit.Steps[7];
+            Assert.That(signaled.Status, Is.EqualTo(UIWalkStepStatus.Passed));
+            Assert.That(signaled.Result, Is.EqualTo("Completed"));
+            Assert.That(signaled.Logs.Select(log => (log.Type, log.Message.Contains("「home」收到動作 tick"))),
+                Is.EqualTo(new[] { ("Warning", true) }));
+        }
+
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator WalkCoversSignalRoutesAndChecksClearedHistory()
+        {
+            var root = NewWorkspace();
+            Page(root, "home");
+            Page(root, "challenger");
+            Page(root, "lobby");
+            Popup(root, "alert");
+            UIAuthoring.SetStartPage(root, "home");
+            UIAuthoring.Connect(root, UIRoot.AnySource, "joined", UIRouteKind.ShowPage, "challenger", UIHistoryMode.Clear);
+            UIAuthoring.Connect(root, UIRoot.AnySource, "lost", UIRouteKind.OpenPopup, "alert", UIHistoryMode.Clear);
+            UIAuthoring.Connect(root, UIRoot.AnySource, "notice", UIRouteKind.OpenPopup, "alert");
+            // 目標就是起始頁：準備時改從別的頁面出發。
+            UIAuthoring.Connect(root, UIRoot.AnySource, "goHome", UIRouteKind.ShowPage, "home");
+            UIAuthoring.Connect(root, "alert", "close", UIRouteKind.ClosePopup);
+            // 一般路由的 Clear 也一樣確認。
+            UIAuthoring.Connect(root, "home", "openLobby", UIRouteKind.ShowPage, "lobby", UIHistoryMode.Clear);
+            UIAuthoring.Connect(root, "home", "lock", UIRouteKind.OpenPopup, "alert", UIHistoryMode.Clear);
+            AssertNoValidationErrors(root);
+
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report, Is.Not.Null);
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Passed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action} {step.Kind} {step.Target}={step.Status}"),
+                Is.EqualTo(new[]
+                {
+                    "/ Start home=Passed", "*/joined ShowPage challenger=Passed", "*/lost OpenPopup alert=Passed",
+                    "*/notice OpenPopup alert=Passed", "*/goHome ShowPage home=Passed", "alert/close ClosePopup =Passed",
+                    "home/openLobby ShowPage lobby=Passed", "home/lock OpenPopup alert=Passed"
+                }), Describe(report));
+            Assert.That(report.Steps.Skip(1).Select(step => step.Result), Is.All.EqualTo("Completed"));
+            Assert.That(report.Steps.SelectMany(step => step.Logs), Is.Empty, Describe(report));
+            Assert.That((report.PassedCount, report.FailedCount, report.SkippedCount), Is.EqualTo((8, 0, 0)));
+            Assert.That(report.Views.Where(view => view.Visited).Select(view => view.Id),
+                Is.EquivalentTo(new[] { "home", "challenger", "lobby", "alert" }));
+            Assert.That(File.ReadAllText(ReportFile), Does.Contain("\"source\": \"*\""));
+        }
+
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator WalkWaitsForNavigationsStartedByPageScripts()
+        {
+            var root = NewWorkspace();
+            // 起始頁的腳本會開一個等結果的 Popup；Popup 一被關掉，它就自己開始切到 slow（有轉場）。
+            // 走訪準備每一步時會關掉 Popup，所以下一個呼叫剛好遇到 Busy。
+            Page(root, "timer", UIWalkTestPage.Behaviour.NavigateWhenPopupCloses, "slow", "ask");
+            Page(root, "fine");
+            Page(root, "end");
+            UIAuthoring.SetTransition(Page(root, "slow"), true, UITransitionPreset.Fade, 0.5f);
+            Popup(root, "ask");
+            UIAuthoring.SetNavigatedByCode(root, "ask", true);
+            UIAuthoring.SetStartPage(root, "timer");
+            // 觸發時遇到 Busy：來源就是目前的頁面，準備不必切頁。
+            UIAuthoring.Connect(root, "timer", "openFine", UIRouteKind.ShowPage, "fine");
+            // 回到 timer，腳本再開一次 Popup。
+            UIAuthoring.Connect(root, "fine", "back", UIRouteKind.Back);
+            // 準備時遇到 Busy：要先切到來源頁。
+            UIAuthoring.Connect(root, "fine", "openEnd", UIRouteKind.ShowPage, "end");
+            AssertNoValidationErrors(root);
+
+            yield return new StartWalk(new UIWalkOptions { ReportPath = ReportFile });
+            yield return new WaitForWalk();
+
+            var report = UIWalk.LastReport;
+            Assert.That(report, Is.Not.Null);
+            Assert.That(report.Outcome, Is.EqualTo(UIWalkOutcome.Passed), Describe(report));
+            Assert.That(report.Steps.Select(step => $"{step.Source}/{step.Action}={step.Status}"), Is.EqualTo(new[]
+            {
+                "/=Passed", "timer/openFine=Passed", "fine/back=Passed", "fine/openEnd=Passed"
+            }), Describe(report));
+            Assert.That(report.Steps.Skip(1).Select(step => step.Result), Is.All.EqualTo("Completed"));
+            // 兩步都真的遇到了頁面腳本自己的導航：警告是腳本在開始切頁之前記的。
+            foreach (var index in new[] { 1, 3 })
+            {
+                Assert.That(report.Steps[index].Logs.Any(log => log.Type == "Warning" &&
+                    log.Message.Contains("Popup 關閉後馬上自己切頁")), Is.True, Describe(report));
+                // 等過 slow 的轉場才重試。
+                Assert.That(report.Steps[index].Seconds, Is.GreaterThanOrEqualTo(0.4f), Describe(report));
+            }
+            Assert.That(report.Views.Single(view => view.Id == "slow").Visited, Is.True);
         }
 
         [UnityTest]
@@ -215,6 +312,9 @@ namespace UniGameUI.Editor.Tests
             UIAuthoring.Connect(root, "needsData", "close", UIRouteKind.ClosePopup);
             UIAuthoring.Connect(root, "home", "openSlow", UIRouteKind.ShowPage, "slow");
             UIAuthoring.Connect(root, "fine", "back", UIRouteKind.Back);
+            // 目標由程式控制、沒有資料就顯示不出來：一般路由與訊號路由都略過。
+            UIAuthoring.Connect(root, "home", "openNeedsData", UIRouteKind.OpenPopup, "needsData");
+            UIAuthoring.Connect(root, UIRoot.AnySource, "needsData", UIRouteKind.OpenPopup, "needsData");
             AssertNoValidationErrors(root);
 
             // 走訪期間頁面腳本會故意記錯誤，結束時失敗的步驟也會記到 Console，這個案例不檢查 Console。
@@ -232,9 +332,9 @@ namespace UniGameUI.Editor.Tests
             {
                 "/=Passed", "home/openBroken=Failed", "home/openNoisy=Failed", "home/openWarned=Passed",
                 "home/openLaunch=Passed", "home/openFine=Passed", "needsData/close=Skipped",
-                "home/openSlow=Failed", "fine/back=Passed"
+                "home/openSlow=Failed", "fine/back=Passed", "home/openNeedsData=Skipped", "*/needsData=Skipped"
             }), Describe(report));
-            Assert.That((report.PassedCount, report.FailedCount, report.SkippedCount), Is.EqualTo((5, 3, 1)));
+            Assert.That((report.PassedCount, report.FailedCount, report.SkippedCount), Is.EqualTo((5, 3, 3)));
 
             // 目標頁的 OnShowing 丟例外：這一步失敗，報告裡有例外訊息。
             var broken = report.Steps[1];
@@ -265,6 +365,15 @@ namespace UniGameUI.Editor.Tests
             Assert.That(needsData.Reason, Does.Contain("由程式控制").And.Contain("資料"));
             Assert.That(needsData.Result, Is.Empty);
             Assert.That(needsData.Logs.Any(log => log.Type == "Exception"), Is.True);
+
+            // 目標畫面由程式控制而顯示失敗：略過，原因是需要由程式提供資料。導航的結果照實記錄。
+            foreach (var skipped in new[] { report.Steps[9], report.Steps[10] })
+            {
+                Assert.That(skipped.Kind, Is.EqualTo("OpenPopup"));
+                Assert.That(skipped.Result, Is.EqualTo("Failed"));
+                Assert.That(skipped.Reason, Does.Contain("needsData").And.Contain("由程式控制").And.Contain("資料"));
+                Assert.That(skipped.Logs.Any(log => log.Type == "Exception"), Is.True);
+            }
 
             // 單步逾時：失敗，原因是逾時，接著繼續下一步。
             var slow = report.Steps[7];
@@ -522,10 +631,11 @@ namespace UniGameUI.Editor.Tests
         }
 
         private static UIView Page(UIRoot root, string id,
-            UIWalkTestPage.Behaviour behaviour = UIWalkTestPage.Behaviour.None, string target = null)
+            UIWalkTestPage.Behaviour behaviour = UIWalkTestPage.Behaviour.None, string target = null,
+            string popup = null)
         {
             var view = UIAuthoring.CreatePage(root, id, id);
-            AddScript(view, behaviour, target);
+            AddScript(view, behaviour, target, popup);
             return view;
         }
 
@@ -541,13 +651,15 @@ namespace UniGameUI.Editor.Tests
             Assert.That(UIAuthoring.FindEntry(root, id).Prefab.GetComponent<UIWalkTestPage>(), Is.Not.Null);
         }
 
-        private static void AddScript(UIView view, UIWalkTestPage.Behaviour behaviour, string target)
+        private static void AddScript(UIView view, UIWalkTestPage.Behaviour behaviour, string target,
+            string popup = null)
         {
             if (behaviour == UIWalkTestPage.Behaviour.None)
                 return;
             var script = view.gameObject.AddComponent<UIWalkTestPage>();
             script.behaviour = behaviour;
             script.target = target;
+            script.popup = popup;
             EditorUtility.SetDirty(script);
         }
 
