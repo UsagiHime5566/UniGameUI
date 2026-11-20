@@ -297,6 +297,9 @@ namespace UniGameUI.Editor.Tests
                 Select(UIRoot.AnySource, null);
                 Assert.That(window.rootVisualElement.Q("any-source-help"), Is.Not.Null);
                 Assert.That(window.rootVisualElement.Q<Toggle>("navigated-by-code"), Is.Null);
+                // 編輯區要選了路由或按「新增路由」才出現。
+                Assert.That(Kind(), Is.Null);
+                window.BeginAddRoute();
                 Assert.That(Kind().choices, Is.EqualTo(new[]
                 {
                     UIRouteKind.ShowPage, UIRouteKind.OpenPopup, UIRouteKind.Emit,

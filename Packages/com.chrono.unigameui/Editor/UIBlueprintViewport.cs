@@ -127,5 +127,38 @@ namespace UniGameUI.Editor
         {
             SessionState.EraseString(ViewPrefix + sceneKey);
         }
+
+        private const string SidebarWidthKey = "UniGameUI.Blueprint.SidebarWidth";
+        private const string CollapsedPrefix = "UniGameUI.Blueprint.Collapsed.";
+
+        /// <summary>右欄的寬度。這個工作階段還沒有拖過時回傳 <paramref name="fallback"/>。</summary>
+        public static float SidebarWidth(float fallback)
+        {
+            return SessionState.GetFloat(SidebarWidthKey, fallback);
+        }
+
+        public static void SetSidebarWidth(float width)
+        {
+            SessionState.SetFloat(SidebarWidthKey, width);
+        }
+
+        public static void ForgetSidebarWidth()
+        {
+            SessionState.EraseFloat(SidebarWidthKey);
+        }
+
+        /// <summary>右欄的區塊是不是收合的。區塊預設展開。</summary>
+        public static bool IsSectionCollapsed(string section)
+        {
+            return SessionState.GetBool(CollapsedPrefix + section, false);
+        }
+
+        public static void SetSectionCollapsed(string section, bool collapsed)
+        {
+            if (collapsed)
+                SessionState.SetBool(CollapsedPrefix + section, true);
+            else
+                SessionState.EraseBool(CollapsedPrefix + section);
+        }
     }
 }

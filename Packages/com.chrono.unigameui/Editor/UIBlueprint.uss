@@ -224,14 +224,201 @@
 }
 
 .blueprint-sidebar {
+    background-color: #2b2f33;
+}
+
+.blueprint-sidebar .unity-scroll-view__content-container {
     padding-left: 8px;
     padding-right: 8px;
     padding-top: 8px;
+    padding-bottom: 12px;
+}
+
+/* 右欄的區塊：標題列、邊框、區塊之間的間距。 */
+.sidebar-section {
+    margin-bottom: 10px;
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-left-color: #1c2024;
+    border-right-color: #1c2024;
+    border-top-color: #1c2024;
+    border-bottom-color: #1c2024;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    background-color: #33383d;
+}
+
+.sidebar-section > .unity-foldout__toggle {
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-left: 4px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    background-color: #24282c;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+}
+
+.sidebar-section > .unity-foldout__toggle .unity-foldout__text {
+    -unity-font-style: bold;
+    color: #e6ebef;
+}
+
+.sidebar-section > .unity-foldout__content {
+    margin-left: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.section-heading {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
 }
 
 .sidebar-title {
-    height: 27px;
-    margin-top: 6px;
+    font-size: 14px;
+    margin-right: 8px;
     -unity-font-style: bold;
     -unity-text-align: middle-left;
+    color: #f2f5f7;
+}
+
+.info-row {
+    flex-direction: row;
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+
+.info-label {
+    width: 72px;
+    flex-shrink: 0;
+    color: #9aa7b1;
+}
+
+.info-value {
+    flex-grow: 1;
+    flex-shrink: 1;
+    white-space: normal;
+    color: #e6ebef;
+}
+
+.field-help {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    white-space: normal;
+    color: #9aa7b1;
+}
+
+.field-error {
+    margin-top: 2px;
+    margin-bottom: 4px;
+    padding-left: 6px;
+    white-space: normal;
+    color: #ff8f8f;
+    border-left-width: 3px;
+    border-left-color: #e05c5c;
+}
+
+/* 路由的一列：整列可以點。 */
+.route-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    padding-left: 8px;
+    padding-right: 6px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    background-color: #2a2f34;
+    border-left-width: 3px;
+    border-right-width: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    border-left-color: rgba(0, 0, 0, 0);
+    -unity-text-align: middle-left;
+    cursor: link;
+}
+
+.route-row:hover {
+    background-color: #3d4a54;
+}
+
+.route-row-selected {
+    background-color: #2f4a63;
+    border-left-color: #ffd15c;
+}
+
+.route-row-selected:hover {
+    background-color: #38587a;
+}
+
+.route-row-primary {
+    margin-right: 8px;
+    -unity-font-style: bold;
+    color: #f2f5f7;
+}
+
+.route-row-secondary {
+    flex-shrink: 1;
+    color: #c3ccd3;
+}
+
+/* 路由種類的徽章：切頁與頁面同色，開啟 Popup 與 Popup 同色，和節點、線上的標籤一致。 */
+.kind-ShowPage {
+    background-color: #6db8ee;
+}
+
+.kind-OpenPopup {
+    background-color: #c39ced;
+}
+
+.kind-Back {
+    background-color: #9aa7b1;
+}
+
+.kind-ClosePopup {
+    background-color: #e3a0b4;
+}
+
+.kind-Emit {
+    background-color: #f0b35a;
+}
+
+.route-buttons {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.route-buttons-spacer {
+    flex-grow: 1;
+    min-width: 16px;
+}
+
+/* 刪除：和儲存分開，顏色不同。 */
+.danger-button {
+    color: #ffb3b3;
+    background-color: #5a2a2a;
+    border-left-color: #8c3b3b;
+    border-right-color: #8c3b3b;
+    border-top-color: #8c3b3b;
+    border-bottom-color: #8c3b3b;
+}
+
+.danger-button:hover {
+    color: #ffffff;
+    background-color: #8c3030;
 }

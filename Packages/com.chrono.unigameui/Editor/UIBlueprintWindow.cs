@@ -172,6 +172,7 @@ namespace UniGameUI.Editor
             content = null;
             sidebar = null;
             zoomButton = null;
+            ClearRouteErrors();
 
             var toolbar = new Toolbar();
             rootVisualElement.Add(toolbar);
@@ -231,14 +232,26 @@ namespace UniGameUI.Editor
             zoomButton.name = "zoom-level";
             zoomButton.tooltip = "目前的縮放比例。點一下回到 100%。滾輪縮放，按住中鍵（或 Alt 加左鍵）拖曳平移。";
 
-            var split = new TwoPaneSplitView(1, 308, TwoPaneSplitViewOrientation.Horizontal);
+            // 右欄的寬度可以拖曳，在這個 Editor 工作階段內記住。
+            var split = new TwoPaneSplitView(1, SidebarWidth, TwoPaneSplitViewOrientation.Horizontal)
+            {
+                name = "blueprint-split",
+            };
             split.style.flexGrow = 1;
             rootVisualElement.Add(split);
             BuildCanvas();
+            canvas.style.minWidth = MinCanvasWidth;
             split.Add(canvas);
 
-            sidebar = new ScrollView();
+            sidebar = new ScrollView(ScrollViewMode.Vertical) { name = "blueprint-sidebar" };
             sidebar.AddToClassList("blueprint-sidebar");
+            sidebar.style.minWidth = MinSidebarWidth;
+            sidebar.RegisterCallback<GeometryChangedEvent>(evt =>
+            {
+                // 只記使用者拖出來的寬度：寬度沒有變（只有高度變）時不必記。
+                if (!Mathf.Approximately(evt.oldRect.width, evt.newRect.width) && evt.oldRect.width > 0f)
+                    RememberSidebarWidth(evt.newRect.width);
+            });
             split.Add(sidebar);
             UpdateStage();
             LoadView();
@@ -650,12 +663,8 @@ namespace UniGameUI.Editor
             {
                 dragId = null;
                 // 「任何畫面」不是畫面，Scene 裡沒有東西可以定位。
-                if (id == UIRoot.AnySource)
-                    return;
-                if (FocusRequested != null)
-                    FocusRequested(id);
-                else
-                    UIAuthoring.FocusReview(workspace, id);
+                if (id != UIRoot.AnySource)
+                    RequestFocus(id);
                 return;
             }
             BeginNodeDrag(id, windowPoint);
@@ -708,6 +717,7 @@ namespace UniGameUI.Editor
         {
             selectedId = source;
             selectedAction = action;
+            addingRoute = false;
             RefreshSelection();
         }
 
@@ -729,6 +739,7 @@ namespace UniGameUI.Editor
         {
             foreach (var pair in cards)
                 pair.Value.EnableInClassList("selected-node", pair.Key == selectedId);
+            ClearRouteErrors();
             DrawSidebar();
         }
 
@@ -839,168 +850,8 @@ namespace UniGameUI.Editor
                 return;
             selectedId = id;
             selectedAction = null;
+            addingRoute = false;
             RefreshSelection();
-        }
-
-        private void DrawSidebar()
-        {
-            sidebar.Clear();
-            var pages = workspace.Entries.Where(entry => entry.Kind == UIEntryKind.Page).Select(entry => entry.Id).ToList();
-            var startupChoices = new List<string> { "" };
-            startupChoices.AddRange(pages);
-            var startup = new PopupField<string>("起始頁", startupChoices,
-                Mathf.Max(0, startupChoices.IndexOf(workspace.StartPageId)), DisplayView, DisplayView);
-            startup.RegisterValueChangedCallback(evt => TryEdit(() => UIAuthoring.SetStartPage(workspace, evt.newValue)));
-            sidebar.Add(startup);
-            var isAnySource = selectedId == UIRoot.AnySource;
-            var selected = isAnySource ? null : UIAuthoring.FindEntry(workspace, selectedId);
-            if (!isAnySource && selected == null)
-            {
-                sidebar.Add(new HelpBox("選取節點以檢視頁面或編輯路由。", HelpBoxMessageType.Info));
-                return;
-            }
-
-            var sourceId = isAnySource ? UIRoot.AnySource : selected.Id;
-            var title = new Label(isAnySource ? AnySourceTitle : selected.Title);
-            title.AddToClassList("sidebar-title");
-            sidebar.Add(title);
-            if (isAnySource)
-            {
-                sidebar.Add(new HelpBox("從這個節點拉出去的是訊號路由：不論目前顯示哪個畫面都成立。" +
-                    "遊戲程式用 root.SignalAsync(動作, 資料) 送出；有導航正在進行時，訊號會等它結束再執行。",
-                    HelpBoxMessageType.Info) { name = "any-source-help" });
-            }
-            else
-            {
-                DrawViewOptions(selected, pages);
-            }
-
-            var local = workspace.Routes.Where(route => route.Source == sourceId).ToArray();
-            foreach (var route in local)
-            {
-                var target = UIRoute.TargetsEntry(route.Kind) ? $" → {DisplayView(route.Target)}" : "";
-                sidebar.Add(new Button(() =>
-                {
-                    selectedAction = route.Action;
-                    DrawSidebar();
-                }) { text = $"{route.Action}  ·  {KindLabel(route.Kind)}{target}" });
-            }
-            var current = local.FirstOrDefault(route => route.Action == selectedAction);
-            actionField = new TextField("動作") { value = current?.Action ?? "" };
-            sidebar.Add(actionField);
-            // 訊號路由只能切頁、開啟 Popup 或送出事件。
-            var kinds = ((UIRouteKind[])Enum.GetValues(typeof(UIRouteKind)))
-                .Where(kind => !isAnySource || UIAuthoring.IsSignalKind(kind)).ToList();
-            var currentKind = current?.Kind ?? UIRouteKind.ShowPage;
-            var kindField = new PopupField<UIRouteKind>("行為", kinds,
-                kinds.Contains(currentKind) ? currentKind : UIRouteKind.ShowPage, KindName, KindName)
-            {
-                name = "route-kind",
-            };
-            sidebar.Add(kindField);
-            var targetSlot = new VisualElement();
-            sidebar.Add(targetSlot);
-            var historySlot = new VisualElement();
-            sidebar.Add(historySlot);
-            var resultField = new TextField("關閉結果")
-            {
-                name = "route-result",
-                value = current?.Result ?? "",
-                tooltip = "留空時不回傳結果。",
-            };
-            sidebar.Add(resultField);
-            PopupField<string> targetField = null;
-            PopupField<UIHistoryMode> historyField = null;
-            void SetChoices(UIRouteKind kind, string target, UIHistoryMode history)
-            {
-                targetSlot.Clear();
-                targetField = null;
-                // 「返回歷史」只有切頁與開啟 Popup 有。Popup 沒有 Replace：只分可以返回與不可返回。
-                historySlot.Clear();
-                historyField = null;
-                if (kind == UIRouteKind.ShowPage || kind == UIRouteKind.OpenPopup)
-                {
-                    var isPopup = kind == UIRouteKind.OpenPopup;
-                    var modes = isPopup
-                        ? new List<UIHistoryMode> { UIHistoryMode.Push, UIHistoryMode.Clear }
-                        : new List<UIHistoryMode> { UIHistoryMode.Push, UIHistoryMode.Replace, UIHistoryMode.Clear };
-                    Func<UIHistoryMode, string> label = isPopup ? PopupHistoryLabel : HistoryLabel;
-                    historyField = new PopupField<UIHistoryMode>("返回歷史", modes,
-                        modes.Contains(history) ? history : UIHistoryMode.Push, label, label)
-                    {
-                        name = "route-history",
-                        tooltip = isPopup
-                            ? "不可返回的 Popup：開啟時清空歷史，返回鍵與 Back 路由無效，只能用 ClosePopup 路由、" +
-                              "View.Close() 或點遮罩關閉。"
-                            : "切到目的地之後，離開的頁面要不要留在返回歷史裡。",
-                    };
-                    historyField.style.display = DisplayStyle.Flex;
-                    historySlot.Add(historyField);
-                }
-                resultField.style.display = kind == UIRouteKind.ClosePopup ? DisplayStyle.Flex : DisplayStyle.None;
-                if (!UIRoute.TargetsEntry(kind))
-                    return;
-                var type = kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup;
-                var choices = new List<string> { "" };
-                choices.AddRange(workspace.Entries.Where(entry => entry.Kind == type).Select(entry => entry.Id));
-                targetField = new PopupField<string>("目的地", choices, Mathf.Max(0, choices.IndexOf(target)),
-                    DisplayView, DisplayView);
-                targetSlot.Add(targetField);
-            }
-            SetChoices(kindField.value, current?.Target, current?.History ?? UIHistoryMode.Push);
-            kindField.RegisterValueChangedCallback(evt => SetChoices(evt.newValue, null, UIHistoryMode.Push));
-            sidebar.Add(new Button(() => TryEdit(() => SaveRoute(sourceId, current?.Action,
-                actionField.value, kindField.value, targetField?.value,
-                historyField?.value ?? UIHistoryMode.Push, resultField.value)))
-            {
-                name = "save-route",
-                text = "儲存路由",
-            });
-            if (current != null)
-            {
-                sidebar.Add(new Button(() => TryEdit(() =>
-                {
-                    UIAuthoring.Disconnect(workspace, sourceId, current.Action);
-                    selectedAction = null;
-                })) { text = "移除所選路由" });
-                sidebar.Add(new Button(() =>
-                {
-                    selectedAction = null;
-                    DrawSidebar();
-                }) { text = "新增另一條路由" });
-            }
-        }
-
-        // 右欄裡只有畫面才有的部分：定位、預覽疊加、由程式控制、待套用的覆寫。
-        private void DrawViewOptions(UIEntry selected, List<string> pages)
-        {
-            sidebar.Add(new Button(() => UIAuthoring.FocusReview(workspace, selected.Id)) { text = "在 Scene 定位" });
-            if (selected.Kind == UIEntryKind.Popup && pages.Count > 0)
-            {
-                var context = new PopupField<string>("疊在頁面", pages, 0, DisplayView, DisplayView);
-                sidebar.Add(context);
-                sidebar.Add(new Button(() => UIAuthoring.PreviewPopupOnPage(workspace, selected.Id, context.value))
-                    { text = "預覽疊加" });
-            }
-            // 確認框用 ConfirmAsync 開啟、自己關閉，自動視為由程式控制，不能取消。
-            var isConfirm = UIAuthoring.IsConfirmPopup(selected.Review) || UIAuthoring.IsConfirmPopup(selected.Prefab);
-            var byCode = new Toggle("由程式控制進出")
-            {
-                name = "navigated-by-code",
-                value = UIAuthoring.IsNavigatedByCode(selected),
-                tooltip = isConfirm
-                    ? "確認框由 ConfirmAsync 開啟並自己關閉，自動視為由程式控制。"
-                    : "這個畫面不靠路由開啟或關閉。勾選後 Validate 不檢查它走不走得到、有沒有出口。",
-            };
-            byCode.SetEnabled(!isConfirm);
-            byCode.RegisterValueChangedCallback(evt => SetNavigatedByCode(selected.Id, evt.newValue));
-            sidebar.Add(byCode);
-            if (UIAuthoring.HasReviewOverrides(selected))
-            {
-                sidebar.Add(new HelpBox("這個預覽有待套用的 Prefab 覆寫。", HelpBoxMessageType.Warning));
-                sidebar.Add(new Button(() => TryEdit(() => UIAuthoring.ApplyReviewOverrides(workspace, selected.Id)))
-                    { text = "套用到 Prefab" });
-            }
         }
 
         // 右欄「由程式控制進出」勾選時呼叫。
@@ -1017,6 +868,7 @@ namespace UniGameUI.Editor
             else
                 UIAuthoring.UpdateRoute(workspace, source, originalAction, action, kind, target, history, result);
             selectedAction = action;
+            addingRoute = false;
         }
 
         private static string HistoryLabel(UIHistoryMode history) => history switch
@@ -1034,9 +886,6 @@ namespace UniGameUI.Editor
             UIHistoryMode.Clear => "不可返回",
             _ => history.ToString(),
         };
-
-        // 「行為」選單顯示的文字，和 EnumField 的顯示方式相同。
-        private static string KindName(UIRouteKind kind) => ObjectNames.NicifyVariableName(kind.ToString());
 
         // 背景格線跟著平移與縮放移動。縮得很小時改用比較疏的格線，不會糊成一片。
         private void DrawGrid(MeshGenerationContext context)
@@ -1172,6 +1021,8 @@ namespace UniGameUI.Editor
 
         private string DisplayView(string id)
         {
+            if (id == UIRoot.AnySource)
+                return AnySourceTitle;
             return string.IsNullOrEmpty(id) ? "未指定" : UIAuthoring.FindEntry(workspace, id)?.Title ?? id;
         }
 
