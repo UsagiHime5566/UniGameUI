@@ -81,6 +81,60 @@ namespace UniGameUI.Editor.Tests
             }
         }
 
+        // K5：原本一個代碼包了好幾種情況的，現在每一種各有自己的代碼，彼此不會混在一起。
+        [Test]
+        public void EachCodeReportsOnlyItsOwnProblem()
+        {
+            var root = WorkspaceWithHomePage("Batch4Fix Codes");
+            var home = UIAuthoring.FindEntry(root, "home").Review;
+            UIAuthoring.CreatePopup(root, "tip", "Tip", $"{folder}/Tip.prefab");
+
+            root.routes.Add(new UIRoute { source = "home", action = "", kind = UIRouteKind.Emit });
+            root.routes.Add(new UIRoute { source = "", action = "lost", kind = UIRouteKind.Emit });
+            root.routes.Add(new UIRoute { source = "ghost", action = "go", kind = UIRouteKind.Emit });
+            root.routes.Add(new UIRoute { source = "home", action = "twice", kind = UIRouteKind.Emit });
+            root.routes.Add(new UIRoute { source = "home", action = "twice", kind = UIRouteKind.Back });
+            root.routes.Add(new UIRoute { source = "home", action = "nowhere", kind = UIRouteKind.ShowPage, target = "ghost" });
+            root.routes.Add(new UIRoute { source = "home", action = "blank", kind = UIRouteKind.OpenPopup, target = "" });
+            root.routes.Add(new UIRoute { source = "home", action = "wrongKind", kind = UIRouteKind.ShowPage, target = "tip" });
+            root.routes.Add(new UIRoute { source = "home", action = "alsoWrong", kind = UIRouteKind.OpenPopup, target = "home" });
+            SetElementId(Child("Blank"), "");
+            SetElementId(Child("First"), "twin");
+            SetElementId(Child("Second"), "twin");
+
+            var issues = UIValidation.Check(root);
+            Assert.That(Messages(UIIssueCode.RouteIncomplete).Length, Is.EqualTo(2));
+            Assert.That(Messages(UIIssueCode.RouteSourceMissing).Single(), Does.Contain("ghost/go").And.Contain("不存在"));
+            Assert.That(Messages(UIIssueCode.RouteDuplicate).Single(), Does.Contain("home").And.Contain("twice"));
+            var missingTargets = Messages(UIIssueCode.RouteTargetMissing);
+            Assert.That(missingTargets.Length, Is.EqualTo(2));
+            Assert.That(missingTargets, Has.Some.Contains("home/nowhere"));
+            Assert.That(missingTargets, Has.Some.Contains("home/blank"));
+            var wrongKinds = Messages(UIIssueCode.RouteTargetKindMismatch);
+            Assert.That(wrongKinds.Length, Is.EqualTo(2));
+            Assert.That(wrongKinds, Has.Some.Contains("不是頁面"));
+            Assert.That(wrongKinds, Has.Some.Contains("不是Popup"));
+            Assert.That(Messages(UIIssueCode.ElementIdEmpty).Single(), Does.Contain("Blank").And.Contain("空的"));
+            Assert.That(Messages(UIIssueCode.ElementIdDuplicate).Single(), Does.Contain("Second").And.Contain("twin"));
+            // 空的元件 ID 那一筆沒有 ElementId；重複的那一筆有。
+            Assert.That(issues.Single(issue => issue.Code == UIIssueCode.ElementIdEmpty).ElementId, Is.Null);
+            Assert.That(issues.Single(issue => issue.Code == UIIssueCode.ElementIdDuplicate).ElementId, Is.EqualTo("twin"));
+            // 舊的代碼已經不存在。
+            Assert.That(UIIssueCode.All, Has.None.EqualTo("route.invalid"));
+
+            string[] Messages(string code)
+            {
+                return issues.Where(issue => issue.Code == code).Select(issue => issue.Message).ToArray();
+            }
+
+            GameObject Child(string name)
+            {
+                var child = new GameObject(name, typeof(RectTransform));
+                child.transform.SetParent(home.Content, false);
+                return child;
+            }
+        }
+
         [Test]
         public void AgentGuideListsEveryIssueCodeWithItsSeverity()
         {
@@ -393,9 +447,20 @@ namespace UniGameUI.Editor.Tests
                     Child(home, "Label", typeof(TextMeshProUGUI)).GetComponent<TMP_Text>().text = "確定";
                     break;
 
-                case UIIssueCode.RouteInvalid:
+                case UIIssueCode.RouteIncomplete:
+                    Home();
+                    root.routes.Add(new UIRoute { source = "home", action = "", kind = UIRouteKind.Emit });
+                    break;
+
+                case UIIssueCode.RouteSourceMissing:
                     Home();
                     root.routes.Add(new UIRoute { source = "ghost", action = "go", kind = UIRouteKind.Emit });
+                    break;
+
+                case UIIssueCode.RouteDuplicate:
+                    Home();
+                    root.routes.Add(new UIRoute { source = "home", action = "go", kind = UIRouteKind.Emit });
+                    root.routes.Add(new UIRoute { source = "home", action = "go", kind = UIRouteKind.Back });
                     break;
 
                 case UIIssueCode.RouteTargetMissing:
@@ -403,6 +468,15 @@ namespace UniGameUI.Editor.Tests
                     root.routes.Add(new UIRoute
                     {
                         source = "home", action = "go", kind = UIRouteKind.ShowPage, target = "ghost"
+                    });
+                    break;
+
+                case UIIssueCode.RouteTargetKindMismatch:
+                    Home();
+                    Popup("tip");
+                    root.routes.Add(new UIRoute
+                    {
+                        source = "home", action = "go", kind = UIRouteKind.ShowPage, target = "tip"
                     });
                     break;
 
@@ -419,6 +493,11 @@ namespace UniGameUI.Editor.Tests
                         source = "home", action = "go", kind = UIRouteKind.OpenPopup, target = "tip",
                         history = UIHistoryMode.Replace
                     });
+                    break;
+
+                case UIIssueCode.ElementIdEmpty:
+                    Home();
+                    SetElementId(Child(home, "Blank"), "");
                     break;
 
                 case UIIssueCode.ElementIdDuplicate:
@@ -548,6 +627,15 @@ namespace UniGameUI.Editor.Tests
                 case UIIssueCode.ConstantsOutdated:
                     // Scene 在建立工作區之前存過檔，常數還沒有產生。
                     Home();
+                    break;
+
+                case UIIssueCode.ConstantsAsmdefMissing:
+                    if (hadGeneratedAssembly)
+                        Assert.Ignore("專案已經有產生的 asmdef，這個案例不會去刪它。");
+                    // 常數檔是最新的，只有資料夾裡的 asmdef 不見了。
+                    Home();
+                    UIIdConstants.Generate(root);
+                    Assert.That(AssetDatabase.DeleteAsset(GeneratedAssembly), Is.True);
                     break;
 
                 default:

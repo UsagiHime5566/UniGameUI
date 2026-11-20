@@ -146,7 +146,7 @@ namespace UniGameUI.Editor.Tests
             Assert.That(missing.ViewId, Is.Null);
             Assert.That(missing.Message, Does.Contain("nowhere").And.Contain("ghost"));
             root.routes[^1] = new UIRoute { source = UIRoot.AnySource, action = "tick", kind = UIRouteKind.Emit };
-            var duplicate = Issues(root, UIIssueCode.RouteInvalid).Single();
+            var duplicate = Issues(root, UIIssueCode.RouteDuplicate).Single();
             Assert.That(duplicate.ViewId, Is.Null);
             root.routes.RemoveAt(root.routes.Count - 1);
             Assert.That(RouteIssues(), Is.Empty);

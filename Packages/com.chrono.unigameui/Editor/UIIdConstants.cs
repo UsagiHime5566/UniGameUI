@@ -77,10 +77,17 @@ namespace UniGameUI.Editor
                 issues.Add(new UIIssue(UIIssueCode.ConstantsSceneUnsaved, "儲存場景後即可產生 UI ID 常數。",
                     context: root));
             }
-            else if (!Matches(output.Path, output.Content) || !HasAssemblyDefinition())
+            else if (!Matches(output.Path, output.Content))
             {
                 issues.Add(new UIIssue(UIIssueCode.ConstantsOutdated,
                     $"ID 常數尚未產生或已過期。請儲存場景或產生「{output.Path}」。", context: root));
+            }
+            else if (!HasAssemblyDefinition())
+            {
+                // 常數檔本身是最新的，只是資料夾裡的 asmdef 不見了：遊戲程式會引用不到 UniGameUI.Generated。
+                issues.Add(new UIIssue(UIIssueCode.ConstantsAsmdefMissing,
+                    $"ID 常數的資料夾「{Folder}」裡沒有 asmdef。請儲存場景或在藍圖按 Validate，工具會補上 " +
+                    $"{AssemblyName}.asmdef。", context: root));
             }
         }
 

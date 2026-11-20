@@ -65,11 +65,15 @@ namespace UniGameUI.Editor
         public const string StartUnknown = "start.unknown";
         public const string StartNone = "start.none";
 
-        public const string RouteInvalid = "route.invalid";
+        public const string RouteIncomplete = "route.incomplete";
+        public const string RouteSourceMissing = "route.source-missing";
+        public const string RouteDuplicate = "route.duplicate";
         public const string RouteTargetMissing = "route.target-missing";
+        public const string RouteTargetKindMismatch = "route.target-kind-mismatch";
         public const string RouteSignalKindInvalid = "route.signal-kind-invalid";
         public const string RouteHistoryInvalid = "route.history-invalid";
 
+        public const string ElementIdEmpty = "element.id-empty";
         public const string ElementIdDuplicate = "element.id-duplicate";
         public const string ElementKindUnknown = "element.kind-unknown";
         public const string ButtonActionUnrouted = "button.action-unrouted";
@@ -94,6 +98,7 @@ namespace UniGameUI.Editor
         public const string ConstantsSceneConflict = "constants.scene-conflict";
         public const string ConstantsSceneUnsaved = "constants.scene-unsaved";
         public const string ConstantsOutdated = "constants.outdated";
+        public const string ConstantsAsmdefMissing = "constants.asmdef-missing";
 
         private static readonly Dictionary<string, UIIssueSeverity> Severities =
             new Dictionary<string, UIIssueSeverity>(StringComparer.Ordinal)
@@ -114,10 +119,14 @@ namespace UniGameUI.Editor
                 [ViewNoExit] = UIIssueSeverity.Warning,
                 [StartUnknown] = UIIssueSeverity.Error,
                 [StartNone] = UIIssueSeverity.Warning,
-                [RouteInvalid] = UIIssueSeverity.Error,
+                [RouteIncomplete] = UIIssueSeverity.Error,
+                [RouteSourceMissing] = UIIssueSeverity.Error,
+                [RouteDuplicate] = UIIssueSeverity.Error,
                 [RouteTargetMissing] = UIIssueSeverity.Error,
+                [RouteTargetKindMismatch] = UIIssueSeverity.Error,
                 [RouteSignalKindInvalid] = UIIssueSeverity.Error,
                 [RouteHistoryInvalid] = UIIssueSeverity.Error,
+                [ElementIdEmpty] = UIIssueSeverity.Error,
                 [ElementIdDuplicate] = UIIssueSeverity.Error,
                 [ElementKindUnknown] = UIIssueSeverity.Error,
                 [ButtonActionUnrouted] = UIIssueSeverity.Error,
@@ -138,7 +147,8 @@ namespace UniGameUI.Editor
                 [ConstantsNameConflict] = UIIssueSeverity.Error,
                 [ConstantsSceneConflict] = UIIssueSeverity.Error,
                 [ConstantsSceneUnsaved] = UIIssueSeverity.Warning,
-                [ConstantsOutdated] = UIIssueSeverity.Warning
+                [ConstantsOutdated] = UIIssueSeverity.Warning,
+                [ConstantsAsmdefMissing] = UIIssueSeverity.Warning
             };
 
         /// <summary>所有的問題代碼。</summary>

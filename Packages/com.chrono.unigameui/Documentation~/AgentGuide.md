@@ -1147,11 +1147,15 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `view.no-exit` | Warning | 頁面沒有任何 `ShowPage` 或 `Back` 路由，從它沿著 `OpenPopup` 路由開得到的 Popup 也沒有切到別頁的 `ShowPage` 路由；或 Popup 沒有 `ClosePopup`、`Back`、`ShowPage` 路由，也沒有設定點遮罩關閉。由程式控制的畫面不算；工作區只有一個頁面時那個頁面不算。訊號路由不算任何畫面的出口。 | 補上離開的路由。由程式切換或關閉的畫面標記為由程式控制。 |
 | `start.unknown` | Error | 起始頁不存在，或不是頁面。 | 用計畫的 `startPage` 或藍圖重新指定。 |
 | `start.none` | Warning | 工作區沒有設定起始頁。所有頁面都由程式控制時不算。 | 用計畫的 `startPage` 或藍圖指定；頁面全部由程式顯示時，把它們標記為由程式控制。 |
-| `route.invalid` | Error | 路由的來源畫面不存在、動作是空的，或同一個來源有重複的動作（訊號路由之間動作重複也算）。 | 用計畫或藍圖重新建立這條路由。 |
-| `route.target-missing` | Error | `ShowPage` 或 `OpenPopup` 路由的目的地不存在，或種類不符。 | 修正路由的 `target`，或補上目的地的畫面。 |
+| `route.incomplete` | Error | 路由的來源或動作是空的。 | 用計畫或藍圖重新建立這條路由。 |
+| `route.source-missing` | Error | 路由的來源畫面不存在。 | 補上來源畫面，或移除這條路由。 |
+| `route.duplicate` | Error | 同一個來源有重複的動作（訊號路由之間動作重複也算）。 | 移除多出來的那一條，或改用不同的動作名稱。 |
+| `route.target-missing` | Error | `ShowPage` 或 `OpenPopup` 路由的目的地不存在，或沒有填。 | 修正路由的 `target`，或補上目的地的畫面。 |
+| `route.target-kind-mismatch` | Error | 路由的目的地存在，但種類不符：`ShowPage` 指到 Popup，或 `OpenPopup` 指到頁面。 | 改用對的路由種類，或改指到對的畫面。 |
 | `route.signal-kind-invalid` | Error | 「任何畫面」的訊號路由種類是 `Back` 或 `ClosePopup`。 | 訊號路由只能是 `ShowPage`、`OpenPopup` 或 `Emit`。改掉種類，或把它改成某個畫面自己的路由。 |
 | `route.history-invalid` | Error | `OpenPopup` 路由的 `history` 是 `Replace`。 | 改成 `Push`（可以返回）或 `Clear`（不可返回）。 |
-| `element.id-duplicate` | Error | 同一個畫面裡有空的或重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
+| `element.id-empty` | Error | 畫面裡有物件的元件 ID 是空的。 | 在那個物件的 `UIElementId` 填上 ID，或移除這個元件。 |
+| `element.id-duplicate` | Error | 同一個畫面裡有重複的元件 ID。 | 修改其中一個物件的 `UIElementId`。 |
 | `element.kind-unknown` | Error | 元件記錄的元件名稱不在元件集裡。 | 把元件登記回元件集，或刪掉這個元件重新建立。 |
 | `button.action-unrouted` | Error | 按鈕的動作找不到對應的路由。 | 補上路由，或修改按鈕的 `action`。訊息提到 Prefab 本體時，請修正審核實例並套用覆寫。 |
 | `button.unbound` | Warning | 畫面裡的 `Button` 沒有動作（沒有 `UIButtonAction`，或動作是空的），`onClick` 也沒有在 Inspector 接監聽。由程式控制的畫面與清單項目裡的按鈕不算。 | 給按鈕 `action` 並接一條路由；要由程式處理時用 `Emit` 路由，在頁面腳本的 `OnAction` 接收。 |
@@ -1172,3 +1176,4 @@ Unity -batchmode -projectPath <專案絕對路徑> -logFile <記錄檔絕對路�
 | `constants.scene-conflict` | Error | 兩個有工作區的 Scene 會產生同名的常數類別。 | 把其中一個 Scene 改名。 |
 | `constants.scene-unsaved` | Warning | Scene 還沒有存成資產，無法產生 ID 常數。 | 儲存 Scene。 |
 | `constants.outdated` | Warning | ID 常數還沒有產生，或和目前的藍圖不一致。 | 儲存 Scene，或在藍圖按 **Validate**。 |
+| `constants.asmdef-missing` | Warning | ID 常數是最新的，但產生的資料夾裡沒有 asmdef，有自己 asmdef 的遊戲程式會引用不到 `UniGameUI.Generated`。 | 儲存 Scene，或在藍圖按 **Validate**，工具會補上。 |

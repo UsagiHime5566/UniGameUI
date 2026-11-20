@@ -95,17 +95,30 @@ namespace UniGameUI.Editor
             {
                 // 訊號路由的來源是「任何畫面」，不是某一個畫面。
                 var isSignal = route != null && route.IsSignal;
-                if (route == null || string.IsNullOrEmpty(route.Source) || string.IsNullOrEmpty(route.Action) ||
-                    !routes.Add((route.Source, route.Action)) || (!isSignal && !views.ContainsKey(route.Source)))
+                if (route == null || string.IsNullOrEmpty(route.Source) || string.IsNullOrEmpty(route.Action))
                 {
-                    issues.Add(new UIIssue(UIIssueCode.RouteInvalid,
-                        $"路由「{route?.Source}/{route?.Action}」的來源畫面不存在、動作是空的，" +
-                        "或同一個來源有重複的動作。", isSignal ? null : route?.Source, context: root));
+                    issues.Add(new UIIssue(UIIssueCode.RouteIncomplete,
+                        $"路由「{route?.Source}/{route?.Action}」的來源或動作是空的。",
+                        isSignal ? null : route?.Source, context: root));
+                    continue;
+                }
+                if (!isSignal && !views.ContainsKey(route.Source))
+                {
+                    issues.Add(new UIIssue(UIIssueCode.RouteSourceMissing,
+                        $"路由「{route.Source}/{route.Action}」的來源畫面「{route.Source}」不存在。",
+                        route.Source, context: root));
                     continue;
                 }
 
                 var sourceId = isSignal ? null : route.Source;
                 var context = isSignal ? root : ContextOf(root, views[route.Source]);
+                if (!routes.Add((route.Source, route.Action)))
+                {
+                    issues.Add(new UIIssue(UIIssueCode.RouteDuplicate,
+                        $"來源「{route.Source}」有重複的動作「{route.Action}」。同一個來源的一個動作只能對應一條路由。",
+                        sourceId, context: context));
+                    continue;
+                }
                 if (isSignal && !UIAuthoring.IsSignalKind(route.Kind))
                 {
                     issues.Add(new UIIssue(UIIssueCode.RouteSignalKindInvalid,
@@ -118,13 +131,19 @@ namespace UniGameUI.Editor
                         $"路由「{route.Source}/{route.Action}」是 {route.Kind}，history 不能是 {route.History}。" +
                         "OpenPopup 只能是 Push（可以返回）或 Clear（不可返回）。", sourceId, context: context));
                 }
-                if (UIRoute.TargetsEntry(route.Kind) &&
-                    (string.IsNullOrEmpty(route.Target) || !views.TryGetValue(route.Target, out var target) ||
-                     target.Kind != (route.Kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup)))
+                if (!UIRoute.TargetsEntry(route.Kind))
+                    continue;
+                if (string.IsNullOrEmpty(route.Target) || !views.TryGetValue(route.Target, out var target))
+                {
+                    issues.Add(new UIIssue(UIIssueCode.RouteTargetMissing,
+                        $"路由「{route.Source}/{route.Action}」的目的地「{route.Target}」不存在。",
+                        sourceId, context: context));
+                }
+                else if (target.Kind != (route.Kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup))
                 {
                     var expected = route.Kind == UIRouteKind.ShowPage ? "頁面" : "Popup";
-                    issues.Add(new UIIssue(UIIssueCode.RouteTargetMissing,
-                        $"路由「{route.Source}/{route.Action}」的目的地「{route.Target}」不存在，或不是{expected}。",
+                    issues.Add(new UIIssue(UIIssueCode.RouteTargetKindMismatch,
+                        $"路由「{route.Source}/{route.Action}」是 {route.Kind}，目的地「{route.Target}」卻不是{expected}。",
                         sourceId, context: context));
                 }
             }
@@ -138,10 +157,15 @@ namespace UniGameUI.Editor
                 var elementIds = new HashSet<string>();
                 foreach (var element in UIPlan.ElementsOf(entry.Review))
                 {
-                    if (string.IsNullOrEmpty(element.Id) || !elementIds.Add(element.Id))
+                    if (string.IsNullOrEmpty(element.Id))
+                    {
+                        issues.Add(new UIIssue(UIIssueCode.ElementIdEmpty,
+                            $"「{entry.Id}」裡物件「{element.name}」的元件 ID 是空的。", entry.Id, null, element));
+                    }
+                    else if (!elementIds.Add(element.Id))
                     {
                         issues.Add(new UIIssue(UIIssueCode.ElementIdDuplicate,
-                            $"「{entry.Id}」裡物件「{element.name}」的元件 ID 是空的，或和其他元件重複（「{element.Id}」）。",
+                            $"「{entry.Id}」裡物件「{element.name}」的元件 ID「{element.Id}」和其他元件重複。",
                             entry.Id, element.Id, element));
                     }
                 }
