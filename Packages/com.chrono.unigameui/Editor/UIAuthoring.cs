@@ -260,9 +260,20 @@ namespace UniGameUI.Editor
         }
 
         /// <summary>
-        /// 設定藍圖上一條線的中繼點（畫布座標，依線經過的順序）。只是版面：不是公開 API，計畫也不管。
-        /// 和移動節點一樣可以 Undo，並把 Scene 標成未儲存。
+        /// 設定藍圖上一條線的中繼點（藍圖畫布的座標，依線經過的順序），傳入空的清除。只影響藍圖怎麼畫。
+        /// 可以 Undo，並把 Scene 標成未儲存。路由不存在，或它沒有線（不是 ShowPage 或 OpenPopup）時丟出例外。
         /// </summary>
+        public static void SetWaypoints(UIRoot root, string source, string action, IEnumerable<Vector2> points)
+        {
+            CheckRoot(root);
+            var route = root.routes.Find(item => item.Source == source && item.Action == action) ??
+                throw new ArgumentException($"找不到路由「{source}/{action}」。");
+            if (!UIRoute.TargetsEntry(route.Kind))
+                throw new ArgumentException($"路由「{source}/{action}」是 {route.Kind}，藍圖上沒有線，不能有中繼點。");
+            SetWaypoints(root, route, points ?? Array.Empty<Vector2>(), "Set blueprint reroute points");
+        }
+
+        // 藍圖視窗用：Undo 的名稱依操作而不同，沒有線的路由也可以清掉留下來的中繼點。
         internal static void SetWaypoints(UIRoot root, UIRoute route, IEnumerable<Vector2> points, string undoName)
         {
             CheckRoot(root);
@@ -270,8 +281,8 @@ namespace UniGameUI.Editor
                 throw new ArgumentException("找不到這條路由。");
             var next = points.ToList();
             Undo.RecordObject(root, undoName);
-            route.Waypoints.Clear();
-            route.Waypoints.AddRange(next);
+            route.WaypointList.Clear();
+            route.WaypointList.AddRange(next);
             MarkChanged(root);
         }
 
@@ -326,6 +337,111 @@ namespace UniGameUI.Editor
             if (zoomScale.HasValue)
                 transition.zoomScale = zoomScale.Value;
             RecordOverride(view);
+        }
+
+        // 自動排列藍圖時節點之間的間距（畫布單位）。欄距留給線上的動作標籤。
+        internal const float BlueprintColumnGap = 150f;
+        internal const float BlueprintRowGap = 56f;
+
+        /// <summary>
+        /// 自動排列藍圖：從起始頁出發，沿 ShowPage 與 OpenPopup 路由（不含訊號路由）算出每個畫面的步數，
+        /// 步數相同的放在同一欄，由左到右排列；只能由訊號或程式進入的畫面放在最右邊另一欄；「任何畫面」節點放在左下角。
+        /// 排完之後清除所有路由的中繼點。可以 Undo，並把 Scene 標成未儲存。同一份藍圖排兩次結果相同。
+        /// </summary>
+        public static void ArrangeBlueprint(UIRoot root)
+        {
+            CheckRoot(root);
+            var columns = BlueprintColumns(root);
+            var step = new Vector2(UIBlueprintWindow.NodeWidth + BlueprintColumnGap,
+                UIBlueprintWindow.NodeHeight + BlueprintRowGap);
+            Undo.RecordObject(root, "Arrange blueprint");
+            for (var column = 0; column < columns.Count; column++)
+            {
+                for (var row = 0; row < columns[column].Count; row++)
+                    columns[column][row].graphPosition = new Vector2(column * step.x, row * step.y);
+            }
+            // 「任何畫面」在最高那一欄的下面，靠左。
+            var rows = columns.Count == 0 ? 0 : columns.Max(column => column.Count);
+            root.anySourceGraphPosition = new Vector2(0, rows * step.y + BlueprintRowGap);
+            // 舊的中繼點對新的位置已經沒有意義。
+            foreach (var route in root.routes)
+                route.WaypointList.Clear();
+            MarkChanged(root);
+        }
+
+        // 自動排列的欄：第 n 欄是從起始頁走 n 步到得了的畫面，最後一欄是走不到的（只能由訊號或程式進入）。
+        internal static List<List<UIEntry>> BlueprintColumns(UIRoot root)
+        {
+            var entries = root.entries.Where(entry => entry != null && !string.IsNullOrEmpty(entry.Id))
+                .GroupBy(entry => entry.Id).Select(group => group.First()).ToList();
+            var byId = entries.ToDictionary(entry => entry.Id);
+            // 一般路由：畫面之間的流程。訊號路由不算，它們不屬於任何畫面。
+            var next = entries.ToDictionary(entry => entry.Id, entry => root.routes
+                .Where(route => route != null && route.Source == entry.Id && UIRoute.TargetsEntry(route.Kind) &&
+                    !string.IsNullOrEmpty(route.Target) && byId.ContainsKey(route.Target) && route.Target != entry.Id)
+                .Select(route => route.Target).Distinct().ToList());
+
+            // 出發點：起始頁。沒有起始頁時，用沒有一般路由通進來的頁面（依登記的順序）。
+            var seeds = new List<string>();
+            if (!string.IsNullOrEmpty(root.startPageId) && byId.TryGetValue(root.startPageId, out var start) &&
+                start.Kind == UIEntryKind.Page)
+            {
+                seeds.Add(start.Id);
+            }
+            else
+            {
+                var targeted = new HashSet<string>(next.Values.SelectMany(targets => targets));
+                seeds.AddRange(entries.Where(entry => entry.Kind == UIEntryKind.Page && !targeted.Contains(entry.Id))
+                    .Select(entry => entry.Id));
+            }
+
+            var depth = new Dictionary<string, int>();
+            var order = new List<string>();
+            var pending = new Queue<string>();
+            foreach (var seed in seeds)
+            {
+                depth[seed] = 0;
+                order.Add(seed);
+                pending.Enqueue(seed);
+            }
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue();
+                foreach (var target in next[current])
+                {
+                    if (depth.ContainsKey(target))
+                        continue;
+                    depth[target] = depth[current] + 1;
+                    order.Add(target);
+                    pending.Enqueue(target);
+                }
+            }
+
+            var columns = new List<List<UIEntry>>();
+            foreach (var id in order)
+            {
+                while (columns.Count <= depth[id])
+                    columns.Add(new List<UIEntry>());
+                columns[depth[id]].Add(byId[id]);
+            }
+            // 同一欄裡依來源在前一欄的位置排，線比較少交錯；一樣時維持被發現的順序。
+            for (var column = 1; column < columns.Count; column++)
+            {
+                var previous = columns[column - 1].Select((entry, row) => (entry.Id, row))
+                    .ToDictionary(pair => pair.Id, pair => pair.row);
+                var discovered = columns[column].Select((entry, index) => (entry, index)).ToList();
+                columns[column] = discovered.OrderBy(pair =>
+                    {
+                        var parents = previous.Where(parent => next[parent.Key].Contains(pair.entry.Id))
+                            .Select(parent => (float)parent.Value).ToList();
+                        return parents.Count == 0 ? float.MaxValue : parents.Average();
+                    })
+                    .ThenBy(pair => pair.index).Select(pair => pair.entry).ToList();
+            }
+            var unreached = entries.Where(entry => !depth.ContainsKey(entry.Id)).ToList();
+            if (unreached.Count > 0)
+                columns.Add(unreached);
+            return columns;
         }
 
         public static void ArrangeReview(UIRoot root)

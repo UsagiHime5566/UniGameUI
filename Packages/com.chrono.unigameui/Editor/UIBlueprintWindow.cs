@@ -271,12 +271,20 @@ namespace UniGameUI.Editor
                 };
                 indicator.AddToClassList("live-indicator");
                 toolbar.Add(indicator);
+                var arrangeLive = AddToolbarButton(toolbar, "整理藍圖", () => { });
+                arrangeLive.name = "arrange-blueprint";
+                arrangeLive.tooltip = "Play Mode 中不能整理藍圖。";
+                arrangeLive.SetEnabled(false);
             }
             else
             {
                 AddToolbarButton(toolbar, "檢視全部 UI", () => UIAuthoring.FocusReview(workspace))
                     .tooltip = "在 Scene 視窗框選所有審核畫面。";
-                AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace));
+                AddToolbarButton(toolbar, "重新排列", () => UIAuthoring.ArrangeReview(workspace))
+                    .tooltip = "把 Scene 裡的審核畫面排回網格。不會動到藍圖。";
+                var arrange = AddToolbarButton(toolbar, "整理藍圖", () => ArrangeBlueprint(ConfirmArrange));
+                arrange.name = "arrange-blueprint";
+                arrange.tooltip = "自動排列藍圖的節點：從起始頁沿著路由由左到右分欄，並清除所有中繼點。可以 Undo。";
                 AddToolbarButton(toolbar, "Validate", ShowValidation);
                 AddToolbarButton(toolbar, "走訪", StartWalk);
                 if (workspace.Entries.Any(entry => entry != null &&
@@ -1339,6 +1347,29 @@ namespace UniGameUI.Editor
             // 細節記到 Console：每一筆都帶代碼，點擊可以定位到相關的畫面物件。
             UIValidation.LogIssues(workspace, issues);
             EditorUtility.DisplayDialog("UniGameUI Validate", UIValidation.DialogMessage(issues), "關閉");
+        }
+
+        /// <summary>「整理藍圖」執行前的確認。</summary>
+        internal const string ArrangeConfirmMessage = "會重新排列所有節點並清除中繼點，可以用 Undo 還原。";
+
+        /// <summary>
+        /// 工具列的「整理藍圖」：<paramref name="confirm"/> 同意之後呼叫 <see cref="UIAuthoring.ArrangeBlueprint"/>，
+        /// 再顯示全部。Play Mode 中不做事。有整理時回傳 true。
+        /// </summary>
+        internal bool ArrangeBlueprint(Func<bool> confirm)
+        {
+            if (liveMode || !workspace || EditorApplication.isPlayingOrWillChangePlaymode)
+                return false;
+            if (confirm != null && !confirm())
+                return false;
+            TryEdit(() => UIAuthoring.ArrangeBlueprint(workspace));
+            ShowAllNodes();
+            return true;
+        }
+
+        private static bool ConfirmArrange()
+        {
+            return EditorUtility.DisplayDialog("UniGameUI 整理藍圖", ArrangeConfirmMessage, "整理", "取消");
         }
 
         // 進入 Play Mode 把每條路由走一遍。結束、回到 Edit Mode 之後會跳出摘要，失敗的步驟也記在 Console。

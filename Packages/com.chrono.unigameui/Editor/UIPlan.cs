@@ -28,6 +28,8 @@ namespace UniGameUI.Editor
             public RouteSpec[] routes;
             public WidgetSpec[] widgets;
             public string defaultFontPath;
+            // 藍圖上「任何畫面」節點的位置。沒寫時是 NaN，不動。
+            public Vector2 anyNodePosition = Unset;
         }
 
         [Serializable]
@@ -44,6 +46,8 @@ namespace UniGameUI.Editor
             public string popupCache;
             public string overlayClick;
             public string navigation;
+            // 藍圖上節點的位置。沒寫時是 NaN，不動；只寫 x 或 y 時另一個維持原值。
+            public Vector2 graphPosition = Unset;
             public AnimationSpec enter;
             public AnimationSpec exit;
             public ElementSpec[] elements;
@@ -90,6 +94,13 @@ namespace UniGameUI.Editor
             public string history;
             public string result;
             public bool replace;
+            // 藍圖上這條線的中繼點。JsonUtility 分不出陣列有沒有寫，所以預設值是只有一個 NaN 點的陣列：
+            // 沒寫時維持它（不動），寫了 [] 時是空陣列（清除）。JSON 寫不出 NaN，所以不會和寫了的混淆。
+            // 每個實例各自一個陣列：JsonUtility 遇到長度相同的陣列會直接覆寫原本的元素。
+            public Vector2[] waypoints = { new Vector2(float.NaN, float.NaN) };
+
+            public bool HasWaypoints =>
+                waypoints != null && !(waypoints.Length == 1 && IsUnset(waypoints[0]));
         }
 
         [MenuItem("Tools/UniGameUI/Apply JSON Plan…")]
@@ -190,9 +201,14 @@ namespace UniGameUI.Editor
                     UIAuthoring.Connect(root, route.source, route.action,
                         kind, route.target ?? existing?.Target, ParseHistory(route, kind, existing),
                         route.result ?? existing?.Result);
+                    // 沒寫 waypoints 時保留原本的中繼點；寫了 [] 時清除。
+                    if (route.HasWaypoints)
+                        UIAuthoring.SetWaypoints(root, route.source, route.action, route.waypoints);
                 }
                 if (plan.startPage != null)
                     UIAuthoring.SetStartPage(root, plan.startPage);
+                if (!IsUnset(plan.anyNodePosition))
+                    UIAuthoring.PositionNode(root, UIRoot.AnySource, Merge(root.AnyNodePosition, plan.anyNodePosition));
                 if (!string.IsNullOrEmpty(plan.pageTransitionMode))
                     UIAuthoring.SetPageTransitionMode(root, Parse(plan.pageTransitionMode, root.PageTransitionMode));
 
@@ -396,6 +412,11 @@ namespace UniGameUI.Editor
                 }
                 if (route.result != null && kind != UIRouteKind.ClosePopup)
                     throw new ArgumentException($"路由「{route.source}/{route.action}」的 result 欄位只適用於 ClosePopup（目前為 {kind}）。");
+                if (route.HasWaypoints && !UIRoute.TargetsEntry(kind))
+                {
+                    throw new ArgumentException($"路由「{route.source}/{route.action}」的 waypoints 欄位只適用於 " +
+                        $"ShowPage 與 OpenPopup：其他種類在藍圖上沒有線（目前為 {kind}）。");
+                }
                 if (UIRoute.TargetsEntry(kind) &&
                     (string.IsNullOrEmpty(targetId) || !kinds.TryGetValue(targetId, out var target) ||
                      target != (kind == UIRouteKind.ShowPage ? UIEntryKind.Page : UIEntryKind.Popup)))
@@ -467,6 +488,12 @@ namespace UniGameUI.Editor
             if (newView || spec.updateExisting)
             {
                 ApplyViewOptions(view, spec);
+                // 藍圖上的位置記在工作區。只寫 x 或 y 時另一個維持原值。
+                if (!IsUnset(spec.graphPosition))
+                {
+                    UIAuthoring.PositionNode(root, spec.id,
+                        Merge(UIAuthoring.FindEntry(root, spec.id).GraphPosition, spec.graphPosition));
+                }
                 // 由程式開啟是藍圖上的設定，記在工作區，不在 View 上。
                 if (!string.IsNullOrEmpty(spec.navigation))
                 {

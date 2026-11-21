@@ -93,6 +93,8 @@ namespace UniGameUI
         public IReadOnlyList<UIEntry> Entries => entries;
         public IReadOnlyList<UIRoute> Routes => routes;
         public string StartPageId => startPageId;
+        /// <summary>藍圖上「任何畫面」節點的位置（藍圖畫布的座標）。用計畫的 anyNodePosition 或 UIAuthoring.PositionNode 設定。</summary>
+        public Vector2 AnyNodePosition => anySourceGraphPosition;
         public UIView CurrentPage => currentPage ? currentPage : null;
         public UIView TopPopup => popups.Count == 0 ? null : popups[^1];
         public IReadOnlyList<UIView> Popups => popupList ??= popups.AsReadOnly();
