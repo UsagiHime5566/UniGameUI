@@ -132,8 +132,10 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 - `mode` 可用 `SingleScene` 或 `Prefab`。只有確定需要新 Scene 時才給 `createScene: true`。新工作區預設參考解析度 1920×1080、每排 3 格。
 - `scenePath` 指到的 Scene 還沒開啟時，計畫會自己開啟或建立它：只開著一個沒存過的空 Scene 時取代它，否則以附加方式開啟，套用成功後維持開著。所以開著一個有工作區的 Scene 時，也可以對另一個 Scene 套用計畫。計畫失敗時，為了套用而開啟的 Scene 會關回去，原本開著的 Scene 不動。
 - `startPage` 是可選的頁面 ID，指定空字串可清除起始頁。路由種類有 `ShowPage`、`OpenPopup`、`Back`、`ClosePopup`、`Emit`。前兩種需要 `target`。同一來源頁的一個 `action` 對應一條路由。
+- `anyNodePosition` 是藍圖上「任何畫面」節點的位置，例如 `"anyNodePosition": { "x": 40, "y": 600 }`。有寫就寫入，和 `startPage` 相同；只寫 `x` 或 `y` 時另一個維持原值。藍圖的座標見「審核」的「讓藍圖好讀」。
 - `"source": "*"` 是藍圖上「任何畫面」節點的訊號路由，不論目前顯示哪個畫面都成立，由遊戲程式用 `SignalAsync` 送出。種類只能是 `ShowPage`、`OpenPopup`、`Emit`。什麼時候用訊號、什麼時候用畫面自己的路由，見「頁面之間的流程」。
 - `ShowPage` 可設定 `"history": "Replace"`。可用值為 `Push`（預設）、`Replace`、`Clear`。`OpenPopup` 也可以設定 `history`，可用值為 `Push`（預設，可以用返回關閉）與 `Clear`（不可返回），規則見「頁面之間的流程」的「跳過去之後能不能返回」。`ClosePopup` 可設定字串結果，例如 `"result": "yes"`。省略或留空代表這條路由關閉時沒有結果。將任一欄位寫在其他種類的路由上，或 `OpenPopup` 寫 `Replace`，計畫會在套用前指出路由與欄位。
+- `waypoints` 是藍圖上這條線依序經過的中繼點，例如 `"waypoints": [{ "x": 520, "y": 300 }]`，座標是藍圖畫布的座標，每個點都要寫 `x` 與 `y`（省略的會當成 0）。只能寫在 `ShowPage` 與 `OpenPopup` 路由，寫在其他種類（藍圖上沒有線）會在套用前報錯。和其他路由欄位一樣，新增的路由或設了 `replace: true` 的路由才寫入；省略時保留原本的中繼點，`[]` 清除。
 - `pageTransitionMode` 可用 `Sequential` 或 `Concurrent`。新工作區預設依序播放。要讓切頁的進場和退場重疊，設定 `Concurrent` 或在 `UIRoot` Inspector 修改「切頁動畫」。
 - `enter`、`exit` 可各自選 `None`、`Fade`、`Slide`、`RotateFade`、`Zoom` 或 `Custom`。例如 `"enter": { "preset": "Zoom", "duration": 0.2, "zoomScale": 0.8, "ease": "OutBack" }`。Zoom 倍率相對於原本的 Motion 尺寸，預設為 0.85。Slide 可設定方向 `Left`、`Right`、`Up`、`Down` 和 `distance`，RotateFade 可設定 `angle`。Ease 有 `Linear`、`InQuad`、`OutQuad`、`InOutQuad`、`OutBack`。
 - 既有頁面可直接新增其他 ID 的元件。要修改既有元件時，指定該元件 ID、原 `kind`、`updateExisting: true` 與要寫入的欄位。若要更新既有 View 的背景、動畫或下面的 View 選項，在 View 設 `updateExisting: true`。更新既有路由時，指定原 `source`、`action`、`replace: true` 和要改的欄位。平常省略這些選項，重跑可保留人工編修。
@@ -152,6 +154,7 @@ Unity -batchmode -nographics -projectPath <專案絕對路徑> -importPackage <�
 | `popupCache` | `Recreate`（預設）、`Reuse` | 只能寫在 Popup。`Reuse` 時關閉後保留實例，下次開啟重用。 |
 | `overlayClick` | `Ignore`（預設）、`Close` | 只能寫在 Popup。`Close` 時點擊遮罩等同不帶結果的關閉。 |
 | `navigation` | `Routes`（預設）、`Code` | `Code` 表示這個畫面由程式開啟：進來的方式不靠路由。頁面照樣要有自己的出口路由。只影響 Validate 與走訪，見「驗收」的「由程式開啟的畫面」。 |
+| `graphPosition` | `{ "x": 400, "y": 120 }` | 藍圖上這個節點的位置（藍圖畫布的座標，節點的左上角）。和其他 View 選項一樣，只在新建畫面或設了 `updateExisting` 時寫入；只寫 `x` 或 `y` 時另一個維持原值。 |
 
 ## 元件
 
@@ -253,6 +256,7 @@ var result = await root.TriggerAsync(WorkshopUI.Views.Workshop, WorkshopUI.Actio
 - `UIAuthoring.ArrangeReview(root)`、`FocusReview(root, id)`、`PreviewPopupOnPage(root, popupId, pageId)`、`HasReviewOverrides(entry)`、`ApplyReviewOverrides(root, id)`。最後一項適合提交本次新建立的 Prefab。既有實例的覆寫先交給使用者審核。
 - `UIWidgets.Find()` 回傳元件集（沒有時是 null），`Install()` 補上缺少的起始元件，`Register(name, prefabPath, like)` 登記自訂元件，`SetDefaultFont(fontAssetPath)` 設定預設字型，`ConfirmPrefabPath` 是起始確認框的路徑。
 - `UIAuthoring.SetNavigatedByCode(root, id, value)` 標記畫面由程式開啟，`UIEntry.NavigatedByCode` 讀取這個標記。
+- 藍圖的版面：`UIAuthoring.ArrangeBlueprint(root)` 自動排列；`PositionNode(root, id, position)` 移動節點（`id` 可以是 `UIRoot.AnySource`）；`SetWaypoints(root, source, action, points)` 設定一條線的中繼點，傳入空的清除，路由不存在或沒有線時丟出例外。讀取用 `UIEntry.GraphPosition`、`UIRoot.AnyNodePosition` 與 `UIRoute.Waypoints`。三者都可以 Undo，會把 Scene 標成未儲存。用法見「審核」的「讓藍圖好讀」。
 - `UIValidation.Check(root)` 回傳目前工作區的問題，每一筆有穩定的代碼。`UIValidation.CheckScenes(scenePaths, strict)` 依序檢查多個 Scene 並回傳報告。`UIWalk.Start(options)` 開始自動走訪。三者的用法見「驗收」。對於自訂子階層，用 Unity Editor 的 Undo 和序列化 API 儲存變更。
 
 ## 遊戲程式
@@ -1023,7 +1027,7 @@ public sealed class HudPage : UIViewBehaviour
    - **拉線。** 從節點右邊的連接點拖到另一個節點，建立路由（目標是頁面就是 `ShowPage`，是 Popup 就是 `OpenPopup`）；右欄選著一條路由時拖線，是把那條路由重接到新的目標。線上的動作標籤可以點，會選取來源節點與那條路由。固定的「任何畫面」節點用來畫訊號路由，它的行為只有 `ShowPage`、`OpenPopup`、`Emit` 三種。
    - **右欄。** 寬度可以拖曳，每個區塊可以收合，兩者都在這個 Editor 工作階段內記住。沒有選取時是「工作區」：Scene、模式、起始頁（可以改）、頁面與 Popup 的數量、訊號路由的數量。選取畫面時依序是「畫面」（名稱、ID、種類、**設為起始頁**、**在 Scene 中定位**，Popup 另有疊在頁面上預覽）、「畫面設定」（由程式開啟）、「從這裡出發的路由」（點一列選取，最下面是 **新增路由**）、「編輯路由」（選了路由或按了新增才出現）、「通到這裡的路由」（唯讀，包含訊號路由，點一列會選取來源節點）。選取「任何畫面」時是說明、「訊號路由」與「編輯路由」。
    - **編輯路由。** 欄位是動作、行為、目的地、返回歷史、關閉結果，只顯示這個行為用得到的：`Back` 與 `Emit` 沒有其他欄位，`ShowPage` 的返回歷史有三種，`OpenPopup` 有兩種（可以返回、不可返回），`ClosePopup` 有關閉結果。動作重複、動作名稱不合規則或沒有選目的地時不會儲存，原因顯示在那個欄位下面。**刪除這條路由** 和 **儲存** 分開放。
-   - **線的中繼點。** 線交錯時可以加中繼點整理走向，它沒有任何功能，只影響藍圖怎麼畫。每條路由可以有任意個中繼點，線依序平滑地穿過它們；中繼點屬於那一條路由，不會被別的線共用。在線上雙擊（或按右鍵選「在這裡新增中繼點」）新增，依它在線上的位置插入順序；拖曳移動；雙擊、按右鍵選「刪除中繼點」，或選取之後按 Delete 刪除。滑鼠靠近線時線會變亮、變粗；在線上單擊等於點它的標籤。右欄的「編輯路由」顯示有幾個中繼點，並有 **清除中繼點**。線上的標籤放在整條線長度的中間，範圍框與「顯示全部」包含中繼點。全部可以 Undo，會把 Scene 標成未儲存；路由改名、改目的地、計畫用 `replace: true` 更新時保留，刪除路由時一起刪除。Play Mode 中看得到但不能修改。中繼點存在工作區的藍圖裡，計畫沒有對應的欄位，也不影響執行期、Validate、走訪與 ID 常數。
+   - **線的中繼點。** 線交錯時可以加中繼點整理走向，它沒有任何功能，只影響藍圖怎麼畫。每條路由可以有任意個中繼點，線依序平滑地穿過它們；中繼點屬於那一條路由，不會被別的線共用。在線上雙擊（或按右鍵選「在這裡新增中繼點」）新增，依它在線上的位置插入順序；拖曳移動；雙擊、按右鍵選「刪除中繼點」，或選取之後按 Delete 刪除。滑鼠靠近線時線會變亮、變粗；在線上單擊等於點它的標籤。右欄的「編輯路由」顯示有幾個中繼點，並有 **清除中繼點**。線上的標籤放在整條線長度的中間，範圍框與「顯示全部」包含中繼點。全部可以 Undo，會把 Scene 標成未儲存；路由改名、改目的地、計畫用 `replace: true` 更新時保留，刪除路由時一起刪除。Play Mode 中看得到但不能修改。中繼點存在工作區的藍圖裡，計畫用路由的 `waypoints` 設定；它不影響執行期、Validate、走訪與 ID 常數。
    - **訊號路由的線。** 「任何畫面」拉出去的線是比較淡的虛線，滑鼠移到線或標籤上、或選取「任何畫面」時變清楚。工具列的 **顯示訊號路由** 可以把它們的線與標籤關掉（在這個 Editor 工作階段內記住），這時「任何畫面」節點上標出它有幾條路由；剛走過的訊號路由仍會短暫亮起。
    - **執行中的藍圖。** Play Mode 時藍圖照常顯示執行中的工作區，但不能修改：不能拖曳節點、不能拉線，右欄都是唯讀，因為 Play Mode 中的修改離開時會被 Unity 還原。可以平移、縮放、顯示全部、選取節點、點線上的標籤。
      - 目前的頁面有亮色粗框與「目前」；開著的 Popup 標出疊放的順序（「Popup 1」、「Popup 2」），最上層、可以操作的那一個另外標「最上層」；正在進出的畫面標「進場中」或「退場中」。
@@ -1037,6 +1041,15 @@ public sealed class HudPage : UIViewBehaviour
 4. 在互動 Editor 進 Play 前，若有待套用的覆寫，可以選 **套用並進入**、**直接進入** 或 **取消**。直接進入會使用目前已儲存的 Prefab。若多個 Scene 的審核實例同時修改同一 Prefab，先選擇要手動套用的實例。
 
 Player 建置處理器會從複製的 Scene 中移除審核框與 Prefab 審核實例，並保留單 Scene 模式的頁面物件。打包成 AssetBundle 或 Addressables 的 Scene 會保留審核複本，執行期會停用審核層，並依藍圖使用已儲存的 Prefab。
+
+### 讓藍圖好讀
+
+使用者是在藍圖上看 agent 做出來的 UI。線交錯、節點疊在一起時，看不出遊玩的流程。
+
+- **新建工作區，或改了流程（加了畫面、改了路由）之後，呼叫一次 `UIAuthoring.ArrangeBlueprint(root)`。** 它從起始頁出發，沿 `ShowPage` 與 `OpenPopup` 路由（不含訊號路由）算出每個畫面的步數，同一步的放在同一欄，由左到右排列；只能由訊號或程式進入的畫面放在最右邊；「任何畫面」節點放在左下角；節點不會重疊；排完清除所有中繼點。同一份藍圖排兩次結果相同。不要自己算座標。
+- **交付前看一眼藍圖。** 線交錯或標籤疊在一起時，才用計畫的 `graphPosition`、`waypoints`、`anyNodePosition`（或 `PositionNode`、`SetWaypoints`）微調。座標是藍圖畫布的座標：節點的位置是左上角，節點寬 210、高 104，自動排列的欄距是 360、列距是 160。
+- **使用者調整過的版面不要再自動排列**：`ArrangeBlueprint` 會重新排過所有節點並清除中繼點。重新套用計畫不會動到沒寫的版面欄位。
+- 藍圖工具列的 **整理藍圖** 做的是同一件事，執行前會確認，可以用 Undo 還原，Play Mode 中停用。它和 **重新排列**（把 Scene 裡的審核畫面排回網格）是兩件事。
 
 ## 驗收
 
