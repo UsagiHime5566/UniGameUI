@@ -345,7 +345,8 @@ namespace UniGameUI.Editor
 
         /// <summary>
         /// 自動排列藍圖：從起始頁出發，沿 ShowPage 與 OpenPopup 路由（不含訊號路由）算出每個畫面的步數，
-        /// 步數相同的放在同一欄，由左到右排列；只能由訊號或程式進入的畫面放在最右邊另一欄；「任何畫面」節點放在左下角。
+        /// 步數相同的放在同一欄，由左到右排列；同一欄裡頁面在上、Popup 在下，主流程的頁面排成一直線；
+        /// 只能由訊號或程式進入的畫面放在最右邊另一欄；「任何畫面」節點放在左下角。
         /// 排完之後清除所有路由的中繼點。可以 Undo，並把 Scene 標成未儲存。同一份藍圖排兩次結果相同。
         /// </summary>
         public static void ArrangeBlueprint(UIRoot root)
@@ -424,13 +425,17 @@ namespace UniGameUI.Editor
                     columns.Add(new List<UIEntry>());
                 columns[depth[id]].Add(byId[id]);
             }
-            // 同一欄裡依來源在前一欄的位置排，線比較少交錯；一樣時維持被發現的順序。
-            for (var column = 1; column < columns.Count; column++)
+            // 同一欄裡頁面在上、Popup 在下：Popup 不會佔走主流程的那一列。
+            // 頁面之間、Popup 之間依來源在前一欄的位置排，線比較少交錯；一樣時維持被發現的順序。
+            for (var column = 0; column < columns.Count; column++)
             {
-                var previous = columns[column - 1].Select((entry, row) => (entry.Id, row))
-                    .ToDictionary(pair => pair.Id, pair => pair.row);
+                var previous = column == 0
+                    ? new Dictionary<string, int>()
+                    : columns[column - 1].Select((entry, row) => (entry.Id, row))
+                        .ToDictionary(pair => pair.Id, pair => pair.row);
                 var discovered = columns[column].Select((entry, index) => (entry, index)).ToList();
-                columns[column] = discovered.OrderBy(pair =>
+                columns[column] = discovered.OrderBy(pair => pair.entry.Kind == UIEntryKind.Popup ? 1 : 0)
+                    .ThenBy(pair =>
                     {
                         var parents = previous.Where(parent => next[parent.Key].Contains(pair.entry.Id))
                             .Select(parent => (float)parent.Value).ToList();
@@ -438,7 +443,8 @@ namespace UniGameUI.Editor
                     })
                     .ThenBy(pair => pair.index).Select(pair => pair.entry).ToList();
             }
-            var unreached = entries.Where(entry => !depth.ContainsKey(entry.Id)).ToList();
+            var unreached = entries.Where(entry => !depth.ContainsKey(entry.Id))
+                .OrderBy(entry => entry.Kind == UIEntryKind.Popup ? 1 : 0).ToList();
             if (unreached.Count > 0)
                 columns.Add(unreached);
             return columns;

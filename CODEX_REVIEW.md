@@ -694,7 +694,7 @@ G1～G5 都已修正，做法符合 `ROADMAP.md`「第二批修正」的規則�
 
 | 項目 | commit | 做了什麼 |
 |---|---|---|
-| 5-10 | `64e02a2` | **公開 API：** `UIRoute.Waypoints`（`IReadOnlyList<Vector2>`）、`UIRoot.AnyNodePosition`、`UIAuthoring.SetWaypoints(root, source, action, points)`（可以 Undo、標記 Scene 未儲存；路由不存在或沒有線時丟出 `ArgumentException`，訊息指出路由）、`UIAuthoring.ArrangeBlueprint(root)`。5-9 的 `internal` 成員改成公開；藍圖視窗內部用的 `SetWaypoints(root, route, points, undoName)` 留著，因為 Undo 的名稱依操作而不同，而且要能清掉種類改成沒有線的路由留下來的中繼點。**計畫欄位：** `views[].graphPosition` 與最上層 `anyNodePosition` 用 NaN 當「沒寫」（和 `rect` 相同），只寫 `x` 或 `y` 時另一個維持原值；`routes[].waypoints` 的預設值是只有一個 NaN 點的陣列，沒寫時維持它（不動），寫了 `[]` 時是空陣列（清除）。寫在沒有線的路由上在套用前報錯。**自動排列：** 從起始頁 BFS（只走 `ShowPage`、`OpenPopup` 的一般路由），步數相同的同一欄、依被發現的順序；第二欄之後依來源在前一欄的平均位置排（一樣時維持被發現的順序）；走不到的畫面放在最右邊一欄；「任何畫面」在最高那一欄的下面、靠左；欄距 360、列距 160（節點 210×104）；清除所有中繼點；一次 Undo。沒有起始頁時，從沒有一般路由通進來的頁面出發。工具列的「整理藍圖」先確認，Play Mode 中停用。 |
+| 5-10 | `64e02a2` | **公開 API：** `UIRoute.Waypoints`（`IReadOnlyList<Vector2>`）、`UIRoot.AnyNodePosition`、`UIAuthoring.SetWaypoints(root, source, action, points)`（可以 Undo、標記 Scene 未儲存；路由不存在或沒有線時丟出 `ArgumentException`，訊息指出路由）、`UIAuthoring.ArrangeBlueprint(root)`。5-9 的 `internal` 成員改成公開；藍圖視窗內部用的 `SetWaypoints(root, route, points, undoName)` 留著，因為 Undo 的名稱依操作而不同，而且要能清掉種類改成沒有線的路由留下來的中繼點。**計畫欄位：** `views[].graphPosition` 與最上層 `anyNodePosition` 用 NaN 當「沒寫」（和 `rect` 相同），只寫 `x` 或 `y` 時另一個維持原值；`routes[].waypoints` 的預設值是只有一個 NaN 點的陣列，沒寫時維持它（不動），寫了 `[]` 時是空陣列（清除）。寫在沒有線的路由上在套用前報錯。**自動排列：** 從起始頁 BFS（只走 `ShowPage`、`OpenPopup` 的一般路由），步數相同的同一欄、依被發現的順序；同一欄裡頁面在上、Popup 在下（審核後補上，見下面的「之後的修正」），頁面之間、Popup 之間依來源在前一欄的平均位置排（一樣時維持被發現的順序）；走不到的畫面放在最右邊一欄；「任何畫面」在最高那一欄的下面、靠左；欄距 360、列距 160（節點 210×104）；清除所有中繼點；一次 Undo。沒有起始頁時，從沒有一般路由通進來的頁面出發。工具列的「整理藍圖」先確認，Play Mode 中停用。 |
 | 文件 | `d15a6bc` | AgentGuide：計畫的三個欄位（「JSON 計畫」與「View 的選項」）、Editor C# API、「審核」一節最後的「讓藍圖好讀」；`CHANGELOG.md` 0.6.0 補記。 |
 
 **測試結果**
@@ -713,6 +713,8 @@ Unity 6000.3.19f1，在兩個副本專案執行，套件內容與 `64e02a2` 相�
   - `SetWaypoints`：寫入、Scene 未儲存、Undo、訊號路由、傳入空的清除，路由不存在與 `Emit`、`Back`、`ClosePopup` 的例外；`AnyNodePosition`。
   - `ArrangeBlueprint`：日循環（標題 → 開店前 → 營業中 → 打烊後 → 日終結算）排成同一列、由左到右；週結在下一欄；同一步的分支（打烊後的「結局」、開店前開啟的 Popup）在同一欄的下面；只由訊號進入的畫面在最右邊；「任何畫面」在左下角；沒有節點重疊；中繼點清除；Scene 未儲存；Undo 回到原本的位置與中繼點；排兩次結果相同而且和原本的位置無關；工具列的按鈕要確認才執行，Play Mode 中停用。
 - 5-1～5-9 的測試沒有改，全部通過。
+
+**之後的修正：** 審核者用 MaidProject 修正後的流程測，開店前先接了開啟 Popup 的路由，Popup 比營業中先被找到，佔走了主流程的那一列，主流程往下彎一格。改成同一欄裡頁面排在 Popup 前面，加了一個用這個流程的測試（主流程的頁面 y 相同、Popup 在同一欄頁面的下方）。ROADMAP 5-10 的排法說明、AgentGuide「讓藍圖好讀」與 CHANGELOG 同步更新。
 
 **與規格不同、或規格沒寫而我自己決定的地方**
 

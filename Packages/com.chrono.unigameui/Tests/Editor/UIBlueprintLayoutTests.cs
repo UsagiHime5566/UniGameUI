@@ -125,6 +125,50 @@ namespace UniGameUI.Editor.Tests
             UIRoute Go() => root.Routes.Single(route => route.Source == "home" && route.Action == "next");
         }
 
+        // 審核時發現：開店前先接了開啟 Popup 的路由，Popup 比營業中先被找到，佔走了主流程的那一列。
+        [Test]
+        public void ArrangeBlueprintKeepsTheMainFlowOnOneRowAbovePopups()
+        {
+            var scene = NewScene("Batch5 Layout Pages First");
+            UnityEngine.SceneManagement.SceneManager.SetActiveScene(scene);
+            var root = UIAuthoring.CreateWorkspace(scene);
+            foreach (var id in new[] { "title", "open", "business", "closed", "summary", "weekly", "finale" })
+                UIAuthoring.CreatePage(root, id, id);
+            UIAuthoring.CreatePopup(root, "picker", "Picker", $"{folder}/Picker.prefab");
+            UIAuthoring.SetStartPage(root, "title");
+            Connect("title", "toOpen", "open");
+            // 開啟 Popup 的路由排在前面。
+            UIAuthoring.Connect(root, "open", "pick", UIRouteKind.OpenPopup, "picker");
+            UIAuthoring.Connect(root, "picker", "close", UIRouteKind.ClosePopup);
+            Connect("open", "toBusiness", "business");
+            Connect("business", "toClosed", "closed");
+            Connect("closed", "toSummary", "summary");
+            Connect("closed", "toFinale", "finale");
+            Connect("summary", "toWeekly", "weekly");
+            Connect("weekly", "toOpen", "open");
+            Connect("finale", "toTitle", "title");
+
+            UIAuthoring.ArrangeBlueprint(root);
+
+            // 主流程的頁面在同一列，由左到右。
+            var flow = new[] { "title", "open", "business", "closed", "summary", "weekly" };
+            for (var step = 1; step < flow.Length; step++)
+            {
+                Assert.That(Position(flow[step]).y, Is.EqualTo(Position("title").y), flow[step]);
+                Assert.That(Position(flow[step]).x, Is.GreaterThan(Position(flow[step - 1]).x), flow[step]);
+            }
+            // Popup 在同一欄的頁面下方；同一步的另一個頁面也在下方。
+            Assert.That(Position("picker").x, Is.EqualTo(Position("business").x));
+            Assert.That(Position("picker").y, Is.GreaterThan(Position("business").y));
+            Assert.That(Position("finale").x, Is.EqualTo(Position("summary").x));
+            Assert.That(Position("finale").y, Is.GreaterThan(Position("summary").y));
+
+            void Connect(string source, string action, string target) =>
+                UIAuthoring.Connect(root, source, action, UIRouteKind.ShowPage, target);
+
+            Vector2 Position(string id) => UIAuthoring.FindEntry(root, id).GraphPosition;
+        }
+
         [Test]
         public void ArrangeBlueprintLaysTheFlowOutFromLeftToRight()
         {
